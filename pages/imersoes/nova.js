@@ -71,6 +71,7 @@ export default function NovaImersao() {
 
     if (!form.immersion_name.trim()) return setError("Preencha o nome da imersão.");
     if (!form.start_date) return setError("Preencha a data de início.");
+    if (!form.end_date) return setError("Preencha a data de fim.");
 
     try {
       setSaving(true);
@@ -98,6 +99,14 @@ export default function NovaImersao() {
         <Field label="Data de início">
           <input className="input" type="date" value={form.start_date} onChange={(e) => set("start_date", e.target.value)} />
         </Field>
+  <Field label="Data de fim">
+  <input
+    className="input"
+    type="date"
+    value={form.end_date}
+    onChange={(e) => set("end_date", e.target.value)}
+  />
+  </Field>
 
         <Field label="Sala a ser realizada (ex.: Brasil, São Paulo, PodCast)">
           <input className="input" value={form.room_location} onChange={(e) => set("room_location", e.target.value)} />
