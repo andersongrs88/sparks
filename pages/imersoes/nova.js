@@ -6,6 +6,7 @@ import { createImmersion } from "../../lib/immersions";
 const initial = {
   immersion_name: "",
   start_date: "",
+  end_date: "",
   room_location: "",
 
   education_team_responsible: "",
