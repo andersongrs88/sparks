@@ -11,24 +11,20 @@ function toLocalDateOnly(d) {
 
 function daysUntil(startDateValue) {
   if (!startDateValue) return null;
-
   const start = toLocalDateOnly(startDateValue);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   const diffMs = start.getTime() - today.getTime();
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
 function getCountdownSignal(days) {
   if (days === null) return null;
-
   if (days <= 0) return { label: `${days}d`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
   if (days >= 60) return { label: `${days}d`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } };
   if (days >= 40) return { label: `${days}d`, style: { background: "#0b2b52", borderColor: "#1f4f99" } };
   if (days >= 30) return { label: `${days}d`, style: { background: "#071a35", borderColor: "#163a7a" } };
   if (days >= 20) return { label: `${days}d`, style: { background: "#4a2a00", borderColor: "#b86b00" } };
-  if (days >= 10) return { label: `${days}d`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
   return { label: `${days}d`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
 }
 
@@ -45,36 +41,50 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const [immersions, setImmersions] = useState([]);
   const [lateTasks, setLateTasks] = useState([]);
   const [profiles, setProfiles] = useState([]);
 
+  // erros separados (não derruba o resto)
+  const [errImm, setErrImm] = useState("");
+  const [errTasks, setErrTasks] = useState("");
+  const [errProfiles, setErrProfiles] = useState("");
+
   useEffect(() => {
     let mounted = true;
 
     async function load() {
+      setLoading(true);
+      setErrImm("");
+      setErrTasks("");
+      setErrProfiles("");
+
+      // 1) Imersões
       try {
-        setLoading(true);
-        setError("");
-
-        const [im, t, p] = await Promise.all([
-          listImmersionsForDashboard(),
-          listLateTasksForDashboard(),
-          listProfilesForDashboard()
-        ]);
-
-        if (!mounted) return;
-
-        setImmersions(im);
-        setLateTasks(t);
-        setProfiles(p);
+        const im = await listImmersionsForDashboard();
+        if (mounted) setImmersions(im);
       } catch (e) {
-        if (mounted) setError(e?.message || "Falha ao carregar o dashboard.");
-      } finally {
-        if (mounted) setLoading(false);
+        if (mounted) setErrImm(e?.message || "Falha ao carregar imersões.");
       }
+
+      // 2) Profiles
+      try {
+        const p = await listProfilesForDashboard();
+        if (mounted) setProfiles(p);
+      } catch (e) {
+        if (mounted) setErrProfiles(e?.message || "Falha ao carregar usuários.");
+      }
+
+      // 3) Tasks
+      try {
+        const t = await listLateTasksForDashboard();
+        if (mounted) setLateTasks(t);
+      } catch (e) {
+        if (mounted) setErrTasks(e?.message || "Falha ao carregar tarefas.");
+      }
+
+      if (mounted) setLoading(false);
     }
 
     load();
@@ -89,17 +99,21 @@ export default function DashboardPage() {
     return map;
   }, [profiles]);
 
+  // Mapa imersões (para mostrar nome da imersão nas tarefas atrasadas)
+  const immersionById = useMemo(() => {
+    const map = new Map();
+    for (const i of immersions) map.set(i.id, i);
+    return map;
+  }, [immersions]);
+
   const upcoming = useMemo(() => {
-    // Mostra apenas as próximas 10 por data
     const list = [...immersions].filter((i) => i.start_date);
     list.sort((a, b) => (a.start_date < b.start_date ? -1 : 1));
     return list.slice(0, 10);
   }, [immersions]);
 
   const lateOnly = useMemo(() => {
-    return (lateTasks || [])
-      .filter((t) => isLate(t.due_date, t.status))
-      .slice(0, 20);
+    return (lateTasks || []).filter((t) => isLate(t.due_date, t.status)).slice(0, 20);
   }, [lateTasks]);
 
   const summary = useMemo(() => {
@@ -107,7 +121,6 @@ export default function DashboardPage() {
     const emPlanejamento = immersions.filter((i) => i.status === "Planejamento").length;
     const emExecucao = immersions.filter((i) => i.status === "Em execução").length;
     const concluidas = immersions.filter((i) => i.status === "Concluída").length;
-
     const totalLate = lateOnly.length;
 
     return { totalImm, emPlanejamento, emExecucao, concluidas, totalLate };
@@ -119,9 +132,12 @@ export default function DashboardPage() {
         <div className="h2">Resumo</div>
 
         {loading ? <div className="small">Carregando...</div> : null}
-        {error ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>{error}</div> : null}
 
-        {!loading && !error ? (
+        {errImm ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>Imersões: {errImm}</div> : null}
+        {errTasks ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>Tarefas: {errTasks}</div> : null}
+        {errProfiles ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>Usuários: {errProfiles}</div> : null}
+
+        {!loading && !errImm ? (
           <div className="row" style={{ gap: 10, flexWrap: "wrap", marginTop: 10 }}>
             <div className="card" style={{ minWidth: 220 }}>
               <div className="small">Imersões</div>
@@ -134,7 +150,7 @@ export default function DashboardPage() {
             <div className="card" style={{ minWidth: 220 }}>
               <div className="small">Tarefas atrasadas</div>
               <div className="h1" style={{ margin: 0 }}>{summary.totalLate}</div>
-              <div className="small">Exibindo até 20 no painel abaixo</div>
+              <div className="small">Exibindo até 20 no painel</div>
             </div>
           </div>
         ) : null}
@@ -207,7 +223,7 @@ export default function DashboardPage() {
             <div className="topbar" style={{ marginBottom: 10 }}>
               <div>
                 <div className="h2">Tarefas atrasadas</div>
-                <div className="small">Apenas tarefas com prazo no passado e não concluídas (até 20).</div>
+                <div className="small">Até 20 tarefas com prazo vencido e não concluídas.</div>
               </div>
             </div>
 
@@ -226,7 +242,7 @@ export default function DashboardPage() {
                 <tbody>
                   {lateOnly.map((t) => {
                     const prof = t.owner_profile_id ? profileById.get(t.owner_profile_id) : null;
-                    const im = t.immersions;
+                    const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
 
                     return (
                       <tr key={t.id}>
