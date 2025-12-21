@@ -220,59 +220,53 @@ tom: 12 }}>
         </div>
 
         <div className="col">
-          <div className="c<div className="card" style={{ maxHeight: 520, overflow: "auto" }}>
-ard">
-            <div className="topbar" style={{ marginBottom: 10 }}>
-              <div>
-                <div className="h2">Tarefas atrasadas</div>
-                <div className="small">Até 20 tarefas com prazo vencido e não concluídas.</div>
-              </div>
-            </div>
-
-            {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
-
-            {!loading && lateOnly.length > 0 ? (
-              <table className="table">
-              <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
-                  <tr>
-                    <th>Tarefa</th>
-                    <th>Prazo</th>
-                    <th>Responsável</th>
-                    <th>Imersão</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lateOnly.map((t) => {
-                    const prof = t.owner_profile_id ? profileById.get(t.owner_profile_id) : null;
-                    const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
-
-                    return (
-                      <tr key={t.id}>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{t.title}</div>
-                          <div className="small">{t.phase}</div>
-                        </td>
-                        <td>{t.due_date || "-"}</td>
-                        <td>{prof ? `${prof.name} (${prof.role})` : "-"}</td>
-                        <td>
-                          {im?.id ? (
-                            <button className="btn" type="button" onClick={() => router.push(`/imersoes/${im.id}`)}>
-                              {im.immersion_name || "Abrir"}
-                            </button>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : null}
-          </div>
-        </div>
+  <div className="card" style={{ maxHeight: 520, overflow: "auto" }}>
+    <div className="topbar" style={{ marginBottom: 10 }}>
+      <div>
+        <div className="h2">Tarefas atrasadas</div>
+        <div className="small">Até 20 tarefas com prazo vencido e não concluídas.</div>
       </div>
-    </Layout>
-  );
-}
+    </div>
 
+    {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
+
+    {!loading && lateOnly.length > 0 ? (
+      <table className="table">
+        <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
+          <tr>
+            <th>Tarefa</th>
+            <th>Prazo</th>
+            <th>Responsável</th>
+            <th>Imersão</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lateOnly.map((t) => {
+            const prof = t.owner_profile_id ? profileById.get(t.owner_profile_id) : null;
+            const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
+
+            return (
+              <tr key={t.id}>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{t.title}</div>
+                  <div className="small">{t.phase}</div>
+                </td>
+                <td>{t.due_date || "-"}</td>
+                <td>{prof ? `${prof.name} (${prof.role})` : "-"}</td>
+                <td>
+                  {im?.id ? (
+                    <button className="btn" type="button" onClick={() => router.push(`/imersoes/${im.id}`)}>
+                      {im.immersion_name || "Abrir"}
+                    </button>
+                  ) : (
+                    "-"
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    ) : null}
+  </div>
+</div>
