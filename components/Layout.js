@@ -22,12 +22,12 @@ export default function Layout({ title, children }) {
 <Link href="/dashboard" className="btn">Dashboard</Link>
 <Link href="/imersoes" className="btn">Imersões</Link>
 <Link href="/usuarios" className="btn">Usuários</Link>
-<button className="btn danger" onClick={handleLogout}>Sair</button>
-        </div>
+<button className="btn danger" onClick={onLogout}>Sair</button>        </div>
       </div>
 
       {children}
     </div>
   );
 }
+
 
