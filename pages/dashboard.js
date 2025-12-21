@@ -37,6 +37,8 @@ function isLate(dueDateStr, status) {
   return due.getTime() < today.getTime();
 }
 
+const STATUS_OPTIONS = ["Todos", "Planejamento", "Em execução", "Concluída", "Cancelada"];
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -45,6 +47,9 @@ export default function DashboardPage() {
   const [immersions, setImmersions] = useState([]);
   const [lateTasks, setLateTasks] = useState([]);
   const [profiles, setProfiles] = useState([]);
+
+  // filtro de status
+  const [statusFilter, setStatusFilter] = useState("Todos");
 
   // erros separados (não derruba o resto)
   const [errImm, setErrImm] = useState("");
@@ -106,31 +111,65 @@ export default function DashboardPage() {
     return map;
   }, [immersions]);
 
+  const immersionsFiltered = useMemo(() => {
+    if (statusFilter === "Todos") return immersions;
+    return immersions.filter((i) => (i.status || "").trim() === statusFilter);
+  }, [immersions, statusFilter]);
+
   const upcoming = useMemo(() => {
-    const list = [...immersions].filter((i) => i.start_date);
+    const list = [...immersionsFiltered].filter((i) => i.start_date);
     list.sort((a, b) => (a.start_date < b.start_date ? -1 : 1));
-    return list.slice(0, 10);
-  }, [immersions]);
+    return list.slice(0, 50); // com rolagem, podemos mostrar mais
+  }, [immersionsFiltered]);
 
   const lateOnly = useMemo(() => {
-    return (lateTasks || []).filter((t) => isLate(t.due_date, t.status)).slice(0, 20);
-  }, [lateTasks]);
+    // tarefas atrasadas independem do filtro de status? aqui vamos respeitar o filtro:
+    // se statusFilter != Todos, só mostra tarefas cuja imersão esteja nesse status.
+    const late = (lateTasks || []).filter((t) => isLate(t.due_date, t.status));
+
+    if (statusFilter === "Todos") return late.slice(0, 50);
+
+    const filtered = late.filter((t) => {
+      const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
+      return im && (im.status || "").trim() === statusFilter;
+    });
+
+    return filtered.slice(0, 50);
+  }, [lateTasks, statusFilter, immersionById]);
 
   const summary = useMemo(() => {
-    const totalImm = immersions.length;
-    const emPlanejamento = immersions.filter((i) => i.status === "Planejamento").length;
-    const emExecucao = immersions.filter((i) => i.status === "Em execução").length;
-    const concluidas = immersions.filter((i) => i.status === "Concluída").length;
+    const totalImm = immersionsFiltered.length;
+
+    const emPlanejamento = immersionsFiltered.filter((i) => i.status === "Planejamento").length;
+    const emExecucao = immersionsFiltered.filter((i) => i.status === "Em execução").length;
+    const concluidas = immersionsFiltered.filter((i) => i.status === "Concluída").length;
+
     const totalLate = lateOnly.length;
 
     return { totalImm, emPlanejamento, emExecucao, concluidas, totalLate };
-  }, [immersions, lateOnly]);
+  }, [immersionsFiltered, lateOnly]);
 
   return (
     <Layout title="Dashboard">
-      <div className="card" style={{ marginBot<div className="card" style={{ marginBottom: 12, maxHeight: 520, overflow: "auto" }}>
-tom: 12 }}>
-        <div className="h2">Resumo</div>
+      {/* Resumo */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="topbar" style={{ marginBottom: 10 }}>
+          <div>
+            <div className="h2">Resumo</div>
+            <div className="small">Filtrando por status: <b>{statusFilter}</b></div>
+          </div>
+
+          <div style={{ minWidth: 220 }}>
+            <div className="small" style={{ marginBottom: 6 }}>Filtro por status</div>
+            <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {loading ? <div className="small">Carregando...</div> : null}
 
@@ -151,19 +190,21 @@ tom: 12 }}>
             <div className="card" style={{ minWidth: 220 }}>
               <div className="small">Tarefas atrasadas</div>
               <div className="h1" style={{ margin: 0 }}>{summary.totalLate}</div>
-              <div className="small">Exibindo até 20 no painel</div>
+              <div className="small">Rolagem habilitada (até 50)</div>
             </div>
           </div>
         ) : null}
       </div>
 
+      {/* Painéis */}
       <div className="row" style={{ alignItems: "flex-start" }}>
+        {/* Próximas imersões */}
         <div className="col">
-          <div className="card" style={{ marginBottom: 12 }}>
+          <div className="card" style={{ marginBottom: 12, maxHeight: 520, overflow: "auto" }}>
             <div className="topbar" style={{ marginBottom: 10 }}>
               <div>
                 <div className="h2">Próximas imersões</div>
-                <div className="small">Ordenado por data de início (até 10).</div>
+                <div className="small">Ordenado por data de início (rolagem).</div>
               </div>
               <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
                 Ver todas
@@ -174,7 +215,7 @@ tom: 12 }}>
 
             {!loading && upcoming.length > 0 ? (
               <table className="table">
-                  <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
+                <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
                   <tr>
                     <th>Imersão</th>
                     <th>Início</th>
@@ -219,54 +260,59 @@ tom: 12 }}>
           </div>
         </div>
 
+        {/* Tarefas atrasadas */}
         <div className="col">
-  <div className="card" style={{ maxHeight: 520, overflow: "auto" }}>
-    <div className="topbar" style={{ marginBottom: 10 }}>
-      <div>
-        <div className="h2">Tarefas atrasadas</div>
-        <div className="small">Até 20 tarefas com prazo vencido e não concluídas.</div>
+          <div className="card" style={{ maxHeight: 520, overflow: "auto" }}>
+            <div className="topbar" style={{ marginBottom: 10 }}>
+              <div>
+                <div className="h2">Tarefas atrasadas</div>
+                <div className="small">Até 50 tarefas com prazo vencido e não concluídas (rolagem).</div>
+              </div>
+            </div>
+
+            {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
+
+            {!loading && lateOnly.length > 0 ? (
+              <table className="table">
+                <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
+                  <tr>
+                    <th>Tarefa</th>
+                    <th>Prazo</th>
+                    <th>Responsável</th>
+                    <th>Imersão</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lateOnly.map((t) => {
+                    const prof = t.owner_profile_id ? profileById.get(t.owner_profile_id) : null;
+                    const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
+
+                    return (
+                      <tr key={t.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{t.title}</div>
+                          <div className="small">{t.phase}</div>
+                        </td>
+                        <td>{t.due_date || "-"}</td>
+                        <td>{prof ? `${prof.name} (${prof.role})` : "-"}</td>
+                        <td>
+                          {im?.id ? (
+                            <button className="btn" type="button" onClick={() => router.push(`/imersoes/${im.id}`)}>
+                              {im.immersion_name || "Abrir"}
+                            </button>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+        </div>
       </div>
-    </div>
-
-    {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
-
-    {!loading && lateOnly.length > 0 ? (
-      <table className="table">
-        <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
-          <tr>
-            <th>Tarefa</th>
-            <th>Prazo</th>
-            <th>Responsável</th>
-            <th>Imersão</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lateOnly.map((t) => {
-            const prof = t.owner_profile_id ? profileById.get(t.owner_profile_id) : null;
-            const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
-
-            return (
-              <tr key={t.id}>
-                <td>
-                  <div style={{ fontWeight: 600 }}>{t.title}</div>
-                  <div className="small">{t.phase}</div>
-                </td>
-                <td>{t.due_date || "-"}</td>
-                <td>{prof ? `${prof.name} (${prof.role})` : "-"}</td>
-                <td>
-                  {im?.id ? (
-                    <button className="btn" type="button" onClick={() => router.push(`/imersoes/${im.id}`)}>
-                      {im.immersion_name || "Abrir"}
-                    </button>
-                  ) : (
-                    "-"
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    ) : null}
-  </div>
-</div>
+    </Layout>
+  );
+}
