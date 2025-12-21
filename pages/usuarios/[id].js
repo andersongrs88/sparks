@@ -10,10 +10,11 @@ const ROLES = [
   { key: "ADMIN", label: "Administrador" }
 ];
 
-function Field({ label, children }) {
+function Field({ label, children, hint }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="h2">{label}</div>
+      {hint ? <div className="small" style={{ marginBottom: 6 }}>{hint}</div> : null}
       {children}
     </div>
   );
@@ -36,17 +37,20 @@ export default function EditarUsuarioPage() {
     async function load() {
       try {
         setLoading(true);
+        setError("");
         const data = await getProfile(id);
         if (mounted) setForm(data);
       } catch (e) {
-        if (mounted) setError(e?.message || "Falha ao carregar.");
+        if (mounted) setError(e?.message || "Falha ao carregar usuário.");
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
     load();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [id]);
 
   function set(field, value) {
@@ -58,19 +62,23 @@ export default function EditarUsuarioPage() {
     if (!form) return;
 
     setError("");
-    if (!form.name.trim()) return setError("Preencha o nome.");
+    if (!form.name?.trim()) {
+      setError("Preencha o nome.");
+      return;
+    }
 
     try {
       setSaving(true);
       await updateProfile(form.id, {
         name: form.name.trim(),
         email: (form.email || "").trim() || null,
-        role: form.role,
+        role: form.role || "BASICO",
         is_active: !!form.is_active
       });
-      alert("Salvo.");
-    } catch (e) {
-      setError(e?.message || "Falha ao salvar.");
+
+      alert("Usuário salvo.");
+    } catch (e2) {
+      setError(e2?.message || "Falha ao salvar.");
     } finally {
       setSaving(false);
     }
@@ -78,6 +86,7 @@ export default function EditarUsuarioPage() {
 
   async function onDelete() {
     if (!form) return;
+
     const ok = confirm("Excluir este usuário? Essa ação não pode ser desfeita.");
     if (!ok) return;
 
@@ -85,8 +94,8 @@ export default function EditarUsuarioPage() {
       setRemoving(true);
       await deleteProfile(form.id);
       router.push("/usuarios");
-    } catch (e) {
-      setError(e?.message || "Falha ao excluir.");
+    } catch (e2) {
+      setError(e2?.message || "Falha ao excluir.");
     } finally {
       setRemoving(false);
     }
@@ -101,6 +110,11 @@ export default function EditarUsuarioPage() {
 
         {form ? (
           <>
+            <div className="h2">Editar usuário</div>
+            <div className="small" style={{ marginBottom: 12 }}>
+              Você pode desativar o usuário para ele não aparecer como responsável nas tarefas.
+            </div>
+
             <Field label="Nome">
               <input className="input" value={form.name || ""} onChange={(e) => set("name", e.target.value)} />
             </Field>
@@ -112,7 +126,9 @@ export default function EditarUsuarioPage() {
             <Field label="Tipo">
               <select className="input" value={form.role || "BASICO"} onChange={(e) => set("role", e.target.value)}>
                 {ROLES.map((r) => (
-                  <option key={r.key} value={r.key}>{r.label}</option>
+                  <option key={r.key} value={r.key}>
+                    {r.label}
+                  </option>
                 ))}
               </select>
             </Field>
@@ -123,15 +139,15 @@ export default function EditarUsuarioPage() {
             </label>
 
             <div className="row">
-              <button type="button" className="btn" onClick={() => router.push("/usuarios")}>
+              <button type="button" className="btn" onClick={() => router.push("/usuarios")} disabled={saving || removing}>
                 Voltar
               </button>
 
-              <button type="button" className="btn danger" onClick={onDelete} disabled={removing}>
+              <button type="button" className="btn danger" onClick={onDelete} disabled={saving || removing}>
                 {removing ? "Excluindo..." : "Excluir"}
               </button>
 
-              <button type="submit" className="btn primary" disabled={saving}>
+              <button type="submit" className="btn primary" disabled={saving || removing}>
                 {saving ? "Salvando..." : "Salvar"}
               </button>
             </div>
