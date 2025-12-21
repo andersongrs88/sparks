@@ -128,7 +128,8 @@ export default function DashboardPage() {
 
   return (
     <Layout title="Dashboard">
-      <div className="card" style={{ marginBottom: 12 }}>
+      <div className="card" style={{ marginBot<div className="card" style={{ marginBottom: 12, maxHeight: 520, overflow: "auto" }}>
+tom: 12 }}>
         <div className="h2">Resumo</div>
 
         {loading ? <div className="small">Carregando...</div> : null}
@@ -173,7 +174,7 @@ export default function DashboardPage() {
 
             {!loading && upcoming.length > 0 ? (
               <table className="table">
-                <thead>
+                  <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
                   <tr>
                     <th>Imersão</th>
                     <th>Início</th>
@@ -219,7 +220,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="col">
-          <div className="card">
+          <div className="c<div className="card" style={{ maxHeight: 520, overflow: "auto" }}>
+ard">
             <div className="topbar" style={{ marginBottom: 10 }}>
               <div>
                 <div className="h2">Tarefas atrasadas</div>
@@ -231,7 +233,7 @@ export default function DashboardPage() {
 
             {!loading && lateOnly.length > 0 ? (
               <table className="table">
-                <thead>
+              <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
                   <tr>
                     <th>Tarefa</th>
                     <th>Prazo</th>
@@ -273,3 +275,4 @@ export default function DashboardPage() {
     </Layout>
   );
 }
+
