@@ -19,9 +19,10 @@ export default function Layout({ title, children }) {
         </div>
 
         <div className="nav">
-          <Link className="btn" href="/dashboard">Dashboard</Link>
-          <Link className="btn" href="/imersoes">Imersões</Link>
-          <button className="btn danger" onClick={onLogout}>Sair</button>
+<Link href="/dashboard" className="btn">Dashboard</Link>
+<Link href="/imersoes" className="btn">Imersões</Link>
+<Link href="/usuarios" className="btn">Usuários</Link>
+<button className="btn danger" onClick={handleLogout}>Sair</button>
         </div>
       </div>
 
@@ -29,3 +30,4 @@ export default function Layout({ title, children }) {
     </div>
   );
 }
+
