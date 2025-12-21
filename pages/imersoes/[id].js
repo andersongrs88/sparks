@@ -4,6 +4,7 @@ import Layout from "../../components/Layout";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
 import { listTasksByImmersion, createTask, updateTask, deleteTask } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
+import { listActiveTaskTemplates } from "../../lib/taskTemplates";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 const PHASES = [
@@ -72,14 +73,12 @@ function getCountdownSignal(days) {
     return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
   }
 
-  // Faixas (ajustáveis)
   if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
   if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
   if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
   if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
   if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
 
-  // 1 a 9 dias => bordo
   return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
 }
 
@@ -90,6 +89,22 @@ function isLate(dueDateStr, status) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return due.getTime() < today.getTime();
+}
+
+// Soma dias a uma data YYYY-MM-DD e devolve YYYY-MM-DD
+function addDays(dateStr, offsetDays) {
+  if (!dateStr && dateStr !== "") return null;
+  if (offsetDays === null || offsetDays === undefined) return null;
+  if (Number.isNaN(Number(offsetDays))) return null;
+
+  const base = toLocalDateOnly(dateStr);
+  if (!base) return null;
+  base.setDate(base.getDate() + Number(offsetDays));
+
+  const yyyy = base.getFullYear();
+  const mm = String(base.getMonth() + 1).padStart(2, "0");
+  const dd = String(base.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export default function ImmersionDetailEditPage() {
@@ -111,6 +126,8 @@ export default function ImmersionDetailEditPage() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
+
+  const [generating, setGenerating] = useState(false);
 
   // criação de tarefa
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -374,6 +391,60 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
+  async function onGenerateChecklist() {
+    if (!form?.id) return;
+
+    const ok = confirm(
+      "Gerar checklist padrão agora?\n\nO sistema vai criar as tarefas que ainda não existirem nesta imersão (sem duplicar)."
+    );
+    if (!ok) return;
+
+    setTaskError("");
+    setGenerating(true);
+
+    try {
+      // 1) Templates
+      const templates = await listActiveTaskTemplates();
+
+      // 2) Tarefas já existentes (para não duplicar)
+      const existing = await listTasksByImmersion(form.id);
+      const existingKey = new Set(
+        (existing || []).map((t) => `${t.phase || ""}__${(t.title || "").trim().toLowerCase()}`)
+      );
+
+      let createdCount = 0;
+
+      // 3) Criar somente o que falta
+      for (const tpl of templates) {
+        const key = `${tpl.phase || ""}__${(tpl.title || "").trim().toLowerCase()}`;
+        if (existingKey.has(key)) continue;
+
+        // Prazo calculado
+        const baseDate = tpl.phase === "POS" ? form.end_date : form.start_date;
+        const due = tpl.days_offset === null || tpl.days_offset === undefined ? null : addDays(baseDate, tpl.days_offset);
+
+        await createTask({
+          immersion_id: form.id,
+          phase: tpl.phase,
+          title: tpl.title,
+          owner_profile_id: null, // você escolhe depois no dropdown
+          due_date: due,
+          status: "Programada",
+          notes: ""
+        });
+
+        createdCount += 1;
+      }
+
+      await loadTasks(form.id);
+      alert(`Checklist padrão gerado.\n\nTarefas criadas: ${createdCount}`);
+    } catch (e) {
+      setTaskError(e?.message || "Falha ao gerar checklist padrão.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   const staffEnabled = form?.need_specific_staff === true;
   const speakerEnabled = form?.will_have_speaker === true;
 
@@ -392,7 +463,8 @@ export default function ImmersionDetailEditPage() {
                 {form.immersion_name}
               </div>
               <div className="small">
-                {form.start_date} → {form.end_date} • Sala: {form.room_location || "-"} • Status: {form.status}
+                {form.start_date || "-"} → {form.end_date || "-"} • Sala: {form.room_location || "-"} • Status:{" "}
+                {form.status}
               </div>
             </div>
 
@@ -697,14 +769,20 @@ export default function ImmersionDetailEditPage() {
 
             <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
-                Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas: <b>{checklistSummary.late}</b>
+                Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas:{" "}
+                <b>{checklistSummary.late}</b>
               </div>
 
               <div className="row">
-                <button type="button" className="btn" onClick={() => loadTasks(form.id)} disabled={tasksLoading}>
+                <button type="button" className="btn" onClick={() => loadTasks(form.id)} disabled={tasksLoading || generating}>
                   {tasksLoading ? "Atualizando..." : "Atualizar"}
                 </button>
-                <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)}>
+
+                <button type="button" className="btn" onClick={onGenerateChecklist} disabled={generating || tasksLoading}>
+                  {generating ? "Gerando..." : "Gerar checklist padrão"}
+                </button>
+
+                <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={generating}>
                   {newTaskOpen ? "Fechar" : "Nova tarefa"}
                 </button>
               </div>
@@ -750,12 +828,6 @@ export default function ImmersionDetailEditPage() {
                       </option>
                     ))}
                   </select>
-
-                  {profiles.length === 0 ? (
-                    <div className="small" style={{ marginTop: 6 }}>
-                      Cadastre usuários na tabela <b>profiles</b> (ou na tela /usuarios quando estiver pronta).
-                    </div>
-                  ) : null}
                 </Field>
 
                 <div className="row">
