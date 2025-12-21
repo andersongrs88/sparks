@@ -12,20 +12,17 @@ const PHASES = [
   { key: "POS", label: "PÓS" }
 ];
 
-const ROLES = [
-  { key: "CONSULTOR", label: "Consultor" },
-  { key: "DESIGNER", label: "Designer" },
-  { key: "BASICO", label: "Básico" },
-  { key: "ADMIN", label: "Administrador" }
-];
-
 const TASK_STATUSES = ["Programada", "Em andamento", "Concluída"];
 
 function Field({ label, children, hint }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="h2">{label}</div>
-      {hint ? <div className="small" style={{ marginBottom: 6 }}>{hint}</div> : null}
+      {hint ? (
+        <div className="small" style={{ marginBottom: 6 }}>
+          {hint}
+        </div>
+      ) : null}
       {children}
     </div>
   );
@@ -48,8 +45,9 @@ function Tabs({ tabs, active, onChange }) {
   );
 }
 
+// Converte qualquer data recebida (YYYY-MM-DD ou ISO) para "somente data" no horário local
 function toLocalDateOnly(d) {
-  // Aceita "YYYY-MM-DD" ou ISO com horário
+  if (!d) return null;
   const date = typeof d === "string" ? new Date(d) : d;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -65,33 +63,34 @@ function daysUntil(startDateValue) {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-function isLate(dueDateStr, status) {
-  if (!dueDateStr) return false;
-  if (status === "Concluída") return false;
-  const due = new Date(dueDateStr + "T00:00:00");
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return due.getTime() < today.getTime();
-}
+// Farol por dias
 function getCountdownSignal(days) {
   if (days === null) return null;
 
-  // Se já passou, trata como crítico
+  // Hoje ou passado => crítico
   if (days <= 0) {
     return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
   }
 
-  // Faixas (pode ajustar depois)
+  // Faixas (ajustáveis)
   if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
   if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
   if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
   if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
-  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // vermelho bordo
+  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
 
-  // 1 a 9 dias
+  // 1 a 9 dias => bordo
   return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
 }
 
+function isLate(dueDateStr, status) {
+  if (!dueDateStr) return false;
+  if (status === "Concluída") return false;
+  const due = toLocalDateOnly(dueDateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return due.getTime() < today.getTime();
+}
 
 export default function ImmersionDetailEditPage() {
   const router = useRouter();
@@ -106,7 +105,7 @@ export default function ImmersionDetailEditPage() {
 
   const [form, setForm] = useState(null);
 
-  // checklist
+  // Checklist
   const [profiles, setProfiles] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -115,7 +114,6 @@ export default function ImmersionDetailEditPage() {
 
   // criação de tarefa
   const [newTaskOpen, setNewTaskOpen] = useState(false);
-  const [roleFilter, setRoleFilter] = useState("CONSULTOR");
   const [newTask, setNewTask] = useState({
     phase: "PA-PRE",
     title: "",
@@ -137,6 +135,7 @@ export default function ImmersionDetailEditPage() {
     []
   );
 
+  // Carrega imersão
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     let mounted = true;
@@ -155,10 +154,12 @@ export default function ImmersionDetailEditPage() {
     }
 
     load();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [id]);
 
-  // Carregar profiles (usuários) uma vez
+  // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
     let mounted = true;
 
@@ -166,34 +167,23 @@ export default function ImmersionDetailEditPage() {
       try {
         const data = await listActiveProfiles();
         if (!mounted) return;
+
         setProfiles(data);
 
-        // Seleciona automaticamente um responsável padrão (primeiro do filtro)
-        const filtered = data.filter((p) => p.role === roleFilter);
-        if (filtered.length > 0) {
-          setNewTask((prev) => ({ ...prev, owner_profile_id: filtered[0].id }));
-        } else if (data.length > 0) {
+        // Define automaticamente o primeiro usuário como responsável padrão
+        if (data.length > 0) {
           setNewTask((prev) => ({ ...prev, owner_profile_id: data[0].id }));
         }
       } catch (e) {
-        // não trava o sistema, mas registra
         console.error(e);
       }
     }
 
     loadProfiles();
-    return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      mounted = false;
+    };
   }, []);
-
-  // Se mudar o filtro, ajusta owner_profile_id para o primeiro do filtro
-  useEffect(() => {
-    if (!profiles || profiles.length === 0) return;
-    const filtered = profiles.filter((p) => p.role === roleFilter);
-    if (filtered.length > 0) {
-      setNewTask((prev) => ({ ...prev, owner_profile_id: filtered[0].id }));
-    }
-  }, [roleFilter, profiles]);
 
   async function loadTasks(immersionId) {
     setTaskError("");
@@ -208,7 +198,7 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
-  // Carrega tasks quando entrar na aba Checklist
+  // Carrega tasks quando entra na aba Checklist
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     if (tab !== "checklist") return;
@@ -386,11 +376,9 @@ export default function ImmersionDetailEditPage() {
 
   const staffEnabled = form?.need_specific_staff === true;
   const speakerEnabled = form?.will_have_speaker === true;
-  const d = daysUntil(form?.start_date);
 
-  const filteredProfiles = useMemo(() => {
-    return profiles.filter((p) => p.role === roleFilter);
-  }, [profiles, roleFilter]);
+  const d = daysUntil(form?.start_date);
+  const signal = getCountdownSignal(d);
 
   return (
     <Layout title="Editar imersão">
@@ -400,32 +388,30 @@ export default function ImmersionDetailEditPage() {
         ) : form ? (
           <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div className="h1" style={{ margin: 0 }}>{form.immersion_name}</div>
+              <div className="h1" style={{ margin: 0 }}>
+                {form.immersion_name}
+              </div>
               <div className="small">
                 {form.start_date} → {form.end_date} • Sala: {form.room_location || "-"} • Status: {form.status}
               </div>
             </div>
 
             <div className="row">
-{(() => {
-  const signal = getCountdownSignal(d);
-  if (!signal) return null;
+              {signal ? (
+                <span
+                  className="badge"
+                  style={{
+                    ...signal.style,
+                    border: "1px solid",
+                    padding: "6px 10px",
+                    borderRadius: 999
+                  }}
+                  title="Dias até a data de início"
+                >
+                  {signal.label} até
+                </span>
+              ) : null}
 
-  return (
-    <span
-      className="badge"
-      style={{
-        ...signal.style,
-        border: "1px solid",
-        padding: "6px 10px",
-        borderRadius: 999
-      }}
-      title="Dias até a data de início"
-    >
-      {signal.label} até
-    </span>
-  );
-})()}
               <button type="button" className="btn danger" onClick={onDeleteImmersion} disabled={removing}>
                 {removing ? "Excluindo..." : "Excluir"}
               </button>
@@ -468,7 +454,9 @@ export default function ImmersionDetailEditPage() {
             <Field label="Sala a ser realizada">
               <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
                 {ROOMS.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
             </Field>
@@ -730,13 +718,11 @@ export default function ImmersionDetailEditPage() {
                 <div className="h2">Nova tarefa</div>
 
                 <Field label="Fase">
-                  <select
-                    className="input"
-                    value={newTask.phase}
-                    onChange={(e) => setNewTask((p) => ({ ...p, phase: e.target.value }))}
-                  >
+                  <select className="input" value={newTask.phase} onChange={(e) => setNewTask((p) => ({ ...p, phase: e.target.value }))}>
                     {PHASES.map((p) => (
-                      <option key={p.key} value={p.key}>{p.label}</option>
+                      <option key={p.key} value={p.key}>
+                        {p.label}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -750,38 +736,24 @@ export default function ImmersionDetailEditPage() {
                   />
                 </Field>
 
-                <Field label="Tipo do usuário (filtro)">
-                  <select
-                    className="input"
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r.key} value={r.key}>{r.label}</option>
-                    ))}
-                  </select>
-                </Field>
-
                 <Field label="Responsável">
                   <select
                     className="input"
                     value={newTask.owner_profile_id}
                     onChange={(e) => setNewTask((p) => ({ ...p, owner_profile_id: e.target.value }))}
                   >
-                    {filteredProfiles.length === 0 ? (
-                      <option value="">Nenhum usuário ativo desse tipo</option>
-                    ) : null}
+                    {profiles.length === 0 ? <option value="">Nenhum usuário ativo cadastrado</option> : null}
 
-                    {filteredProfiles.map((p) => (
+                    {profiles.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} ({p.role})
                       </option>
                     ))}
                   </select>
 
-                  {filteredProfiles.length === 0 ? (
+                  {profiles.length === 0 ? (
                     <div className="small" style={{ marginTop: 6 }}>
-                      Cadastre um usuário desse tipo na tabela <b>profiles</b> (Supabase).
+                      Cadastre usuários na tabela <b>profiles</b> (ou na tela /usuarios quando estiver pronta).
                     </div>
                   ) : null}
                 </Field>
@@ -789,24 +761,17 @@ export default function ImmersionDetailEditPage() {
                 <div className="row">
                   <div className="col">
                     <Field label="Prazo">
-                      <input
-                        className="input"
-                        type="date"
-                        value={newTask.due_date}
-                        onChange={(e) => setNewTask((p) => ({ ...p, due_date: e.target.value }))}
-                      />
+                      <input className="input" type="date" value={newTask.due_date} onChange={(e) => setNewTask((p) => ({ ...p, due_date: e.target.value }))} />
                     </Field>
                   </div>
 
                   <div className="col">
                     <Field label="Status">
-                      <select
-                        className="input"
-                        value={newTask.status}
-                        onChange={(e) => setNewTask((p) => ({ ...p, status: e.target.value }))}
-                      >
+                      <select className="input" value={newTask.status} onChange={(e) => setNewTask((p) => ({ ...p, status: e.target.value }))}>
                         {TASK_STATUSES.map((s) => (
-                          <option key={s} value={s}>{s}</option>
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
                         ))}
                       </select>
                     </Field>
@@ -814,29 +779,14 @@ export default function ImmersionDetailEditPage() {
                 </div>
 
                 <Field label="Observações">
-                  <textarea
-                    className="input"
-                    rows={3}
-                    value={newTask.notes}
-                    onChange={(e) => setNewTask((p) => ({ ...p, notes: e.target.value }))}
-                  />
+                  <textarea className="input" rows={3} value={newTask.notes} onChange={(e) => setNewTask((p) => ({ ...p, notes: e.target.value }))} />
                 </Field>
 
                 <div className="row">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setNewTaskOpen(false)}
-                    disabled={taskSaving}
-                  >
+                  <button type="button" className="btn" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
                     Cancelar
                   </button>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={onCreateTask}
-                    disabled={taskSaving}
-                  >
+                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving}>
                     {taskSaving ? "Criando..." : "Criar tarefa"}
                   </button>
                 </div>
@@ -879,31 +829,21 @@ export default function ImmersionDetailEditPage() {
                               <td>{t.due_date || "-"}</td>
 
                               <td>
-                                <select
-                                  className="input"
-                                  value={t.status}
-                                  onChange={(e) => onQuickUpdateTask(t.id, { status: e.target.value })}
-                                >
+                                <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t.id, { status: e.target.value })}>
                                   {TASK_STATUSES.map((s) => (
-                                    <option key={s} value={s}>{s}</option>
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
                                   ))}
                                 </select>
                               </td>
 
                               <td>
                                 <div className="row">
-                                  <button
-                                    type="button"
-                                    className="btn"
-                                    onClick={() => onQuickUpdateTask(t.id, { status: "Concluída" })}
-                                  >
+                                  <button type="button" className="btn" onClick={() => onQuickUpdateTask(t.id, { status: "Concluída" })}>
                                     Concluir
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="btn danger"
-                                    onClick={() => onDeleteTask(t.id)}
-                                  >
+                                  <button type="button" className="btn danger" onClick={() => onDeleteTask(t.id)}>
                                     Excluir
                                   </button>
                                 </div>
@@ -942,5 +882,3 @@ export default function ImmersionDetailEditPage() {
     </Layout>
   );
 }
-
-
