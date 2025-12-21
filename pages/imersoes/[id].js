@@ -48,11 +48,19 @@ function Tabs({ tabs, active, onChange }) {
   );
 }
 
-function daysUntil(startDateStr) {
-  if (!startDateStr) return null;
-  const start = new Date(startDateStr + "T00:00:00");
+function toLocalDateOnly(d) {
+  // Aceita "YYYY-MM-DD" ou ISO com horário
+  const date = typeof d === "string" ? new Date(d) : d;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function daysUntil(startDateValue) {
+  if (!startDateValue) return null;
+
+  const start = toLocalDateOnly(startDateValue);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
   const diffMs = start.getTime() - today.getTime();
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
@@ -897,3 +905,4 @@ export default function ImmersionDetailEditPage() {
     </Layout>
   );
 }
+
