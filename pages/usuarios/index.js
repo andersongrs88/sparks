@@ -1,13 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { listProfiles } from "../../lib/profiles";
 
+const ROLES_LABEL = {
+  CONSULTOR: "Consultor",
+  DESIGNER: "Designer",
+  BASICO: "Básico",
+  ADMIN: "Administrador"
+};
+
 export default function UsuariosListPage() {
   const router = useRouter();
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -15,6 +25,7 @@ export default function UsuariosListPage() {
     async function load() {
       try {
         setLoading(true);
+        setError("");
         const data = await listProfiles();
         if (mounted) setItems(data);
       } catch (e) {
@@ -25,30 +36,54 @@ export default function UsuariosListPage() {
     }
 
     load();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  const filtered = useMemo(() => {
+    const q = (search || "").trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((u) => {
+      return (
+        (u.name || "").toLowerCase().includes(q) ||
+        (u.email || "").toLowerCase().includes(q) ||
+        (u.role || "").toLowerCase().includes(q)
+      );
+    });
+  }, [items, search]);
 
   return (
     <Layout title="Usuários">
       <div className="card">
-        <div className="topbar" style={{ marginBottom: 10 }}>
+        <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
             <div className="h2">Usuários</div>
-            <div className="small">Cadastre responsáveis (Consultor, Designer, Básico, Administrador).</div>
+            <div className="small">Aqui você cadastra responsáveis para usar nas tarefas do Checklist.</div>
           </div>
-          <button className="btn primary" onClick={() => router.push("/usuarios/novo")}>
+
+          <button className="btn primary" type="button" onClick={() => router.push("/usuarios/novo")}>
             Novo usuário
           </button>
         </div>
 
-        {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{error}</div> : null}
+        <div className="row" style={{ marginBottom: 12 }}>
+          <input
+            className="input"
+            placeholder="Buscar por nome, email ou tipo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{error}</div> : null}
         {loading ? <div className="small">Carregando...</div> : null}
 
-        {!loading && items.length === 0 ? (
-          <div className="small">Nenhum usuário cadastrado ainda.</div>
+        {!loading && filtered.length === 0 ? (
+          <div className="small">Nenhum usuário encontrado.</div>
         ) : null}
 
-        {!loading && items.length > 0 ? (
+        {!loading && filtered.length > 0 ? (
           <table className="table">
             <thead>
               <tr>
@@ -58,12 +93,13 @@ export default function UsuariosListPage() {
                 <th>Ativo</th>
               </tr>
             </thead>
+
             <tbody>
-              {items.map((u) => (
+              {filtered.map((u) => (
                 <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => router.push(`/usuarios/${u.id}`)}>
                   <td>{u.name}</td>
                   <td>{u.email || "-"}</td>
-                  <td>{u.role}</td>
+                  <td>{ROLES_LABEL[u.role] || u.role || "-"}</td>
                   <td>{u.is_active ? "Sim" : "Não"}</td>
                 </tr>
               ))}
@@ -72,7 +108,7 @@ export default function UsuariosListPage() {
         ) : null}
 
         <div className="small" style={{ marginTop: 12 }}>
-          Dica: clique em um usuário para editar ou desativar.
+          Dica: clique em um usuário para editar/ativar/desativar.
         </div>
       </div>
     </Layout>
