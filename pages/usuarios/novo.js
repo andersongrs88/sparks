@@ -10,10 +10,11 @@ const ROLES = [
   { key: "ADMIN", label: "Administrador" }
 ];
 
-function Field({ label, children }) {
+function Field({ label, children, hint }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="h2">{label}</div>
+      {hint ? <div className="small" style={{ marginBottom: 6 }}>{hint}</div> : null}
       {children}
     </div>
   );
@@ -21,7 +22,14 @@ function Field({ label, children }) {
 
 export default function NovoUsuarioPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", email: "", role: "BASICO", is_active: true });
+
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    role: "BASICO",
+    is_active: true
+  });
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -33,7 +41,10 @@ export default function NovoUsuarioPage() {
     e.preventDefault();
     setError("");
 
-    if (!form.name.trim()) return setError("Preencha o nome.");
+    if (!form.name.trim()) {
+      setError("Preencha o nome.");
+      return;
+    }
 
     try {
       setSaving(true);
@@ -41,11 +52,12 @@ export default function NovoUsuarioPage() {
         name: form.name.trim(),
         email: form.email.trim() || null,
         role: form.role,
-        is_active: form.is_active
+        is_active: !!form.is_active
       });
+
       router.push("/usuarios");
-    } catch (e) {
-      setError(e?.message || "Falha ao salvar.");
+    } catch (e2) {
+      setError(e2?.message || "Falha ao salvar.");
     } finally {
       setSaving(false);
     }
@@ -54,6 +66,11 @@ export default function NovoUsuarioPage() {
   return (
     <Layout title="Novo usuário">
       <form className="card" onSubmit={onSubmit}>
+        <div className="h2">Cadastrar usuário</div>
+        <div className="small" style={{ marginBottom: 12 }}>
+          Este usuário aparecerá no campo <b>Responsável</b> ao criar tarefas do Checklist.
+        </div>
+
         {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{error}</div> : null}
 
         <Field label="Nome">
@@ -67,7 +84,9 @@ export default function NovoUsuarioPage() {
         <Field label="Tipo">
           <select className="input" value={form.role} onChange={(e) => set("role", e.target.value)}>
             {ROLES.map((r) => (
-              <option key={r.key} value={r.key}>{r.label}</option>
+              <option key={r.key} value={r.key}>
+                {r.label}
+              </option>
             ))}
           </select>
         </Field>
@@ -78,9 +97,10 @@ export default function NovoUsuarioPage() {
         </label>
 
         <div className="row">
-          <button type="button" className="btn" onClick={() => router.push("/usuarios")}>
+          <button type="button" className="btn" onClick={() => router.push("/usuarios")} disabled={saving}>
             Cancelar
           </button>
+
           <button type="submit" className="btn primary" disabled={saving}>
             {saving ? "Salvando..." : "Salvar"}
           </button>
