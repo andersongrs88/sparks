@@ -73,6 +73,25 @@ function isLate(dueDateStr, status) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return due.getTime() < today.getTime();
 }
+function getCountdownSignal(days) {
+  if (days === null) return null;
+
+  // Se já passou, trata como crítico
+  if (days <= 0) {
+    return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
+  }
+
+  // Faixas (pode ajustar depois)
+  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
+  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
+  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
+  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
+  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // vermelho bordo
+
+  // 1 a 9 dias
+  return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
+}
+
 
 export default function ImmersionDetailEditPage() {
   const router = useRouter();
@@ -388,7 +407,25 @@ export default function ImmersionDetailEditPage() {
             </div>
 
             <div className="row">
-              {d !== null ? <span className="badge">{d} dias até</span> : null}
+{(() => {
+  const signal = getCountdownSignal(d);
+  if (!signal) return null;
+
+  return (
+    <span
+      className="badge"
+      style={{
+        ...signal.style,
+        border: "1px solid",
+        padding: "6px 10px",
+        borderRadius: 999
+      }}
+      title="Dias até a data de início"
+    >
+      {signal.label} até
+    </span>
+  );
+})()}
               <button type="button" className="btn danger" onClick={onDeleteImmersion} disabled={removing}>
                 {removing ? "Excluindo..." : "Excluir"}
               </button>
@@ -905,4 +942,5 @@ export default function ImmersionDetailEditPage() {
     </Layout>
   );
 }
+
 
