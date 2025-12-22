@@ -558,23 +558,48 @@ export default function ImmersionDetailEditPage() {
 
             <div className="row">
               <div className="col">
-                <Field label="Consultor educacional">
-                  <input
-                    className="input"
-                    value={form.educational_consultant || ""}
-                    onChange={(e) => set("educational_consultant", e.target.value)}
-                  />
-                </Field>
-              </div>
+               // 🔽 coloque isso junto do seu código (antes do return), pode ficar perto do profileById:
+const consultants = useMemo(() => {
+  return (profiles || []).filter((p) => (p.role || "").toLowerCase() === "consultor");
+}, [profiles]);
 
-              <div className="col">
-                <Field label="Designer instrucional">
-                  <input
-                    className="input"
-                    value={form.instructional_designer || ""}
-                    onChange={(e) => set("instructional_designer", e.target.value)}
-                  />
-                </Field>
+const designers = useMemo(() => {
+  const r = (p) => (p.role || "").toLowerCase();
+  return (profiles || []).filter((p) => r(p) === "designer" || r(p).includes("designer"));
+}, [profiles]);
+
+// ...e no JSX da aba Operação:
+
+<Field label="Consultor educacional" hint="Carregado da tabela de usuários (profiles) — role Consultor">
+  <select
+    className="input"
+    value={form.educational_consultant || ""}
+    onChange={(e) => set("educational_consultant", e.target.value)}
+  >
+    <option value="">Selecione...</option>
+    {consultants.map((p) => (
+      <option key={p.id} value={p.name}>
+        {p.name}
+      </option>
+    ))}
+  </select>
+</Field>
+
+<Field label="Designer instrucional" hint="Carregado da tabela de usuários (profiles) — role Designer">
+  <select
+    className="input"
+    value={form.instructional_designer || ""}
+    onChange={(e) => set("instructional_designer", e.target.value)}
+  >
+    <option value="">Selecione...</option>
+    {designers.map((p) => (
+      <option key={p.id} value={p.name}>
+        {p.name}
+      </option>
+    ))}
+  </select>
+</Field>
+
               </div>
             </div>
 
@@ -1079,3 +1104,4 @@ export default function ImmersionDetailEditPage() {
     </Layout>
   );
 }
+
