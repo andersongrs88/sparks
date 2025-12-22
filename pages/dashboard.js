@@ -214,7 +214,7 @@ export default function DashboardPage() {
             {!loading && upcoming.length === 0 ? <div className="small">Nenhuma imersão encontrada.</div> : null}
 
             {!loading && upcoming.length > 0 ? (
-              <table className="table">
+             <table className="table sticky">
                 <thead>                  <tr>
 <tr>
   <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Imersão</th>
@@ -275,7 +275,7 @@ export default function DashboardPage() {
             {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
 
             {!loading && lateOnly.length > 0 ? (
-              <table className="table">
+<table className="table sticky">
 <thead>                  <tr>
 <tr>
   <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Tarefa</th>
@@ -320,5 +320,6 @@ export default function DashboardPage() {
     </Layout>
   );
 }
+
 
 
