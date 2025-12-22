@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { logout } from "../lib/auth";
+import { APP_VERSION } from "../lib/version";
 
 export default function Layout({ title, children }) {
   const router = useRouter();
@@ -27,6 +28,11 @@ export default function Layout({ title, children }) {
       </div>
 
       {children}
+  <div style={{ marginTop: 16, textAlign: "center" }} className="small">
+  Versão: <b>{APP_VERSION}</b>
+</div>
+
     </div>
   );
 }
+
