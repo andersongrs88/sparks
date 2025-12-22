@@ -15,6 +15,7 @@ const PHASES = [
 const TASK_STATUSES = ["Programada", "Em andamento", "Concluída"];
 
 function Field({ label, children, hint }) {
+  console.log("VERSAO CHECKLIST COM NOTAS ATIVA");
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="h2">{label}</div>
@@ -587,14 +588,17 @@ export default function ImmersionDetailEditPage() {
                               </td>
 
                               {/* ✅ Notas inline */}
-                              <td>
-                                <input
-                                  className="input"
-                                  value={t.notes || ""}
-                                  onChange={(e) => onInlineUpdate(t.id, { notes: e.target.value })}
-                                  placeholder="Opcional"
-                                />
-                              </td>
+<td style={{ minWidth: 260 }}>
+  <textarea
+    className="input"
+    rows={2}
+    value={t.notes || ""}
+    onChange={(e) => onInlineUpdate(t.id, { notes: e.target.value })}
+    placeholder="Observações..."
+    style={{ resize: "vertical" }}
+  />
+</td>
+
 
                               <td>
                                 <div className="row">
@@ -636,3 +640,4 @@ export default function ImmersionDetailEditPage() {
     </Layout>
   );
 }
+
