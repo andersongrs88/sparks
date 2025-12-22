@@ -109,3 +109,22 @@ a { color: inherit; text-decoration: none; }
   flex-wrap: wrap;
 }
 .small { color: var(--muted); font-size: 13px; }
+/* Dashboard: permite cabeçalho sticky funcionar */
+.table.sticky {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Congela o cabeçalho */
+.table.sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--card); /* fundo sólido */
+}
+
+/* Evita “linha vazando” por baixo do cabeçalho */
+.table.sticky thead th {
+  box-shadow: 0 1px 0 var(--line);
+}
+
