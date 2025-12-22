@@ -215,18 +215,14 @@ export default function DashboardPage() {
 
             {!loading && upcoming.length > 0 ? (
               <table className="table">
-                <thead
-                  style={{
-                    position: "sticky",
-                    top: 0,
-                    background: "#0b1220", // cor sólida (evita transparência bugada)
-                    zIndex: 2
-                  }}
-                >                  <tr>
-                    <th>Imersão</th>
-                    <th>Início</th>
-                    <th>Dias</th>
-                    <th>Status</th>
+                <thead>                  <tr>
+<tr>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Imersão</th>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Início</th>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Dias</th>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Status</th>
+</tr>
+>
                   </tr>
                 </thead>
                 <tbody>
@@ -280,18 +276,14 @@ export default function DashboardPage() {
 
             {!loading && lateOnly.length > 0 ? (
               <table className="table">
-<thead
-  style={{
-    position: "sticky",
-    top: 0,
-    background: "#0b1220", // cor sólida (evita transparência bugada)
-    zIndex: 2
-  }}
->                  <tr>
-                    <th>Tarefa</th>
-                    <th>Prazo</th>
-                    <th>Responsável</th>
-                    <th>Imersão</th>
+<thead>                  <tr>
+<tr>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Tarefa</th>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Prazo</th>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Responsável</th>
+  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Imersão</th>
+</tr>
+
                   </tr>
                 </thead>
                 <tbody>
@@ -328,4 +320,5 @@ export default function DashboardPage() {
     </Layout>
   );
 }
+
 
