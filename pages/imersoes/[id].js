@@ -307,6 +307,16 @@ export default function ImmersionDetailEditPage() {
     return map;
   }, [profiles]);
 
+  // ====== FILTROS PARA A ABA OPERAÇÃO (Consultor/Designer) ======
+  const consultants = useMemo(() => {
+    return (profiles || []).filter((p) => (p.role || "").trim().toLowerCase() === "consultor");
+  }, [profiles]);
+
+  const designers = useMemo(() => {
+    const role = (p) => (p.role || "").trim().toLowerCase();
+    return (profiles || []).filter((p) => role(p) === "designer" || role(p).includes("designer"));
+  }, [profiles]);
+
   const tasksByPhase = useMemo(() => {
     const map = { "PA-PRE": [], DURANTE: [], POS: [] };
     for (const t of tasks) {
@@ -332,8 +342,6 @@ export default function ImmersionDetailEditPage() {
       return;
     }
 
-    // pode ser vazio (sem responsável) se você quiser, mas você pediu antes que carregue conforme tabela
-    // então vamos manter a validação:
     if (!newTask.owner_profile_id) {
       setTaskError("Selecione um responsável.");
       return;
@@ -422,7 +430,6 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
-  // ✅ UPDATE INLINE (sem recarregar tudo)
   async function onInlineUpdate(taskId, patch) {
     setTaskError("");
     try {
@@ -451,8 +458,7 @@ export default function ImmersionDetailEditPage() {
                 {form.immersion_name}
               </div>
               <div className="small">
-                {form.start_date || "-"} → {form.end_date || "-"} • Sala: {form.room_location || "-"} • Status:{" "}
-                {form.status}
+                {form.start_date || "-"} → {form.end_date || "-"} • Sala: {form.room_location || "-"} • Status: {form.status}
               </div>
             </div>
 
@@ -496,33 +502,19 @@ export default function ImmersionDetailEditPage() {
             <div className="h2">Identificação</div>
 
             <Field label="Imersão">
-              <input
-                className="input"
-                value={form.immersion_name || ""}
-                onChange={(e) => set("immersion_name", e.target.value)}
-              />
+              <input className="input" value={form.immersion_name || ""} onChange={(e) => set("immersion_name", e.target.value)} />
             </Field>
 
             <div className="row">
               <div className="col">
                 <Field label="Data de início">
-                  <input
-                    className="input"
-                    type="date"
-                    value={form.start_date || ""}
-                    onChange={(e) => set("start_date", e.target.value)}
-                  />
+                  <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
                 </Field>
               </div>
 
               <div className="col">
                 <Field label="Data de fim">
-                  <input
-                    className="input"
-                    type="date"
-                    value={form.end_date || ""}
-                    onChange={(e) => set("end_date", e.target.value)}
-                  />
+                  <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                 </Field>
               </div>
             </div>
@@ -558,84 +550,46 @@ export default function ImmersionDetailEditPage() {
 
             <div className="row">
               <div className="col">
-               // 🔽 coloque isso junto do seu código (antes do return), pode ficar perto do profileById:
-const consultants = useMemo(() => {
-  return (profiles || []).filter((p) => (p.role || "").toLowerCase() === "consultor");
-}, [profiles]);
+                <Field label="Consultor educacional" hint="Carregado da tabela de usuários (profiles) — role Consultor">
+                  <select className="input" value={form.educational_consultant || ""} onChange={(e) => set("educational_consultant", e.target.value)}>
+                    <option value="">Selecione...</option>
+                    {consultants.map((p) => (
+                      <option key={p.id} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
 
-const designers = useMemo(() => {
-  const r = (p) => (p.role || "").toLowerCase();
-  return (profiles || []).filter((p) => r(p) === "designer" || r(p).includes("designer"));
-}, [profiles]);
-
-// ...e no JSX da aba Operação:
-
-<Field label="Consultor educacional" hint="Carregado da tabela de usuários (profiles) — role Consultor">
-  <select
-    className="input"
-    value={form.educational_consultant || ""}
-    onChange={(e) => set("educational_consultant", e.target.value)}
-  >
-    <option value="">Selecione...</option>
-    {consultants.map((p) => (
-      <option key={p.id} value={p.name}>
-        {p.name}
-      </option>
-    ))}
-  </select>
-</Field>
-
-<Field label="Designer instrucional" hint="Carregado da tabela de usuários (profiles) — role Designer">
-  <select
-    className="input"
-    value={form.instructional_designer || ""}
-    onChange={(e) => set("instructional_designer", e.target.value)}
-  >
-    <option value="">Selecione...</option>
-    {designers.map((p) => (
-      <option key={p.id} value={p.name}>
-        {p.name}
-      </option>
-    ))}
-  </select>
-</Field>
-
+              <div className="col">
+                <Field label="Designer instrucional" hint="Carregado da tabela de usuários (profiles) — role Designer">
+                  <select className="input" value={form.instructional_designer || ""} onChange={(e) => set("instructional_designer", e.target.value)}>
+                    <option value="">Selecione...</option>
+                    {designers.map((p) => (
+                      <option key={p.id} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </div>
             </div>
 
             <Field label="Link ordem de serviço">
-              <input
-                className="input"
-                value={form.service_order_link || ""}
-                onChange={(e) => set("service_order_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Link para ficha técnica">
-              <input
-                className="input"
-                value={form.technical_sheet_link || ""}
-                onChange={(e) => set("technical_sheet_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Mentores que estarão presentes" hint="Campo aberto (pode colocar nomes, times, etc.)">
-              <textarea
-                className="input"
-                rows={4}
-                value={form.mentors_present || ""}
-                onChange={(e) => set("mentors_present", e.target.value)}
-              />
+              <textarea className="input" rows={4} value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} />
             </Field>
 
             <Field label="Existe a necessidade de staff específico para essa imersão?">
-              <select
-                className="input"
-                value={form.need_specific_staff ? "sim" : "nao"}
-                onChange={(e) => set("need_specific_staff", e.target.value === "sim")}
-              >
+              <select className="input" value={form.need_specific_staff ? "sim" : "nao"} onChange={(e) => set("need_specific_staff", e.target.value === "sim")}>
                 <option value="nao">Não</option>
                 <option value="sim">Sim</option>
               </select>
@@ -643,12 +597,7 @@ const designers = useMemo(() => {
 
             {staffEnabled ? (
               <Field label="Justificativa">
-                <textarea
-                  className="input"
-                  rows={4}
-                  value={form.staff_justification || ""}
-                  onChange={(e) => set("staff_justification", e.target.value)}
-                />
+                <textarea className="input" rows={4} value={form.staff_justification || ""} onChange={(e) => set("staff_justification", e.target.value)} />
               </Field>
             ) : null}
           </>
@@ -662,30 +611,15 @@ const designers = useMemo(() => {
             <div className="h2">Narrativa</div>
 
             <Field label="Narrativa da imersão">
-              <textarea
-                className="input"
-                rows={4}
-                value={form.immersion_narrative || ""}
-                onChange={(e) => set("immersion_narrative", e.target.value)}
-              />
+              <textarea className="input" rows={4} value={form.immersion_narrative || ""} onChange={(e) => set("immersion_narrative", e.target.value)} />
             </Field>
 
             <Field label="Informações para narrativa">
-              <textarea
-                className="input"
-                rows={4}
-                value={form.narrative_information || ""}
-                onChange={(e) => set("narrative_information", e.target.value)}
-              />
+              <textarea className="input" rows={4} value={form.narrative_information || ""} onChange={(e) => set("narrative_information", e.target.value)} />
             </Field>
 
             <Field label="Informações para dinâmicas">
-              <textarea
-                className="input"
-                rows={4}
-                value={form.dynamics_information || ""}
-                onChange={(e) => set("dynamics_information", e.target.value)}
-              />
+              <textarea className="input" rows={4} value={form.dynamics_information || ""} onChange={(e) => set("dynamics_information", e.target.value)} />
             </Field>
           </>
         ) : null}
@@ -698,12 +632,7 @@ const designers = useMemo(() => {
             <div className="h2">Trainer</div>
 
             <Field label="Informações sobre o trainer principal">
-              <textarea
-                className="input"
-                rows={4}
-                value={form.trainer_main_information || ""}
-                onChange={(e) => set("trainer_main_information", e.target.value)}
-              />
+              <textarea className="input" rows={4} value={form.trainer_main_information || ""} onChange={(e) => set("trainer_main_information", e.target.value)} />
             </Field>
 
             <div className="row">
@@ -721,12 +650,7 @@ const designers = useMemo(() => {
             </div>
 
             <Field label="Contrato (link)">
-              <input
-                className="input"
-                value={form.contract_link || ""}
-                onChange={(e) => set("contract_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.contract_link || ""} onChange={(e) => set("contract_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Link para fotos">
@@ -734,21 +658,11 @@ const designers = useMemo(() => {
             </Field>
 
             <Field label="Link para vídeo de autoridade">
-              <input
-                className="input"
-                value={form.authority_video_link || ""}
-                onChange={(e) => set("authority_video_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.authority_video_link || ""} onChange={(e) => set("authority_video_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Resumo profissional">
-              <textarea
-                className="input"
-                rows={4}
-                value={form.professional_summary || ""}
-                onChange={(e) => set("professional_summary", e.target.value)}
-              />
+              <textarea className="input" rows={4} value={form.professional_summary || ""} onChange={(e) => set("professional_summary", e.target.value)} />
             </Field>
 
             <Field label="Perfil Instagram">
@@ -756,21 +670,11 @@ const designers = useMemo(() => {
             </Field>
 
             <Field label="Preferências alimentares / rider">
-              <textarea
-                className="input"
-                rows={3}
-                value={form.food_preferences_rider || ""}
-                onChange={(e) => set("food_preferences_rider", e.target.value)}
-              />
+              <textarea className="input" rows={3} value={form.food_preferences_rider || ""} onChange={(e) => set("food_preferences_rider", e.target.value)} />
             </Field>
 
             <Field label="Observações importantes">
-              <textarea
-                className="input"
-                rows={3}
-                value={form.important_observations || ""}
-                onChange={(e) => set("important_observations", e.target.value)}
-              />
+              <textarea className="input" rows={3} value={form.important_observations || ""} onChange={(e) => set("important_observations", e.target.value)} />
             </Field>
 
             <Field label="Local de moradia">
@@ -798,11 +702,7 @@ const designers = useMemo(() => {
                 <div className="row">
                   <div className="col">
                     <Field label="Fonoaudióloga">
-                      <select
-                        className="input"
-                        value={form.third_party_speech_therapist ? "sim" : "nao"}
-                        onChange={(e) => set("third_party_speech_therapist", e.target.value === "sim")}
-                      >
+                      <select className="input" value={form.third_party_speech_therapist ? "sim" : "nao"} onChange={(e) => set("third_party_speech_therapist", e.target.value === "sim")}>
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                       </select>
@@ -811,11 +711,7 @@ const designers = useMemo(() => {
 
                   <div className="col">
                     <Field label="Barbeiro">
-                      <select
-                        className="input"
-                        value={form.third_party_barber ? "sim" : "nao"}
-                        onChange={(e) => set("third_party_barber", e.target.value === "sim")}
-                      >
+                      <select className="input" value={form.third_party_barber ? "sim" : "nao"} onChange={(e) => set("third_party_barber", e.target.value === "sim")}>
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                       </select>
@@ -826,11 +722,7 @@ const designers = useMemo(() => {
                 <div className="row">
                   <div className="col">
                     <Field label="Cabeleleiro">
-                      <select
-                        className="input"
-                        value={form.third_party_hairdresser ? "sim" : "nao"}
-                        onChange={(e) => set("third_party_hairdresser", e.target.value === "sim")}
-                      >
+                      <select className="input" value={form.third_party_hairdresser ? "sim" : "nao"} onChange={(e) => set("third_party_hairdresser", e.target.value === "sim")}>
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                       </select>
@@ -839,11 +731,7 @@ const designers = useMemo(() => {
 
                   <div className="col">
                     <Field label="Maquiagem">
-                      <select
-                        className="input"
-                        value={form.third_party_makeup ? "sim" : "nao"}
-                        onChange={(e) => set("third_party_makeup", e.target.value === "sim")}
-                      >
+                      <select className="input" value={form.third_party_makeup ? "sim" : "nao"} onChange={(e) => set("third_party_makeup", e.target.value === "sim")}>
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                       </select>
@@ -875,8 +763,7 @@ const designers = useMemo(() => {
 
             <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
-                Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas:{" "}
-                <b>{checklistSummary.late}</b>
+                Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas: <b>{checklistSummary.late}</b>
               </div>
 
               <div className="row">
@@ -897,7 +784,6 @@ const designers = useMemo(() => {
             {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
 
-            {/* Form de nova tarefa */}
             {newTaskOpen ? (
               <div className="card" style={{ marginBottom: 12 }}>
                 <div className="h2">Nova tarefa</div>
@@ -935,11 +821,7 @@ const designers = useMemo(() => {
                 <div className="row">
                   <div className="col">
                     <Field label="Responsável">
-                      <select
-                        className="input"
-                        value={newTask.owner_profile_id || ""}
-                        onChange={(e) => setNewTask((p) => ({ ...p, owner_profile_id: e.target.value }))}
-                      >
+                      <select className="input" value={newTask.owner_profile_id || ""} onChange={(e) => setNewTask((p) => ({ ...p, owner_profile_id: e.target.value }))}>
                         <option value="">Selecione...</option>
                         {profiles.map((p) => (
                           <option key={p.id} value={p.id}>
@@ -952,12 +834,7 @@ const designers = useMemo(() => {
 
                   <div className="col">
                     <Field label="Prazo">
-                      <input
-                        className="input"
-                        type="date"
-                        value={newTask.due_date || ""}
-                        onChange={(e) => setNewTask((p) => ({ ...p, due_date: e.target.value }))}
-                      />
+                      <input className="input" type="date" value={newTask.due_date || ""} onChange={(e) => setNewTask((p) => ({ ...p, due_date: e.target.value }))} />
                     </Field>
                   </div>
                 </div>
@@ -1016,13 +893,8 @@ const designers = useMemo(() => {
                                 {prof ? <div className="small">Resp.: {prof.name}</div> : <div className="small">Resp.: -</div>}
                               </td>
 
-                              {/* Responsável inline */}
                               <td>
-                                <select
-                                  className="input"
-                                  value={t.owner_profile_id || ""}
-                                  onChange={(e) => onInlineUpdate(t.id, { owner_profile_id: e.target.value || null })}
-                                >
+                                <select className="input" value={t.owner_profile_id || ""} onChange={(e) => onInlineUpdate(t.id, { owner_profile_id: e.target.value || null })}>
                                   <option value="">(sem responsável)</option>
                                   {profiles.map((p) => (
                                     <option key={p.id} value={p.id}>
@@ -1032,17 +904,10 @@ const designers = useMemo(() => {
                                 </select>
                               </td>
 
-                              {/* Prazo inline */}
                               <td>
-                                <input
-                                  className="input"
-                                  type="date"
-                                  value={t.due_date || ""}
-                                  onChange={(e) => onInlineUpdate(t.id, { due_date: e.target.value || null })}
-                                />
+                                <input className="input" type="date" value={t.due_date || ""} onChange={(e) => onInlineUpdate(t.id, { due_date: e.target.value || null })} />
                               </td>
 
-                              {/* Status inline */}
                               <td>
                                 <select className="input" value={t.status} onChange={(e) => onInlineUpdate(t.id, { status: e.target.value })}>
                                   {TASK_STATUSES.map((s) => (
@@ -1053,7 +918,6 @@ const designers = useMemo(() => {
                                 </select>
                               </td>
 
-                              {/* Observações inline */}
                               <td style={{ minWidth: 260 }}>
                                 <textarea
                                   className="input"
@@ -1104,4 +968,3 @@ const designers = useMemo(() => {
     </Layout>
   );
 }
-
