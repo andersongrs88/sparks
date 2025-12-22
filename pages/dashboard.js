@@ -200,7 +200,7 @@ export default function DashboardPage() {
       <div className="row" style={{ alignItems: "flex-start" }}>
         {/* Próximas imersões */}
         <div className="col">
-          <div className="card" style={{ marginBottom: 12, maxHeight: 520, overflow: "auto" }}>
+          <div className="card" style={{ maxHeight: 520, overflowY: "auto" }}>
             <div className="topbar" style={{ marginBottom: 10 }}>
               <div>
                 <div className="h2">Próximas imersões</div>
@@ -215,8 +215,14 @@ export default function DashboardPage() {
 
             {!loading && upcoming.length > 0 ? (
               <table className="table">
-                <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
-                  <tr>
+                <thead
+                  style={{
+                    position: "sticky",
+                    top: 0,
+                    background: "#0b1220", // cor sólida (evita transparência bugada)
+                    zIndex: 2
+                  }}
+                >                  <tr>
                     <th>Imersão</th>
                     <th>Início</th>
                     <th>Dias</th>
@@ -262,7 +268,7 @@ export default function DashboardPage() {
 
         {/* Tarefas atrasadas */}
         <div className="col">
-          <div className="card" style={{ maxHeight: 520, overflow: "auto" }}>
+          <div className="card" style={{ maxHeight: 520, overflowY: "auto" }}>
             <div className="topbar" style={{ marginBottom: 10 }}>
               <div>
                 <div className="h2">Tarefas atrasadas</div>
@@ -274,8 +280,14 @@ export default function DashboardPage() {
 
             {!loading && lateOnly.length > 0 ? (
               <table className="table">
-                <thead style={{ position: "sticky", top: 0, background: "var(--card)", zIndex: 1 }}>
-                  <tr>
+<thead
+  style={{
+    position: "sticky",
+    top: 0,
+    background: "#0b1220", // cor sólida (evita transparência bugada)
+    zIndex: 2
+  }}
+>                  <tr>
                     <th>Tarefa</th>
                     <th>Prazo</th>
                     <th>Responsável</th>
@@ -316,3 +328,4 @@ export default function DashboardPage() {
     </Layout>
   );
 }
+
