@@ -222,7 +222,6 @@ export default function DashboardPage() {
   <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Dias</th>
   <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Status</th>
 </tr>
->
                   </tr>
                 </thead>
                 <tbody>
@@ -320,6 +319,7 @@ export default function DashboardPage() {
     </Layout>
   );
 }
+
 
 
 
