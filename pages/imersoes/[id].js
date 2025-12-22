@@ -7,15 +7,18 @@ import { listActiveProfiles } from "../../lib/profiles";
 import { listActiveTaskTemplates } from "../../lib/taskTemplates";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
+
 const PHASES = [
   { key: "PA-PRE", label: "PA-PRÉ" },
   { key: "DURANTE", label: "DURANTE" },
   { key: "POS", label: "PÓS" }
 ];
+
 const TASK_STATUSES = ["Programada", "Em andamento", "Concluída"];
 
+const IMMERSION_STATUS_OPTIONS = ["Planejamento", "Em execução", "Concluída", "Cancelada"];
+
 function Field({ label, children, hint }) {
-  console.log("VERSAO CHECKLIST COM NOTAS ATIVA");
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="h2">{label}</div>
@@ -66,6 +69,7 @@ function daysUntil(startDateValue) {
 function getCountdownSignal(days) {
   if (days === null) return null;
 
+  // >= 60 verde | >= 40 azul | >= 30 azul escuro | >= 20 laranja | >= 10 bordô | <= 0 bordô
   if (days <= 0) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
   if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } };
   if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } };
@@ -119,7 +123,6 @@ export default function ImmersionDetailEditPage() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
-
   const [generating, setGenerating] = useState(false);
 
   // criação de tarefa
@@ -305,7 +308,7 @@ export default function ImmersionDetailEditPage() {
   }, [profiles]);
 
   const tasksByPhase = useMemo(() => {
-    const map = { "PA-PRE": [], "DURANTE": [], "POS": [] };
+    const map = { "PA-PRE": [], DURANTE: [], POS: [] };
     for (const t of tasks) {
       if (map[t.phase]) map[t.phase].push(t);
     }
@@ -329,6 +332,8 @@ export default function ImmersionDetailEditPage() {
       return;
     }
 
+    // pode ser vazio (sem responsável) se você quiser, mas você pediu antes que carregue conforme tabela
+    // então vamos manter a validação:
     if (!newTask.owner_profile_id) {
       setTaskError("Selecione um responsável.");
       return;
@@ -384,9 +389,7 @@ export default function ImmersionDetailEditPage() {
       const templates = await listActiveTaskTemplates();
 
       const existing = await listTasksByImmersion(form.id);
-      const existingKey = new Set(
-        (existing || []).map((t) => `${t.phase || ""}__${(t.title || "").trim().toLowerCase()}`)
-      );
+      const existingKey = new Set((existing || []).map((t) => `${t.phase || ""}__${(t.title || "").trim().toLowerCase()}`));
 
       let createdCount = 0;
 
@@ -483,9 +486,364 @@ export default function ImmersionDetailEditPage() {
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
         {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{error}</div> : null}
-
         {!form ? <div className="small">Nada para editar.</div> : null}
 
+        {/* =========================
+            ABA: ESSENCIAL
+        ========================== */}
+        {form && tab === "essencial" ? (
+          <>
+            <div className="h2">Identificação</div>
+
+            <Field label="Imersão">
+              <input
+                className="input"
+                value={form.immersion_name || ""}
+                onChange={(e) => set("immersion_name", e.target.value)}
+              />
+            </Field>
+
+            <div className="row">
+              <div className="col">
+                <Field label="Data de início">
+                  <input
+                    className="input"
+                    type="date"
+                    value={form.start_date || ""}
+                    onChange={(e) => set("start_date", e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <div className="col">
+                <Field label="Data de fim">
+                  <input
+                    className="input"
+                    type="date"
+                    value={form.end_date || ""}
+                    onChange={(e) => set("end_date", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <Field label="Sala a ser realizada">
+              <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
+                {ROOMS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Status">
+              <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
+                {IMMERSION_STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </>
+        ) : null}
+
+        {/* =========================
+            ABA: OPERAÇÃO
+        ========================== */}
+        {form && tab === "operacao" ? (
+          <>
+            <div className="h2">Operação</div>
+
+            <div className="row">
+              <div className="col">
+                <Field label="Consultor educacional">
+                  <input
+                    className="input"
+                    value={form.educational_consultant || ""}
+                    onChange={(e) => set("educational_consultant", e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <div className="col">
+                <Field label="Designer instrucional">
+                  <input
+                    className="input"
+                    value={form.instructional_designer || ""}
+                    onChange={(e) => set("instructional_designer", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <Field label="Link ordem de serviço">
+              <input
+                className="input"
+                value={form.service_order_link || ""}
+                onChange={(e) => set("service_order_link", e.target.value)}
+                placeholder="https://..."
+              />
+            </Field>
+
+            <Field label="Link para ficha técnica">
+              <input
+                className="input"
+                value={form.technical_sheet_link || ""}
+                onChange={(e) => set("technical_sheet_link", e.target.value)}
+                placeholder="https://..."
+              />
+            </Field>
+
+            <Field label="Mentores que estarão presentes" hint="Campo aberto (pode colocar nomes, times, etc.)">
+              <textarea
+                className="input"
+                rows={4}
+                value={form.mentors_present || ""}
+                onChange={(e) => set("mentors_present", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Existe a necessidade de staff específico para essa imersão?">
+              <select
+                className="input"
+                value={form.need_specific_staff ? "sim" : "nao"}
+                onChange={(e) => set("need_specific_staff", e.target.value === "sim")}
+              >
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
+            </Field>
+
+            {staffEnabled ? (
+              <Field label="Justificativa">
+                <textarea
+                  className="input"
+                  rows={4}
+                  value={form.staff_justification || ""}
+                  onChange={(e) => set("staff_justification", e.target.value)}
+                />
+              </Field>
+            ) : null}
+          </>
+        ) : null}
+
+        {/* =========================
+            ABA: NARRATIVA
+        ========================== */}
+        {form && tab === "narrativa" ? (
+          <>
+            <div className="h2">Narrativa</div>
+
+            <Field label="Narrativa da imersão">
+              <textarea
+                className="input"
+                rows={4}
+                value={form.immersion_narrative || ""}
+                onChange={(e) => set("immersion_narrative", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Informações para narrativa">
+              <textarea
+                className="input"
+                rows={4}
+                value={form.narrative_information || ""}
+                onChange={(e) => set("narrative_information", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Informações para dinâmicas">
+              <textarea
+                className="input"
+                rows={4}
+                value={form.dynamics_information || ""}
+                onChange={(e) => set("dynamics_information", e.target.value)}
+              />
+            </Field>
+          </>
+        ) : null}
+
+        {/* =========================
+            ABA: TRAINER
+        ========================== */}
+        {form && tab === "trainer" ? (
+          <>
+            <div className="h2">Trainer</div>
+
+            <Field label="Informações sobre o trainer principal">
+              <textarea
+                className="input"
+                rows={4}
+                value={form.trainer_main_information || ""}
+                onChange={(e) => set("trainer_main_information", e.target.value)}
+              />
+            </Field>
+
+            <div className="row">
+              <div className="col">
+                <Field label="Nome para vinheta">
+                  <input className="input" value={form.vignette_name || ""} onChange={(e) => set("vignette_name", e.target.value)} />
+                </Field>
+              </div>
+
+              <div className="col">
+                <Field label="Texto para vinheta">
+                  <input className="input" value={form.vignette_text || ""} onChange={(e) => set("vignette_text", e.target.value)} />
+                </Field>
+              </div>
+            </div>
+
+            <Field label="Contrato (link)">
+              <input
+                className="input"
+                value={form.contract_link || ""}
+                onChange={(e) => set("contract_link", e.target.value)}
+                placeholder="https://..."
+              />
+            </Field>
+
+            <Field label="Link para fotos">
+              <input className="input" value={form.photos_link || ""} onChange={(e) => set("photos_link", e.target.value)} placeholder="https://..." />
+            </Field>
+
+            <Field label="Link para vídeo de autoridade">
+              <input
+                className="input"
+                value={form.authority_video_link || ""}
+                onChange={(e) => set("authority_video_link", e.target.value)}
+                placeholder="https://..."
+              />
+            </Field>
+
+            <Field label="Resumo profissional">
+              <textarea
+                className="input"
+                rows={4}
+                value={form.professional_summary || ""}
+                onChange={(e) => set("professional_summary", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Perfil Instagram">
+              <input className="input" value={form.instagram_profile || ""} onChange={(e) => set("instagram_profile", e.target.value)} placeholder="@..." />
+            </Field>
+
+            <Field label="Preferências alimentares / rider">
+              <textarea
+                className="input"
+                rows={3}
+                value={form.food_preferences_rider || ""}
+                onChange={(e) => set("food_preferences_rider", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Observações importantes">
+              <textarea
+                className="input"
+                rows={3}
+                value={form.important_observations || ""}
+                onChange={(e) => set("important_observations", e.target.value)}
+              />
+            </Field>
+
+            <Field label="Local de moradia">
+              <input className="input" value={form.place_of_residence || ""} onChange={(e) => set("place_of_residence", e.target.value)} />
+            </Field>
+          </>
+        ) : null}
+
+        {/* =========================
+            ABA: TERCEIROS
+        ========================== */}
+        {form && tab === "terceiros" ? (
+          <>
+            <div className="h2">Terceiros</div>
+
+            <Field label="Necessidade de terceiros">
+              <select className="input" value={form.need_third_parties ? "sim" : "nao"} onChange={(e) => set("need_third_parties", e.target.value === "sim")}>
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
+            </Field>
+
+            {form.need_third_parties ? (
+              <>
+                <div className="row">
+                  <div className="col">
+                    <Field label="Fonoaudióloga">
+                      <select
+                        className="input"
+                        value={form.third_party_speech_therapist ? "sim" : "nao"}
+                        onChange={(e) => set("third_party_speech_therapist", e.target.value === "sim")}
+                      >
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Barbeiro">
+                      <select
+                        className="input"
+                        value={form.third_party_barber ? "sim" : "nao"}
+                        onChange={(e) => set("third_party_barber", e.target.value === "sim")}
+                      >
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="row">
+                  <div className="col">
+                    <Field label="Cabeleleiro">
+                      <select
+                        className="input"
+                        value={form.third_party_hairdresser ? "sim" : "nao"}
+                        onChange={(e) => set("third_party_hairdresser", e.target.value === "sim")}
+                      >
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Maquiagem">
+                      <select
+                        className="input"
+                        value={form.third_party_makeup ? "sim" : "nao"}
+                        onChange={(e) => set("third_party_makeup", e.target.value === "sim")}
+                      >
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="small">Sem terceiros para esta imersão.</div>
+            )}
+
+            <Field label="Vai ter palestrante?">
+              <select className="input" value={form.will_have_speaker ? "sim" : "nao"} onChange={(e) => set("will_have_speaker", e.target.value === "sim")}>
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
+            </Field>
+
+            {speakerEnabled ? <div className="small">Cadastro de palestrante será desenvolvido no futuro.</div> : null}
+          </>
+        ) : null}
+
+        {/* =========================
+            ABA: CHECKLIST
+        ========================== */}
         {form && tab === "checklist" ? (
           <>
             <div className="h2">Checklist</div>
@@ -514,6 +872,92 @@ export default function ImmersionDetailEditPage() {
             {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
 
+            {/* Form de nova tarefa */}
+            {newTaskOpen ? (
+              <div className="card" style={{ marginBottom: 12 }}>
+                <div className="h2">Nova tarefa</div>
+
+                <div className="row">
+                  <div className="col">
+                    <Field label="Fase">
+                      <select className="input" value={newTask.phase} onChange={(e) => setNewTask((p) => ({ ...p, phase: e.target.value }))}>
+                        {PHASES.map((ph) => (
+                          <option key={ph.key} value={ph.key}>
+                            {ph.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Status">
+                      <select className="input" value={newTask.status} onChange={(e) => setNewTask((p) => ({ ...p, status: e.target.value }))}>
+                        {TASK_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+
+                <Field label="Título">
+                  <input className="input" value={newTask.title} onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))} />
+                </Field>
+
+                <div className="row">
+                  <div className="col">
+                    <Field label="Responsável">
+                      <select
+                        className="input"
+                        value={newTask.owner_profile_id || ""}
+                        onChange={(e) => setNewTask((p) => ({ ...p, owner_profile_id: e.target.value }))}
+                      >
+                        <option value="">Selecione...</option>
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.role})
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Prazo">
+                      <input
+                        className="input"
+                        type="date"
+                        value={newTask.due_date || ""}
+                        onChange={(e) => setNewTask((p) => ({ ...p, due_date: e.target.value }))}
+                      />
+                    </Field>
+                  </div>
+                </div>
+
+                <Field label="Observações (opcional)">
+                  <textarea
+                    className="input"
+                    rows={3}
+                    value={newTask.notes || ""}
+                    onChange={(e) => setNewTask((p) => ({ ...p, notes: e.target.value }))}
+                    placeholder="Contexto, link, instruções..."
+                  />
+                </Field>
+
+                <div className="row">
+                  <button className="btn primary" type="button" onClick={onCreateTask} disabled={taskSaving}>
+                    {taskSaving ? "Salvando..." : "Criar tarefa"}
+                  </button>
+                  <button className="btn" type="button" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {PHASES.map((ph) => {
               const list = tasksByPhase[ph.key] || [];
               return (
@@ -530,7 +974,7 @@ export default function ImmersionDetailEditPage() {
                           <th>Responsável</th>
                           <th>Prazo</th>
                           <th>Status</th>
-                          <th>Notas</th>
+                          <th>Observações</th>
                           <th>Ações</th>
                         </tr>
                       </thead>
@@ -544,9 +988,10 @@ export default function ImmersionDetailEditPage() {
                               <td>
                                 <div style={{ fontWeight: 600 }}>{t.title}</div>
                                 {late ? <div className="small" style={{ color: "var(--danger)" }}>Atrasada</div> : null}
+                                {prof ? <div className="small">Resp.: {prof.name}</div> : <div className="small">Resp.: -</div>}
                               </td>
 
-                              {/* ✅ Responsável inline */}
+                              {/* Responsável inline */}
                               <td>
                                 <select
                                   className="input"
@@ -562,7 +1007,7 @@ export default function ImmersionDetailEditPage() {
                                 </select>
                               </td>
 
-                              {/* ✅ Prazo inline */}
+                              {/* Prazo inline */}
                               <td>
                                 <input
                                   className="input"
@@ -572,13 +1017,9 @@ export default function ImmersionDetailEditPage() {
                                 />
                               </td>
 
-                              {/* ✅ Status inline */}
+                              {/* Status inline */}
                               <td>
-                                <select
-                                  className="input"
-                                  value={t.status}
-                                  onChange={(e) => onInlineUpdate(t.id, { status: e.target.value })}
-                                >
+                                <select className="input" value={t.status} onChange={(e) => onInlineUpdate(t.id, { status: e.target.value })}>
                                   {TASK_STATUSES.map((s) => (
                                     <option key={s} value={s}>
                                       {s}
@@ -587,18 +1028,17 @@ export default function ImmersionDetailEditPage() {
                                 </select>
                               </td>
 
-                              {/* ✅ Notas inline */}
-<td style={{ minWidth: 260 }}>
-  <textarea
-    className="input"
-    rows={2}
-    value={t.notes || ""}
-    onChange={(e) => onInlineUpdate(t.id, { notes: e.target.value })}
-    placeholder="Observações..."
-    style={{ resize: "vertical" }}
-  />
-</td>
-
+                              {/* Observações inline */}
+                              <td style={{ minWidth: 260 }}>
+                                <textarea
+                                  className="input"
+                                  rows={2}
+                                  value={t.notes || ""}
+                                  onChange={(e) => onInlineUpdate(t.id, { notes: e.target.value })}
+                                  placeholder="Observações..."
+                                  style={{ resize: "vertical" }}
+                                />
+                              </td>
 
                               <td>
                                 <div className="row">
@@ -620,9 +1060,7 @@ export default function ImmersionDetailEditPage() {
               );
             })}
           </>
-        ) : (
-          <div className="small">Abra a aba Checklist para editar tarefas.</div>
-        )}
+        ) : null}
 
         <div style={{ height: 12 }} />
 
@@ -630,6 +1068,7 @@ export default function ImmersionDetailEditPage() {
           <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
             Voltar
           </button>
+
           {tab !== "checklist" ? (
             <button className="btn primary" type="submit" disabled={saving || loading || !form}>
               {saving ? "Salvando..." : "Salvar alterações"}
@@ -640,4 +1079,3 @@ export default function ImmersionDetailEditPage() {
     </Layout>
   );
 }
-
