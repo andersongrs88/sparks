@@ -12,7 +12,6 @@ const PHASES = [
   { key: "DURANTE", label: "DURANTE" },
   { key: "POS", label: "PÓS" }
 ];
-
 const TASK_STATUSES = ["Programada", "Em andamento", "Concluída"];
 
 function Field({ label, children, hint }) {
@@ -46,7 +45,6 @@ function Tabs({ tabs, active, onChange }) {
   );
 }
 
-// Converte qualquer data recebida (YYYY-MM-DD ou ISO) para "somente data" no horário local
 function toLocalDateOnly(d) {
   if (!d) return null;
   const date = typeof d === "string" ? new Date(d) : d;
@@ -64,20 +62,15 @@ function daysUntil(startDateValue) {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-// Farol por dias
 function getCountdownSignal(days) {
   if (days === null) return null;
 
-  // Hoje ou passado => crítico
-  if (days <= 0) {
-    return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
-  }
-
-  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
-  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
-  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
-  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
-  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
+  if (days <= 0) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
+  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } };
+  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } };
+  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } };
+  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } };
+  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
 
   return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
 }
@@ -91,9 +84,8 @@ function isLate(dueDateStr, status) {
   return due.getTime() < today.getTime();
 }
 
-// Soma dias a uma data YYYY-MM-DD e devolve YYYY-MM-DD
 function addDays(dateStr, offsetDays) {
-  if (!dateStr && dateStr !== "") return null;
+  if (!dateStr) return null;
   if (offsetDays === null || offsetDays === undefined) return null;
   if (Number.isNaN(Number(offsetDays))) return null;
 
@@ -152,7 +144,6 @@ export default function ImmersionDetailEditPage() {
     []
   );
 
-  // Carrega imersão
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     let mounted = true;
@@ -176,7 +167,6 @@ export default function ImmersionDetailEditPage() {
     };
   }, [id]);
 
-  // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
     let mounted = true;
 
@@ -187,7 +177,6 @@ export default function ImmersionDetailEditPage() {
 
         setProfiles(data);
 
-        // Define automaticamente o primeiro usuário como responsável padrão
         if (data.length > 0) {
           setNewTask((prev) => ({ ...prev, owner_profile_id: data[0].id }));
         }
@@ -215,7 +204,6 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
-  // Carrega tasks quando entra na aba Checklist
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     if (tab !== "checklist") return;
@@ -309,7 +297,6 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
-  // Checklist helpers
   const profileById = useMemo(() => {
     const map = new Map();
     for (const p of profiles) map.set(p.id, p);
@@ -368,16 +355,6 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
-  async function onQuickUpdateTask(taskId, patch) {
-    setTaskError("");
-    try {
-      await updateTask(taskId, patch);
-      await loadTasks(id);
-    } catch (e) {
-      setTaskError(e?.message || "Falha ao atualizar tarefa.");
-    }
-  }
-
   async function onDeleteTask(taskId) {
     const ok = confirm("Excluir esta tarefa?");
     if (!ok) return;
@@ -403,10 +380,8 @@ export default function ImmersionDetailEditPage() {
     setGenerating(true);
 
     try {
-      // 1) Templates
       const templates = await listActiveTaskTemplates();
 
-      // 2) Tarefas já existentes (para não duplicar)
       const existing = await listTasksByImmersion(form.id);
       const existingKey = new Set(
         (existing || []).map((t) => `${t.phase || ""}__${(t.title || "").trim().toLowerCase()}`)
@@ -414,12 +389,10 @@ export default function ImmersionDetailEditPage() {
 
       let createdCount = 0;
 
-      // 3) Criar somente o que falta
       for (const tpl of templates) {
         const key = `${tpl.phase || ""}__${(tpl.title || "").trim().toLowerCase()}`;
         if (existingKey.has(key)) continue;
 
-        // Prazo calculado
         const baseDate = tpl.phase === "POS" ? form.end_date : form.start_date;
         const due = tpl.days_offset === null || tpl.days_offset === undefined ? null : addDays(baseDate, tpl.days_offset);
 
@@ -427,7 +400,7 @@ export default function ImmersionDetailEditPage() {
           immersion_id: form.id,
           phase: tpl.phase,
           title: tpl.title,
-          owner_profile_id: null, // você escolhe depois no dropdown
+          owner_profile_id: null,
           due_date: due,
           status: "Programada",
           notes: ""
@@ -442,6 +415,17 @@ export default function ImmersionDetailEditPage() {
       setTaskError(e?.message || "Falha ao gerar checklist padrão.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  // ✅ UPDATE INLINE (sem recarregar tudo)
+  async function onInlineUpdate(taskId, patch) {
+    setTaskError("");
+    try {
+      await updateTask(taskId, patch);
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t)));
+    } catch (e) {
+      setTaskError(e?.message || "Falha ao atualizar tarefa.");
     }
   }
 
@@ -501,268 +485,6 @@ export default function ImmersionDetailEditPage() {
 
         {!form ? <div className="small">Nada para editar.</div> : null}
 
-        {form && tab === "essencial" ? (
-          <>
-            <div className="h2">Identificação</div>
-
-            <Field label="Imersão">
-              <input className="input" value={form.immersion_name || ""} onChange={(e) => set("immersion_name", e.target.value)} />
-            </Field>
-
-            <div className="row">
-              <div className="col">
-                <Field label="Data de início">
-                  <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
-                </Field>
-              </div>
-
-              <div className="col">
-                <Field label="Data de fim">
-                  <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
-                </Field>
-              </div>
-            </div>
-
-            <Field label="Sala a ser realizada">
-              <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
-                {ROOMS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Status">
-              <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
-                <option value="Planejamento">Planejamento</option>
-                <option value="Em execução">Em execução</option>
-                <option value="Concluída">Concluída</option>
-                <option value="Cancelada">Cancelada</option>
-              </select>
-            </Field>
-          </>
-        ) : null}
-
-        {form && tab === "operacao" ? (
-          <>
-            <div className="h2">Time e links</div>
-
-            <div className="row">
-              <div className="col">
-                <Field label="Consultor educacional">
-                  <input className="input" value={form.educational_consultant || ""} onChange={(e) => set("educational_consultant", e.target.value)} />
-                </Field>
-              </div>
-
-              <div className="col">
-                <Field label="Designer instrucional">
-                  <input className="input" value={form.instructional_designer || ""} onChange={(e) => set("instructional_designer", e.target.value)} />
-                </Field>
-              </div>
-            </div>
-
-            <Field label="Link ordem de serviço">
-              <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} />
-            </Field>
-
-            <Field label="Link para ficha técnica">
-              <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} />
-            </Field>
-
-            <div style={{ height: 10 }} />
-            <div className="h2">Mentores e staff</div>
-
-            <Field label="Mentores que estarão presentes">
-              <textarea className="input" rows={4} value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} />
-            </Field>
-
-            <Field label="Existe a necessidade de staff específico para essa imersão?">
-              <div className="row">
-                <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
-                  Sim
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${!form.need_specific_staff ? "primary" : ""}`}
-                  onClick={() => {
-                    set("need_specific_staff", false);
-                    set("staff_justification", "");
-                  }}
-                >
-                  Não
-                </button>
-              </div>
-            </Field>
-
-            <Field label="Justificativa" hint={staffEnabled ? "Obrigatório quando staff específico = Sim." : "Habilita ao marcar Sim."}>
-              <textarea
-                className="input"
-                rows={3}
-                disabled={!staffEnabled}
-                value={form.staff_justification || ""}
-                onChange={(e) => set("staff_justification", e.target.value)}
-              />
-            </Field>
-
-            <Field label="Vai ter palestrante?">
-              <div className="row">
-                <button type="button" className={`btn ${speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", true)}>
-                  Sim
-                </button>
-                <button type="button" className={`btn ${!speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", false)}>
-                  Não
-                </button>
-              </div>
-
-              {speakerEnabled ? (
-                <div className="card" style={{ marginTop: 10 }}>
-                  <div className="h2">Cadastro de palestrante (em desenvolvimento)</div>
-                  <div className="small" style={{ marginBottom: 10 }}>
-                    No futuro, aqui vamos cadastrar o palestrante e vincular nesta imersão.
-                  </div>
-                  <button type="button" className="btn" onClick={() => alert("Em desenvolvimento: cadastro de palestrante.")}>
-                    Cadastrar palestrante (futuro)
-                  </button>
-                </div>
-              ) : null}
-            </Field>
-          </>
-        ) : null}
-
-        {form && tab === "narrativa" ? (
-          <>
-            <div className="h2">Narrativa e dinâmicas</div>
-
-            <Field label="Narrativa da imersão">
-              <textarea className="input" rows={4} value={form.immersion_narrative || ""} onChange={(e) => set("immersion_narrative", e.target.value)} />
-            </Field>
-
-            <Field label="Informações para narrativa">
-              <textarea className="input" rows={4} value={form.narrative_information || ""} onChange={(e) => set("narrative_information", e.target.value)} />
-            </Field>
-
-            <Field label="Informações para dinâmicas">
-              <textarea className="input" rows={4} value={form.dynamics_information || ""} onChange={(e) => set("dynamics_information", e.target.value)} />
-            </Field>
-          </>
-        ) : null}
-
-        {form && tab === "trainer" ? (
-          <>
-            <div className="h2">Trainer principal</div>
-
-            <Field label="Informações sobre o trainer principal">
-              <textarea className="input" rows={4} value={form.trainer_main_information || ""} onChange={(e) => set("trainer_main_information", e.target.value)} />
-            </Field>
-
-            <div className="row">
-              <div className="col">
-                <Field label="Nome para vinheta">
-                  <input className="input" value={form.vignette_name || ""} onChange={(e) => set("vignette_name", e.target.value)} />
-                </Field>
-              </div>
-
-              <div className="col">
-                <Field label="Perfil Instagram">
-                  <input className="input" value={form.instagram_profile || ""} onChange={(e) => set("instagram_profile", e.target.value)} />
-                </Field>
-              </div>
-            </div>
-
-            <Field label="Texto para vinheta">
-              <textarea className="input" rows={3} value={form.vignette_text || ""} onChange={(e) => set("vignette_text", e.target.value)} />
-            </Field>
-
-            <Field label="Contrato (link)">
-              <input className="input" value={form.contract_link || ""} onChange={(e) => set("contract_link", e.target.value)} />
-            </Field>
-
-            <div className="row">
-              <div className="col">
-                <Field label="Link para fotos">
-                  <input className="input" value={form.photos_link || ""} onChange={(e) => set("photos_link", e.target.value)} />
-                </Field>
-              </div>
-
-              <div className="col">
-                <Field label="Link para vídeo de autoridade">
-                  <input className="input" value={form.authority_video_link || ""} onChange={(e) => set("authority_video_link", e.target.value)} />
-                </Field>
-              </div>
-            </div>
-
-            <Field label="Resumo profissional">
-              <textarea className="input" rows={4} value={form.professional_summary || ""} onChange={(e) => set("professional_summary", e.target.value)} />
-            </Field>
-
-            <Field label="Preferências alimentares / Rider">
-              <textarea className="input" rows={3} value={form.food_preferences_rider || ""} onChange={(e) => set("food_preferences_rider", e.target.value)} />
-            </Field>
-
-            <Field label="Observações importantes">
-              <textarea className="input" rows={3} value={form.important_observations || ""} onChange={(e) => set("important_observations", e.target.value)} />
-            </Field>
-
-            <Field label="Local de moradia">
-              <input className="input" value={form.place_of_residence || ""} onChange={(e) => set("place_of_residence", e.target.value)} />
-            </Field>
-          </>
-        ) : null}
-
-        {form && tab === "terceiros" ? (
-          <>
-            <div className="h2">Necessidade de terceiros</div>
-
-            <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-              <input type="checkbox" checked={!!form.need_third_parties} onChange={(e) => set("need_third_parties", e.target.checked)} />
-              Necessidade de terceiros
-            </label>
-
-            <div className="row">
-              <label className="small col" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!form.third_party_speech_therapist}
-                  onChange={(e) => set("third_party_speech_therapist", e.target.checked)}
-                  disabled={!form.need_third_parties}
-                />
-                Fonoaudióloga
-              </label>
-
-              <label className="small col" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!form.third_party_barber}
-                  onChange={(e) => set("third_party_barber", e.target.checked)}
-                  disabled={!form.need_third_parties}
-                />
-                Barbeiro
-              </label>
-
-              <label className="small col" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!form.third_party_hairdresser}
-                  onChange={(e) => set("third_party_hairdresser", e.target.checked)}
-                  disabled={!form.need_third_parties}
-                />
-                Cabeleireiro
-              </label>
-
-              <label className="small col" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={!!form.third_party_makeup}
-                  onChange={(e) => set("third_party_makeup", e.target.checked)}
-                  disabled={!form.need_third_parties}
-                />
-                Maquiagem
-              </label>
-            </div>
-          </>
-        ) : null}
-
         {form && tab === "checklist" ? (
           <>
             <div className="h2">Checklist</div>
@@ -791,80 +513,6 @@ export default function ImmersionDetailEditPage() {
             {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
 
-            {newTaskOpen ? (
-              <div className="card" style={{ marginBottom: 12 }}>
-                <div className="h2">Nova tarefa</div>
-
-                <Field label="Fase">
-                  <select className="input" value={newTask.phase} onChange={(e) => setNewTask((p) => ({ ...p, phase: e.target.value }))}>
-                    {PHASES.map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Título">
-                  <input
-                    className="input"
-                    value={newTask.title}
-                    onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))}
-                    placeholder="Ex.: Criar pasta no Drive"
-                  />
-                </Field>
-
-                <Field label="Responsável">
-                  <select
-                    className="input"
-                    value={newTask.owner_profile_id}
-                    onChange={(e) => setNewTask((p) => ({ ...p, owner_profile_id: e.target.value }))}
-                  >
-                    {profiles.length === 0 ? <option value="">Nenhum usuário ativo cadastrado</option> : null}
-
-                    {profiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.role})
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <div className="row">
-                  <div className="col">
-                    <Field label="Prazo">
-                      <input className="input" type="date" value={newTask.due_date} onChange={(e) => setNewTask((p) => ({ ...p, due_date: e.target.value }))} />
-                    </Field>
-                  </div>
-
-                  <div className="col">
-                    <Field label="Status">
-                      <select className="input" value={newTask.status} onChange={(e) => setNewTask((p) => ({ ...p, status: e.target.value }))}>
-                        {TASK_STATUSES.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  </div>
-                </div>
-
-                <Field label="Observações">
-                  <textarea className="input" rows={3} value={newTask.notes} onChange={(e) => setNewTask((p) => ({ ...p, notes: e.target.value }))} />
-                </Field>
-
-                <div className="row">
-                  <button type="button" className="btn" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
-                    Cancelar
-                  </button>
-                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving}>
-                    {taskSaving ? "Criando..." : "Criar tarefa"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
             {PHASES.map((ph) => {
               const list = tasksByPhase[ph.key] || [];
               return (
@@ -881,6 +529,7 @@ export default function ImmersionDetailEditPage() {
                           <th>Responsável</th>
                           <th>Prazo</th>
                           <th>Status</th>
+                          <th>Notas</th>
                           <th>Ações</th>
                         </tr>
                       </thead>
@@ -893,15 +542,42 @@ export default function ImmersionDetailEditPage() {
                             <tr key={t.id}>
                               <td>
                                 <div style={{ fontWeight: 600 }}>{t.title}</div>
-                                {t.notes ? <div className="small">{t.notes}</div> : null}
                                 {late ? <div className="small" style={{ color: "var(--danger)" }}>Atrasada</div> : null}
                               </td>
 
-                              <td>{prof ? `${prof.name} (${prof.role})` : "-"}</td>
-                              <td>{t.due_date || "-"}</td>
-
+                              {/* ✅ Responsável inline */}
                               <td>
-                                <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t.id, { status: e.target.value })}>
+                                <select
+                                  className="input"
+                                  value={t.owner_profile_id || ""}
+                                  onChange={(e) => onInlineUpdate(t.id, { owner_profile_id: e.target.value || null })}
+                                >
+                                  <option value="">(sem responsável)</option>
+                                  {profiles.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} ({p.role})
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* ✅ Prazo inline */}
+                              <td>
+                                <input
+                                  className="input"
+                                  type="date"
+                                  value={t.due_date || ""}
+                                  onChange={(e) => onInlineUpdate(t.id, { due_date: e.target.value || null })}
+                                />
+                              </td>
+
+                              {/* ✅ Status inline */}
+                              <td>
+                                <select
+                                  className="input"
+                                  value={t.status}
+                                  onChange={(e) => onInlineUpdate(t.id, { status: e.target.value })}
+                                >
                                   {TASK_STATUSES.map((s) => (
                                     <option key={s} value={s}>
                                       {s}
@@ -910,9 +586,19 @@ export default function ImmersionDetailEditPage() {
                                 </select>
                               </td>
 
+                              {/* ✅ Notas inline */}
+                              <td>
+                                <input
+                                  className="input"
+                                  value={t.notes || ""}
+                                  onChange={(e) => onInlineUpdate(t.id, { notes: e.target.value })}
+                                  placeholder="Opcional"
+                                />
+                              </td>
+
                               <td>
                                 <div className="row">
-                                  <button type="button" className="btn" onClick={() => onQuickUpdateTask(t.id, { status: "Concluída" })}>
+                                  <button type="button" className="btn" onClick={() => onInlineUpdate(t.id, { status: "Concluída" })}>
                                     Concluir
                                   </button>
                                   <button type="button" className="btn danger" onClick={() => onDeleteTask(t.id)}>
@@ -930,26 +616,22 @@ export default function ImmersionDetailEditPage() {
               );
             })}
           </>
-        ) : null}
+        ) : (
+          <div className="small">Abra a aba Checklist para editar tarefas.</div>
+        )}
 
         <div style={{ height: 12 }} />
 
-        {tab !== "checklist" ? (
-          <div className="row">
-            <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
-              Voltar
-            </button>
+        <div className="row">
+          <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
+            Voltar
+          </button>
+          {tab !== "checklist" ? (
             <button className="btn primary" type="submit" disabled={saving || loading || !form}>
               {saving ? "Salvando..." : "Salvar alterações"}
             </button>
-          </div>
-        ) : (
-          <div className="row">
-            <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
-              Voltar
-            </button>
-          </div>
-        )}
+          ) : null}
+        </div>
       </form>
     </Layout>
   );
