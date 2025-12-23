@@ -40,6 +40,12 @@ function isLate(dueDateStr, status) {
 const STATUS_OPTIONS = ["Todos", "Planejamento", "Em execução", "Concluída", "Cancelada"];
 
 export default function DashboardPage() {
+  
+  useEffect(() => {
+  const raw = typeof window !== "undefined" ? localStorage.getItem("sparks_user") : null;
+  if (!raw) router.replace("/login");
+}, [router]);
+
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -319,6 +325,7 @@ export default function DashboardPage() {
     </Layout>
   );
 }
+
 
 
 
