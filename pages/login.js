@@ -5,17 +5,14 @@ import Layout from "../components/Layout";
 export default function LoginPage() {
   const router = useRouter();
 
-  const [mode, setMode] = useState("login"); // login | forgot
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState("admin@exemplo.com");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [tempPassword, setTempPassword] = useState("");
+  const [msg, setMsg] = useState("");
 
-  async function onLogin(e) {
+  async function onSubmit(e) {
     e.preventDefault();
-    setError("");
+    setMsg("");
     setLoading(true);
 
     try {
@@ -25,137 +22,57 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        setError(data?.error || "Falha no login");
+      if (!res.ok || !data?.ok) {
+        setMsg(data?.error || "Falha no login.");
+        setLoading(false);
         return;
       }
 
-      router.push("/dashboard");
-    } catch {
-      setError("Erro ao conectar.");
-    } finally {
+      // ✅ salva sessão simples
+      localStorage.setItem("sparks_user", JSON.stringify(data.user));
+
+      // ✅ redireciona (replace evita voltar pra tela de login)
+      router.replace("/dashboard");
+    } catch (err) {
+      setMsg("Erro ao conectar.");
       setLoading(false);
     }
   }
 
-  async function onResetPassword(e) {
-    e.preventDefault();
-    setError("");
-    setTempPassword("");
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data?.error || "Erro ao redefinir senha.");
-        return;
-      }
-
-      setTempPassword(data.tempPassword);
-    } catch {
-      setError("Erro ao conectar.");
-    } finally {
-      setLoading(false);
-    }
+  function onForgot() {
+    router.push("/reset-password");
   }
 
   return (
     <Layout title="Login">
-      <div className="card" style={{ maxWidth: 420, margin: "40px auto" }}>
-        <div className="h2" style={{ marginBottom: 12 }}>
-          {mode === "login" ? "Acesso ao sistema" : "Recuperar senha"}
-        </div>
+      <div className="card" style={{ maxWidth: 520, margin: "0 auto" }}>
+        <div className="h1" style={{ marginBottom: 8 }}>Acesso ao sistema</div>
 
-        {error ? (
-          <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>
-            {error}
-          </div>
-        ) : null}
+        {msg ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{msg}</div> : null}
 
-        {mode === "login" ? (
-          <form onSubmit={onLogin}>
+        <form onSubmit={onSubmit}>
+          <div style={{ marginBottom: 12 }}>
             <div className="h2">E-mail</div>
-            <input
-              className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
-            />
+            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
 
-            <div className="h2" style={{ marginTop: 12 }}>
-              Senha
-            </div>
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+          <div style={{ marginBottom: 12 }}>
+            <div className="h2">Senha</div>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
 
-            <div style={{ marginTop: 16 }} />
-
+          <div className="row">
             <button className="btn primary" type="submit" disabled={loading}>
               {loading ? "Entrando..." : "Entrar"}
             </button>
 
-            <div style={{ marginTop: 12 }}>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setMode("forgot")}
-              >
-                Esqueci minha senha
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={onResetPassword}>
-            <div className="h2">Informe seu e-mail</div>
-            <input
-              className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
-            />
-
-            <div style={{ marginTop: 16 }} />
-
-            <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Gerando..." : "Gerar nova senha"}
+            <button className="btn" type="button" onClick={onForgot} disabled={loading}>
+              Esqueci minha senha
             </button>
-
-            <div style={{ marginTop: 12 }}>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setMode("login")}
-              >
-                Voltar para login
-              </button>
-            </div>
-          </form>
-        )}
-
-        {tempPassword ? (
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="h2">Senha temporária</div>
-            <div className="small">
-              Use esta senha para entrar no sistema:
-            </div>
-            <div style={{ marginTop: 8, fontWeight: "bold" }}>
-              {tempPassword}
-            </div>
           </div>
-        ) : null}
+        </form>
       </div>
     </Layout>
   );
