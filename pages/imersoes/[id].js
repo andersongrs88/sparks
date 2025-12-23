@@ -5,6 +5,12 @@ import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immers
 import { listTasksByImmersion, createTask, updateTask, deleteTask } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
 import { listActiveTaskTemplates } from "../../lib/taskTemplates";
+import {
+  listScheduleByImmersion,
+  createScheduleItem,
+  updateScheduleItem,
+  deleteScheduleItem
+} from "../../lib/schedule";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
@@ -57,11 +63,9 @@ function toLocalDateOnly(d) {
 
 function daysUntil(startDateValue) {
   if (!startDateValue) return null;
-
   const start = toLocalDateOnly(startDateValue);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   const diffMs = start.getTime() - today.getTime();
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
@@ -104,6 +108,40 @@ function addDays(dateStr, offsetDays) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function addMinutesHHmm(hhmm, minutes) {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map((v) => Number(v));
+  if (Number.isNaN(h) || Number.isNaN(m)) return "";
+  const total = h * 60 + m + Number(minutes || 0);
+  const clamped = ((total % (24 * 60)) + (24 * 60)) % (24 * 60);
+  const hh = String(Math.floor(clamped / 60)).padStart(2, "0");
+  const mm = String(clamped % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+// Textarea "travando" / "trocando letras":
+// ocorre quando a gente salva a cada tecla (onChange) e o React re-renderiza a linha.
+// Solução simples: editar localmente e salvar só no onBlur.
+function NotesCell({ value, placeholder, onCommit }) {
+  const [draft, setDraft] = useState(value || "");
+
+  useEffect(() => {
+    setDraft(value || "");
+  }, [value]);
+
+  return (
+    <textarea
+      className="input"
+      rows={2}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => onCommit(draft)}
+      placeholder={placeholder}
+      style={{ resize: "vertical" }}
+    />
+  );
+}
+
 export default function ImmersionDetailEditPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -117,16 +155,15 @@ export default function ImmersionDetailEditPage() {
 
   const [form, setForm] = useState(null);
 
-  // Checklist
+  // Pessoas (profiles)
   const [profiles, setProfiles] = useState([]);
+
+  // Checklist
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
   const [generating, setGenerating] = useState(false);
-
-  // Observações (notes) - rascunho local por tarefa (para não salvar a cada tecla)
-  const [draftNotesByTaskId, setDraftNotesByTaskId] = useState({});
 
   // criação de tarefa
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -139,6 +176,19 @@ export default function ImmersionDetailEditPage() {
     notes: ""
   });
 
+  // Cronograma
+  const [schedule, setSchedule] = useState([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState("");
+  const [newScheduleOpen, setNewScheduleOpen] = useState(false);
+  const [newItem, setNewItem] = useState({
+    topic: "",
+    responsible_profile_id: "",
+    start_time: "09:00",
+    duration_minutes: 60,
+    notes: ""
+  });
+
   const tabs = useMemo(
     () => [
       { key: "essencial", label: "Essencial" },
@@ -146,11 +196,13 @@ export default function ImmersionDetailEditPage() {
       { key: "narrativa", label: "Narrativa" },
       { key: "trainer", label: "Trainer" },
       { key: "terceiros", label: "Terceiros" },
+      { key: "cronograma", label: "Cronograma" },
       { key: "checklist", label: "Checklist" }
     ],
     []
   );
 
+  // --- carregar imersão ---
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     let mounted = true;
@@ -174,6 +226,7 @@ export default function ImmersionDetailEditPage() {
     };
   }, [id]);
 
+  // --- carregar perfis (usuários) ---
   useEffect(() => {
     let mounted = true;
 
@@ -186,8 +239,10 @@ export default function ImmersionDetailEditPage() {
 
         if (data.length > 0) {
           setNewTask((prev) => ({ ...prev, owner_profile_id: data[0].id }));
+          setNewItem((prev) => ({ ...prev, responsible_profile_id: data[0].id }));
         }
       } catch (e) {
+        // silencioso
         console.error(e);
       }
     }
@@ -198,30 +253,21 @@ export default function ImmersionDetailEditPage() {
     };
   }, []);
 
-  async function loadTasks(immersionId) {
-    setTaskError("");
-    setTasksLoading(true);
-    try {
-      const data = await listTasksByImmersion(immersionId);
-      setTasks(data);
-    } catch (e) {
-      setTaskError(e?.message || "Falha ao carregar checklist.");
-    } finally {
-      setTasksLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!id || typeof id !== "string") return;
-    if (tab !== "checklist") return;
-    loadTasks(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, id]);
-
   function set(field, value) {
     setForm((p) => ({ ...p, [field]: value }));
   }
 
+  // --- OPERAÇÃO: dropdowns baseados em users ---
+  const consultants = useMemo(() => {
+    return (profiles || []).filter((p) => (p.role || "").toLowerCase() === "consultor");
+  }, [profiles]);
+
+  const designers = useMemo(() => {
+    const r = (p) => (p.role || "").toLowerCase();
+    return (profiles || []).filter((p) => r(p) === "designer" || r(p).includes("designer"));
+  }, [profiles]);
+
+  // --- salvar imersão ---
   async function onSaveImmersion(e) {
     e.preventDefault();
     if (!form) return;
@@ -244,7 +290,6 @@ export default function ImmersionDetailEditPage() {
         room_location: form.room_location,
         status: form.status,
 
-        // aqui continuam como texto (nome) — vindo do select dos usuários
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
 
@@ -305,20 +350,31 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
+  // ============ CHECKLIST ============
+  async function loadTasks(immersionId) {
+    setTaskError("");
+    setTasksLoading(true);
+    try {
+      const data = await listTasksByImmersion(immersionId);
+      setTasks(data);
+    } catch (e) {
+      setTaskError(e?.message || "Falha ao carregar checklist.");
+    } finally {
+      setTasksLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!id || typeof id !== "string") return;
+    if (tab !== "checklist") return;
+    loadTasks(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, id]);
+
   const profileById = useMemo(() => {
     const map = new Map();
     for (const p of profiles) map.set(p.id, p);
     return map;
-  }, [profiles]);
-
-  // listas por role (Consultor / Designer) para a aba Operação
-  const consultants = useMemo(() => {
-    return (profiles || []).filter((p) => (p.role || "").toLowerCase() === "consultor");
-  }, [profiles]);
-
-  const designers = useMemo(() => {
-    const role = (p) => (p.role || "").toLowerCase();
-    return (profiles || []).filter((p) => role(p) === "designer" || role(p).includes("designer"));
   }, [profiles]);
 
   const tasksByPhase = useMemo(() => {
@@ -401,7 +457,9 @@ export default function ImmersionDetailEditPage() {
       const templates = await listActiveTaskTemplates();
 
       const existing = await listTasksByImmersion(form.id);
-      const existingKey = new Set((existing || []).map((t) => `${t.phase || ""}__${(t.title || "").trim().toLowerCase()}`));
+      const existingKey = new Set(
+        (existing || []).map((t) => `${t.phase || ""}__${(t.title || "").trim().toLowerCase()}`)
+      );
 
       let createdCount = 0;
 
@@ -434,7 +492,6 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
-  // UPDATE INLINE (sem recarregar tudo)
   async function onInlineUpdate(taskId, patch) {
     setTaskError("");
     try {
@@ -442,6 +499,77 @@ export default function ImmersionDetailEditPage() {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t)));
     } catch (e) {
       setTaskError(e?.message || "Falha ao atualizar tarefa.");
+    }
+  }
+
+  // ============ CRONOGRAMA ============
+  async function loadSchedule(immersionId) {
+    setScheduleError("");
+    setScheduleLoading(true);
+    try {
+      const data = await listScheduleByImmersion(immersionId);
+      setSchedule(data);
+    } catch (e) {
+      setScheduleError(e?.message || "Falha ao carregar cronograma.");
+    } finally {
+      setScheduleLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!id || typeof id !== "string") return;
+    if (tab !== "cronograma") return;
+    loadSchedule(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, id]);
+
+  async function onCreateScheduleItem() {
+    if (!id || typeof id !== "string") return;
+    setScheduleError("");
+
+    if (!newItem.topic.trim()) {
+      setScheduleError("Preencha o tema.");
+      return;
+    }
+
+    try {
+      await createScheduleItem({
+        immersion_id: id,
+        topic: newItem.topic.trim(),
+        responsible_profile_id: newItem.responsible_profile_id || null,
+        start_time: newItem.start_time || null,
+        duration_minutes: Number(newItem.duration_minutes || 0) || 0,
+        notes: newItem.notes || ""
+      });
+
+      setNewScheduleOpen(false);
+      setNewItem((p) => ({ ...p, topic: "", notes: "" }));
+      await loadSchedule(id);
+    } catch (e) {
+      setScheduleError(e?.message || "Falha ao criar item.");
+    }
+  }
+
+  async function onDeleteScheduleItem(itemId) {
+    const ok = confirm("Excluir este item do cronograma?");
+    if (!ok) return;
+    setScheduleError("");
+
+    try {
+      await deleteScheduleItem(itemId);
+      setSchedule((prev) => prev.filter((x) => x.id !== itemId));
+    } catch (e) {
+      setScheduleError(e?.message || "Falha ao excluir item.");
+    }
+  }
+
+  async function onScheduleInlineUpdate(itemId, patch) {
+    setScheduleError("");
+    try {
+      await updateScheduleItem(itemId, patch);
+      setSchedule((prev) => prev.map((x) => (x.id === itemId ? { ...x, ...patch } : x)));
+    } catch (e) {
+      setScheduleError(e?.message || "Falha ao atualizar item.");
     }
   }
 
@@ -501,7 +629,6 @@ export default function ImmersionDetailEditPage() {
             {error}
           </div>
         ) : null}
-
         {!form ? <div className="small">Nada para editar.</div> : null}
 
         {/* =========================
@@ -587,21 +714,11 @@ export default function ImmersionDetailEditPage() {
             </div>
 
             <Field label="Link ordem de serviço">
-              <input
-                className="input"
-                value={form.service_order_link || ""}
-                onChange={(e) => set("service_order_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Link para ficha técnica">
-              <input
-                className="input"
-                value={form.technical_sheet_link || ""}
-                onChange={(e) => set("technical_sheet_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Mentores que estarão presentes" hint="Campo aberto (pode colocar nomes, times, etc.)">
@@ -678,12 +795,7 @@ export default function ImmersionDetailEditPage() {
             </Field>
 
             <Field label="Link para vídeo de autoridade">
-              <input
-                className="input"
-                value={form.authority_video_link || ""}
-                onChange={(e) => set("authority_video_link", e.target.value)}
-                placeholder="https://..."
-              />
+              <input className="input" value={form.authority_video_link || ""} onChange={(e) => set("authority_video_link", e.target.value)} placeholder="https://..." />
             </Field>
 
             <Field label="Resumo profissional">
@@ -727,11 +839,7 @@ export default function ImmersionDetailEditPage() {
                 <div className="row">
                   <div className="col">
                     <Field label="Fonoaudióloga">
-                      <select
-                        className="input"
-                        value={form.third_party_speech_therapist ? "sim" : "nao"}
-                        onChange={(e) => set("third_party_speech_therapist", e.target.value === "sim")}
-                      >
+                      <select className="input" value={form.third_party_speech_therapist ? "sim" : "nao"} onChange={(e) => set("third_party_speech_therapist", e.target.value === "sim")}>
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                       </select>
@@ -751,11 +859,7 @@ export default function ImmersionDetailEditPage() {
                 <div className="row">
                   <div className="col">
                     <Field label="Cabeleleiro">
-                      <select
-                        className="input"
-                        value={form.third_party_hairdresser ? "sim" : "nao"}
-                        onChange={(e) => set("third_party_hairdresser", e.target.value === "sim")}
-                      >
+                      <select className="input" value={form.third_party_hairdresser ? "sim" : "nao"} onChange={(e) => set("third_party_hairdresser", e.target.value === "sim")}>
                         <option value="nao">Não</option>
                         <option value="sim">Sim</option>
                       </select>
@@ -788,6 +892,149 @@ export default function ImmersionDetailEditPage() {
         ) : null}
 
         {/* =========================
+            ABA: CRONOGRAMA
+        ========================== */}
+        {form && tab === "cronograma" ? (
+          <>
+            <div className="h2">Cronograma</div>
+
+            <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <div className="small">Tema • Responsável • Início • Duração (min) • Fim (auto)</div>
+
+              <div className="row">
+                <button type="button" className="btn" onClick={() => loadSchedule(form.id)} disabled={scheduleLoading}>
+                  {scheduleLoading ? "Atualizando..." : "Atualizar"}
+                </button>
+                <button type="button" className="btn primary" onClick={() => setNewScheduleOpen((v) => !v)}>
+                  {newScheduleOpen ? "Fechar" : "Novo item"}
+                </button>
+              </div>
+            </div>
+
+            {scheduleError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{scheduleError}</div> : null}
+            {scheduleLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando cronograma...</div> : null}
+
+            {newScheduleOpen ? (
+              <div className="card" style={{ marginBottom: 12 }}>
+                <div className="h2">Novo item</div>
+
+                <Field label="Tema">
+                  <input className="input" value={newItem.topic} onChange={(e) => setNewItem((p) => ({ ...p, topic: e.target.value }))} />
+                </Field>
+
+                <div className="row">
+                  <div className="col">
+                    <Field label="Responsável">
+                      <select className="input" value={newItem.responsible_profile_id || ""} onChange={(e) => setNewItem((p) => ({ ...p, responsible_profile_id: e.target.value }))}>
+                        <option value="">(sem responsável)</option>
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.role})
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Início">
+                      <input className="input" type="time" value={newItem.start_time || ""} onChange={(e) => setNewItem((p) => ({ ...p, start_time: e.target.value }))} />
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Duração (min)">
+                      <input className="input" type="number" min={0} value={newItem.duration_minutes} onChange={(e) => setNewItem((p) => ({ ...p, duration_minutes: e.target.value }))} />
+                    </Field>
+                  </div>
+
+                  <div className="col">
+                    <Field label="Fim (auto)">
+                      <input className="input" value={addMinutesHHmm(newItem.start_time, newItem.duration_minutes)} disabled />
+                    </Field>
+                  </div>
+                </div>
+
+                <Field label="Observações (opcional)">
+                  <textarea className="input" rows={3} value={newItem.notes || ""} onChange={(e) => setNewItem((p) => ({ ...p, notes: e.target.value }))} placeholder="Contexto, link, instruções..." />
+                </Field>
+
+                <div className="row">
+                  <button className="btn primary" type="button" onClick={onCreateScheduleItem}>
+                    Criar item
+                  </button>
+                  <button className="btn" type="button" onClick={() => setNewScheduleOpen(false)}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {schedule.length === 0 ? (
+              <div className="small">Nenhum item no cronograma.</div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Tema</th>
+                      <th>Responsável</th>
+                      <th>Início</th>
+                      <th>Duração</th>
+                      <th>Fim</th>
+                      <th>Observações</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedule.map((it) => {
+                      const prof = it.responsible_profile_id ? profileById.get(it.responsible_profile_id) : null;
+                      const end = addMinutesHHmm(it.start_time, it.duration_minutes);
+
+                      return (
+                        <tr key={it.id}>
+                          <td style={{ minWidth: 220 }}>
+                            <input className="input" value={it.topic || ""} onChange={(e) => setSchedule((prev) => prev.map((x) => (x.id === it.id ? { ...x, topic: e.target.value } : x)))} onBlur={(e) => onScheduleInlineUpdate(it.id, { topic: e.target.value.trim() })} />
+                          </td>
+                          <td style={{ minWidth: 210 }}>
+                            <select className="input" value={it.responsible_profile_id || ""} onChange={(e) => onScheduleInlineUpdate(it.id, { responsible_profile_id: e.target.value || null })}>
+                              <option value="">(sem responsável)</option>
+                              {profiles.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({p.role})
+                                </option>
+                              ))}
+                            </select>
+                            <div className="small">{prof ? prof.name : "-"}</div>
+                          </td>
+                          <td>
+                            <input className="input" type="time" value={it.start_time || ""} onChange={(e) => onScheduleInlineUpdate(it.id, { start_time: e.target.value || null })} />
+                          </td>
+                          <td>
+                            <input className="input" type="number" min={0} value={it.duration_minutes ?? 0} onChange={(e) => onScheduleInlineUpdate(it.id, { duration_minutes: Number(e.target.value || 0) })} />
+                          </td>
+                          <td>
+                            <span className="small">{end || "-"}</span>
+                          </td>
+                          <td style={{ minWidth: 260 }}>
+                            <NotesCell value={it.notes || ""} placeholder="Observações..." onCommit={(txt) => onScheduleInlineUpdate(it.id, { notes: txt })} />
+                          </td>
+                          <td>
+                            <button type="button" className="btn danger" onClick={() => onDeleteScheduleItem(it.id)}>
+                              Excluir
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+
+        {/* =========================
             ABA: CHECKLIST
         ========================== */}
         {form && tab === "checklist" ? (
@@ -814,15 +1061,9 @@ export default function ImmersionDetailEditPage() {
               </div>
             </div>
 
-            {taskError ? (
-              <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>
-                {taskError}
-              </div>
-            ) : null}
-
+            {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
 
-            {/* Form de nova tarefa */}
             {newTaskOpen ? (
               <div className="card" style={{ marginBottom: 12 }}>
                 <div className="h2">Nova tarefa</div>
@@ -879,13 +1120,7 @@ export default function ImmersionDetailEditPage() {
                 </div>
 
                 <Field label="Observações (opcional)">
-                  <textarea
-                    className="input"
-                    rows={3}
-                    value={newTask.notes || ""}
-                    onChange={(e) => setNewTask((p) => ({ ...p, notes: e.target.value }))}
-                    placeholder="Contexto, link, instruções..."
-                  />
+                  <textarea className="input" rows={3} value={newTask.notes || ""} onChange={(e) => setNewTask((p) => ({ ...p, notes: e.target.value }))} placeholder="Contexto, link, instruções..." />
                 </Field>
 
                 <div className="row">
@@ -932,13 +1167,8 @@ export default function ImmersionDetailEditPage() {
                                 {prof ? <div className="small">Resp.: {prof.name}</div> : <div className="small">Resp.: -</div>}
                               </td>
 
-                              {/* Responsável inline */}
                               <td>
-                                <select
-                                  className="input"
-                                  value={t.owner_profile_id || ""}
-                                  onChange={(e) => onInlineUpdate(t.id, { owner_profile_id: e.target.value || null })}
-                                >
+                                <select className="input" value={t.owner_profile_id || ""} onChange={(e) => onInlineUpdate(t.id, { owner_profile_id: e.target.value || null })}>
                                   <option value="">(sem responsável)</option>
                                   {profiles.map((p) => (
                                     <option key={p.id} value={p.id}>
@@ -948,17 +1178,10 @@ export default function ImmersionDetailEditPage() {
                                 </select>
                               </td>
 
-                              {/* Prazo inline */}
                               <td>
-                                <input
-                                  className="input"
-                                  type="date"
-                                  value={t.due_date || ""}
-                                  onChange={(e) => onInlineUpdate(t.id, { due_date: e.target.value || null })}
-                                />
+                                <input className="input" type="date" value={t.due_date || ""} onChange={(e) => onInlineUpdate(t.id, { due_date: e.target.value || null })} />
                               </td>
 
-                              {/* Status inline */}
                               <td>
                                 <select className="input" value={t.status} onChange={(e) => onInlineUpdate(t.id, { status: e.target.value })}>
                                   {TASK_STATUSES.map((s) => (
@@ -969,31 +1192,8 @@ export default function ImmersionDetailEditPage() {
                                 </select>
                               </td>
 
-                              {/* Observações inline (corrigido: NÃO salva a cada tecla; salva ao sair do campo) */}
                               <td style={{ minWidth: 260 }}>
-                                <textarea
-                                  className="input"
-                                  rows={2}
-                                  value={draftNotesByTaskId[t.id] ?? (t.notes || "")}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setDraftNotesByTaskId((prev) => ({ ...prev, [t.id]: val }));
-                                  }}
-                                  onBlur={() => {
-                                    const val = draftNotesByTaskId[t.id];
-                                    if (val === undefined) return;
-
-                                    onInlineUpdate(t.id, { notes: val });
-
-                                    setDraftNotesByTaskId((prev) => {
-                                      const copy = { ...prev };
-                                      delete copy[t.id];
-                                      return copy;
-                                    });
-                                  }}
-                                  placeholder="Observações..."
-                                  style={{ resize: "vertical" }}
-                                />
+                                <NotesCell value={t.notes || ""} placeholder="Observações..." onCommit={(txt) => onInlineUpdate(t.id, { notes: txt })} />
                               </td>
 
                               <td>
@@ -1025,7 +1225,7 @@ export default function ImmersionDetailEditPage() {
             Voltar
           </button>
 
-          {tab !== "checklist" ? (
+          {tab !== "checklist" && tab !== "cronograma" ? (
             <button className="btn primary" type="submit" disabled={saving || loading || !form}>
               {saving ? "Salvando..." : "Salvar alterações"}
             </button>

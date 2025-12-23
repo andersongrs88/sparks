@@ -1,92 +1,66 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { login } from "../lib/auth";
+import Layout from "../components/Layout";
+import { isLoggedIn, loginWithEmailPassword } from "../lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@sparks.com");
-  const [password, setPassword] = useState("123456");
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  function onSubmit(e) {
+  useEffect(() => {
+    if (isLoggedIn()) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
+
+  async function onSubmit(e) {
     e.preventDefault();
     setError("");
-    const res = login(email.trim(), password);
-    if (res.ok) router.push("/dashboard");
-    else setError(res.message || "Não foi possível entrar.");
+
+    if (!email.trim()) return setError("Digite seu e-mail.");
+    if (!password) return setError("Digite sua senha.");
+
+    try {
+      setLoading(true);
+      await loginWithEmailPassword(email.trim(), password);
+      router.replace("/dashboard");
+    } catch (err) {
+      setError(err?.message || "Falha ao entrar.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div style={{ maxWidth: 520, margin: "0 auto", padding: 24 }}>
-      <div style={{
-        border: "1px solid rgba(255,255,255,0.12)",
-        borderRadius: 14,
-        padding: 16,
-        background: "rgba(255,255,255,0.04)",
-        color: "#e7ecf5",
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial"
-      }}>
-        <h1 style={{ margin: "0 0 10px" }}>Login</h1>
+    <Layout title="Login" hideNav>
+      <div className="card" style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div className="h1">Entrar</div>
 
-        <p style={{ margin: "0 0 16px", opacity: 0.8 }}>
-          Acesso do MVP: <b>admin@sparks.com</b> / <b>123456</b>
-        </p>
+        {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{error}</div> : null}
 
         <form onSubmit={onSubmit}>
           <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 6, opacity: 0.85 }}>Email</div>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#e7ecf5",
-                outline: "none"
-              }}
-            />
+            <div className="h2">E-mail</div>
+            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" />
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 6, opacity: 0.85 }}>Senha</div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#e7ecf5",
-                outline: "none"
-              }}
-            />
+            <div className="h2">Senha</div>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+            <div className="small" style={{ marginTop: 6 }}>
+              A senha é cadastrada na tela de Usuários.
+            </div>
           </div>
 
-          {error ? (
-            <div style={{ marginBottom: 12, color: "#ffb4b4" }}>{error}</div>
-          ) : null}
-
-          <button
-            type="submit"
-            style={{
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "none",
-              background: "#7c5cff",
-              color: "white",
-              cursor: "pointer"
-            }}
-          >
-            Entrar
+          <button className="btn primary" type="submit" disabled={loading}>
+            {loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
       </div>
-    </div>
+    </Layout>
   );
 }

@@ -1,13 +1,20 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { createProfile } from "../../lib/profiles";
+import { generatePasswordSuggestion, hashPassword } from "../../lib/auth";
 
 const ROLES = [
   { key: "CONSULTOR", label: "Consultor" },
   { key: "DESIGNER", label: "Designer" },
   { key: "BASICO", label: "Básico" },
   { key: "ADMIN", label: "Administrador" }
+];
+
+const MODULES = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "imersoes", label: "Imersões" },
+  { key: "usuarios", label: "Usuários" }
 ];
 
 function Field({ label, children, hint }) {
@@ -27,7 +34,9 @@ export default function NovoUsuarioPage() {
     name: "",
     email: "",
     role: "BASICO",
-    is_active: true
+    is_active: true,
+    modules: ["dashboard", "imersoes"],
+    password: ""
   });
 
   const [saving, setSaving] = useState(false);
@@ -35,6 +44,28 @@ export default function NovoUsuarioPage() {
 
   function set(field, value) {
     setForm((p) => ({ ...p, [field]: value }));
+  }
+
+  const roleDefaultModules = useMemo(() => {
+    // defaults simples (você pode mudar depois)
+    if (form.role === "ADMIN") return ["dashboard", "imersoes", "usuarios"];
+    if (form.role === "CONSULTOR" || form.role === "DESIGNER") return ["dashboard", "imersoes"];
+    return ["dashboard", "imersoes"];
+  }, [form.role]);
+
+  function applyRoleDefaults() {
+    setForm((p) => ({ ...p, modules: roleDefaultModules }));
+  }
+
+  async function onGeneratePassword() {
+    const suggestion = generatePasswordSuggestion();
+    set("password", suggestion);
+    try {
+      await navigator.clipboard.writeText(suggestion);
+      alert("Senha sugerida copiada. Agora cole e compartilhe com o usuário.");
+    } catch {
+      // sem clipboard: apenas preenche o campo
+    }
   }
 
   async function onSubmit(e) {
@@ -48,11 +79,20 @@ export default function NovoUsuarioPage() {
 
     try {
       setSaving(true);
+
+      // senha (opcional)
+      let password_hash = null;
+      if ((form.password || "").trim().length > 0) {
+        password_hash = await hashPassword(form.password.trim());
+      }
+
       await createProfile({
         name: form.name.trim(),
         email: form.email.trim() || null,
         role: form.role,
-        is_active: !!form.is_active
+        is_active: !!form.is_active,
+        modules: form.modules,
+        password_hash
       });
 
       router.push("/usuarios");
@@ -81,14 +121,66 @@ export default function NovoUsuarioPage() {
           <input className="input" value={form.email} onChange={(e) => set("email", e.target.value)} />
         </Field>
 
-        <Field label="Tipo">
-          <select className="input" value={form.role} onChange={(e) => set("role", e.target.value)}>
+        <Field label="Tipo" hint="Você pode clicar em 'Aplicar padrão do tipo' para preencher as permissões automaticamente.">
+          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+            <select className="input" value={form.role} onChange={(e) => set("role", e.target.value)}>
             {ROLES.map((r) => (
               <option key={r.key} value={r.key}>
                 {r.label}
               </option>
             ))}
-          </select>
+            </select>
+
+            <button type="button" className="btn" onClick={applyRoleDefaults}>
+              Aplicar padrão do tipo
+            </button>
+          </div>
+        </Field>
+
+        <Field label="Permissões de acesso" hint="Marque quais módulos esse usuário pode abrir no menu.">
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            {MODULES.map((m) => {
+              const checked = (form.modules || []).includes(m.key);
+              return (
+                <label key={m.key} className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setForm((p) => {
+                        const prev = new Set(p.modules || []);
+                        if (on) prev.add(m.key);
+                        else prev.delete(m.key);
+                        return { ...p, modules: Array.from(prev) };
+                      });
+                    }}
+                  />
+                  {m.label}
+                </label>
+              );
+            })}
+          </div>
+        </Field>
+
+        <Field
+          label="Senha (opcional)"
+          hint="Sugestão para você enviar ao usuário. Se você deixar vazio, o login não vai aceitar senha para este usuário."
+        >
+          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+            <input
+              className="input"
+              value={form.password}
+              onChange={(e) => set("password", e.target.value)}
+              placeholder="Clique em gerar ou digite uma senha"
+            />
+            <button type="button" className="btn" onClick={onGeneratePassword}>
+              Gerar sugestão
+            </button>
+          </div>
+          <div className="small" style={{ marginTop: 6 }}>
+            Importante: isso é um controle simples para o seu sistema. Em projetos maiores, o ideal é usar Supabase Auth.
+          </div>
         </Field>
 
         <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>

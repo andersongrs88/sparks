@@ -1,10 +1,33 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { logout } from "../lib/auth";
+import { useEffect, useState } from "react";
+import { getSession, hasModule, logout } from "../lib/auth";
 import { APP_VERSION } from "../lib/version";
 
 export default function Layout({ title, children }) {
   const router = useRouter();
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    const s = getSession();
+    setSession(s);
+
+    // proteção simples (MVP)
+    if (!s && router.pathname !== "/login") {
+      router.replace("/login");
+      return;
+    }
+
+    // bloqueio por módulo (MVP)
+    const path = router.pathname || "";
+    if (path.startsWith("/usuarios") && !hasModule(s, "usuarios")) {
+      router.replace("/dashboard");
+      return;
+    }
+    if (path.startsWith("/imersoes") && !hasModule(s, "imersoes")) {
+      router.replace("/dashboard");
+    }
+  }, [router.pathname]);
 
   function handleLogout() {
     logout();
@@ -20,9 +43,15 @@ export default function Layout({ title, children }) {
         </div>
 
         <div className="nav">
-          <Link href="/dashboard" className="btn">Dashboard</Link>
-          <Link href="/imersoes" className="btn">Imersões</Link>
-          <Link href="/usuarios" className="btn">Usuários</Link>
+          {hasModule(session, "dashboard") ? (
+            <Link href="/dashboard" className="btn">Dashboard</Link>
+          ) : null}
+          {hasModule(session, "imersoes") ? (
+            <Link href="/imersoes" className="btn">Imersões</Link>
+          ) : null}
+          {hasModule(session, "usuarios") ? (
+            <Link href="/usuarios" className="btn">Usuários</Link>
+          ) : null}
           <button className="btn danger" onClick={handleLogout}>Sair</button>
         </div>
       </div>
