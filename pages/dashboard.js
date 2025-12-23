@@ -20,6 +20,8 @@ function daysUntil(startDateValue) {
 
 function getCountdownSignal(days) {
   if (days === null) return null;
+
+  // >= 60 verde | >= 40 azul | >= 30 azul escuro | >= 20 laranja | < 20 bordô | <= 0 bordô
   if (days <= 0) return { label: `${days}d`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
   if (days >= 60) return { label: `${days}d`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } };
   if (days >= 40) return { label: `${days}d`, style: { background: "#0b2b52", borderColor: "#1f4f99" } };
@@ -40,12 +42,6 @@ function isLate(dueDateStr, status) {
 const STATUS_OPTIONS = ["Todos", "Planejamento", "Em execução", "Concluída", "Cancelada"];
 
 export default function DashboardPage() {
-  
-  useEffect(() => {
-  const raw = typeof window !== "undefined" ? localStorage.getItem("sparks_user") : null;
-  if (!raw) router.replace("/login");
-}, [router]);
-
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -54,10 +50,8 @@ export default function DashboardPage() {
   const [lateTasks, setLateTasks] = useState([]);
   const [profiles, setProfiles] = useState([]);
 
-  // filtro de status
   const [statusFilter, setStatusFilter] = useState("Todos");
 
-  // erros separados (não derruba o resto)
   const [errImm, setErrImm] = useState("");
   const [errTasks, setErrTasks] = useState("");
   const [errProfiles, setErrProfiles] = useState("");
@@ -71,26 +65,23 @@ export default function DashboardPage() {
       setErrTasks("");
       setErrProfiles("");
 
-      // 1) Imersões
       try {
         const im = await listImmersionsForDashboard();
-        if (mounted) setImmersions(im);
+        if (mounted) setImmersions(im || []);
       } catch (e) {
         if (mounted) setErrImm(e?.message || "Falha ao carregar imersões.");
       }
 
-      // 2) Profiles
       try {
         const p = await listProfilesForDashboard();
-        if (mounted) setProfiles(p);
+        if (mounted) setProfiles(p || []);
       } catch (e) {
         if (mounted) setErrProfiles(e?.message || "Falha ao carregar usuários.");
       }
 
-      // 3) Tasks
       try {
         const t = await listLateTasksForDashboard();
-        if (mounted) setLateTasks(t);
+        if (mounted) setLateTasks(t || []);
       } catch (e) {
         if (mounted) setErrTasks(e?.message || "Falha ao carregar tarefas.");
       }
@@ -110,7 +101,6 @@ export default function DashboardPage() {
     return map;
   }, [profiles]);
 
-  // Mapa imersões (para mostrar nome da imersão nas tarefas atrasadas)
   const immersionById = useMemo(() => {
     const map = new Map();
     for (const i of immersions) map.set(i.id, i);
@@ -125,12 +115,10 @@ export default function DashboardPage() {
   const upcoming = useMemo(() => {
     const list = [...immersionsFiltered].filter((i) => i.start_date);
     list.sort((a, b) => (a.start_date < b.start_date ? -1 : 1));
-    return list.slice(0, 50); // com rolagem, podemos mostrar mais
+    return list.slice(0, 50);
   }, [immersionsFiltered]);
 
   const lateOnly = useMemo(() => {
-    // tarefas atrasadas independem do filtro de status? aqui vamos respeitar o filtro:
-    // se statusFilter != Todos, só mostra tarefas cuja imersão esteja nesse status.
     const late = (lateTasks || []).filter((t) => isLate(t.due_date, t.status));
 
     if (statusFilter === "Todos") return late.slice(0, 50);
@@ -145,15 +133,20 @@ export default function DashboardPage() {
 
   const summary = useMemo(() => {
     const totalImm = immersionsFiltered.length;
-
     const emPlanejamento = immersionsFiltered.filter((i) => i.status === "Planejamento").length;
     const emExecucao = immersionsFiltered.filter((i) => i.status === "Em execução").length;
     const concluidas = immersionsFiltered.filter((i) => i.status === "Concluída").length;
-
     const totalLate = lateOnly.length;
 
     return { totalImm, emPlanejamento, emExecucao, concluidas, totalLate };
   }, [immersionsFiltered, lateOnly]);
+
+  const stickyThStyle = {
+    position: "sticky",
+    top: 0,
+    zIndex: 3,
+    background: "var(--card)"
+  };
 
   return (
     <Layout title="Dashboard">
@@ -162,11 +155,15 @@ export default function DashboardPage() {
         <div className="topbar" style={{ marginBottom: 10 }}>
           <div>
             <div className="h2">Resumo</div>
-            <div className="small">Filtrando por status: <b>{statusFilter}</b></div>
+            <div className="small">
+              Filtrando por status: <b>{statusFilter}</b>
+            </div>
           </div>
 
           <div style={{ minWidth: 220 }}>
-            <div className="small" style={{ marginBottom: 6 }}>Filtro por status</div>
+            <div className="small" style={{ marginBottom: 6 }}>
+              Filtro por status
+            </div>
             <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               {STATUS_OPTIONS.map((s) => (
                 <option key={s} value={s}>
@@ -179,15 +176,29 @@ export default function DashboardPage() {
 
         {loading ? <div className="small">Carregando...</div> : null}
 
-        {errImm ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>Imersões: {errImm}</div> : null}
-        {errTasks ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>Tarefas: {errTasks}</div> : null}
-        {errProfiles ? <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>Usuários: {errProfiles}</div> : null}
+        {errImm ? (
+          <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>
+            Imersões: {errImm}
+          </div>
+        ) : null}
+        {errTasks ? (
+          <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>
+            Tarefas: {errTasks}
+          </div>
+        ) : null}
+        {errProfiles ? (
+          <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>
+            Usuários: {errProfiles}
+          </div>
+        ) : null}
 
         {!loading && !errImm ? (
           <div className="row" style={{ gap: 10, flexWrap: "wrap", marginTop: 10 }}>
             <div className="card" style={{ minWidth: 220 }}>
               <div className="small">Imersões</div>
-              <div className="h1" style={{ margin: 0 }}>{summary.totalImm}</div>
+              <div className="h1" style={{ margin: 0 }}>
+                {summary.totalImm}
+              </div>
               <div className="small">Planejamento: {summary.emPlanejamento}</div>
               <div className="small">Em execução: {summary.emExecucao}</div>
               <div className="small">Concluídas: {summary.concluidas}</div>
@@ -195,7 +206,9 @@ export default function DashboardPage() {
 
             <div className="card" style={{ minWidth: 220 }}>
               <div className="small">Tarefas atrasadas</div>
-              <div className="h1" style={{ margin: 0 }}>{summary.totalLate}</div>
+              <div className="h1" style={{ margin: 0 }}>
+                {summary.totalLate}
+              </div>
               <div className="small">Rolagem habilitada (até 50)</div>
             </div>
           </div>
@@ -220,14 +233,13 @@ export default function DashboardPage() {
             {!loading && upcoming.length === 0 ? <div className="small">Nenhuma imersão encontrada.</div> : null}
 
             {!loading && upcoming.length > 0 ? (
-             <table className="table sticky">
-                <thead>                  <tr>
-<tr>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Imersão</th>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Início</th>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Dias</th>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Status</th>
-</tr>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={stickyThStyle}>Imersão</th>
+                    <th style={stickyThStyle}>Início</th>
+                    <th style={stickyThStyle}>Dias</th>
+                    <th style={stickyThStyle}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -255,7 +267,9 @@ export default function DashboardPage() {
                             >
                               {signal.label}
                             </span>
-                          ) : "-"}
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td>{i.status || "-"}</td>
                       </tr>
@@ -280,15 +294,13 @@ export default function DashboardPage() {
             {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
 
             {!loading && lateOnly.length > 0 ? (
-<table className="table sticky">
-<thead>                  <tr>
-<tr>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Tarefa</th>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Prazo</th>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Responsável</th>
-  <th style={{ position: "sticky", top: 0, background: "#0b1220", zIndex: 3 }}>Imersão</th>
-</tr>
-
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={stickyThStyle}>Tarefa</th>
+                    <th style={stickyThStyle}>Prazo</th>
+                    <th style={stickyThStyle}>Responsável</th>
+                    <th style={stickyThStyle}>Imersão</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -325,8 +337,3 @@ export default function DashboardPage() {
     </Layout>
   );
 }
-
-
-
-
-
