@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
+const FORMATS = ["Presencial", "Híbrido", "Online"];
 
 function Field({ label, children, hint }) {
   return (
@@ -26,12 +27,19 @@ export default function NovaImersaoPage() {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState({
-    immersion_name: "",
-    immersion_type: "Recorrente",
+    name: "",
+    type: "Recorrente",
+    format: "Presencial",
     start_date: "",
     end_date: "",
     room: ROOMS[0],
-    status: "Planejada"
+    status: "Planejada",
+    education_team: "",
+    mentors: "",
+    staff_needed: false,
+    staff_justification: "",
+    os_link: "",
+    tech_sheet_link: ""
   });
 
   useEffect(() => {
@@ -48,7 +56,7 @@ export default function NovaImersaoPage() {
       return;
     }
 
-    if (!form.immersion_name?.trim()) {
+    if (!form.name?.trim()) {
       setError("Informe o nome da imersão.");
       return;
     }
@@ -60,12 +68,19 @@ export default function NovaImersaoPage() {
     setSaving(true);
     try {
       const created = await createImmersion({
-        name: form.immersion_name.trim(),
-        type: form.immersion_type,
+        name: form.name.trim(),
+        type: form.type,
+        format: form.format,
         start_date: form.start_date,
         end_date: form.end_date,
         room: form.room,
-        status: form.status
+        status: form.status,
+        education_team: form.education_team || null,
+        mentors: form.mentors || null,
+        staff_needed: !!form.staff_needed,
+        staff_justification: form.staff_needed ? (form.staff_justification || null) : null,
+        os_link: form.os_link || null,
+        tech_sheet_link: form.tech_sheet_link || null
       });
 
       router.push(`/imersoes/${created.id}`);
@@ -80,66 +95,91 @@ export default function NovaImersaoPage() {
     <Layout title="Nova imersão">
       <div className="card">
         <div className="h2">Criar imersão</div>
-        <div className="small" style={{ marginBottom: 12, color: "var(--muted)" }}>
-          Esta versão não utiliza templates de checklist. Após criar a imersão, adicione tarefas em <b>Checklist</b>.
+        <div className="small muted" style={{ marginBottom: 12 }}>
+          Cadastre o básico aqui. Os detalhes completos ficam dentro da imersão na aba <b>Informações</b>.
         </div>
 
         {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{error}</div> : null}
 
         <form onSubmit={onSubmit}>
           <Field label="Nome">
-            <input
-              className="input"
-              value={form.immersion_name}
-              onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))}
-              placeholder="Ex.: Imersão Gestão MKT Digital"
-              required
-            />
+            <input className="input" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Ex.: Imersão Gestão MKT Digital" required />
           </Field>
 
-          <div className="row">
-            <div className="col">
-              <Field label="Tipo">
-                <select className="input" value={form.immersion_type} onChange={(e) => setForm((p) => ({ ...p, immersion_type: e.target.value }))}>
-                  <option value="Recorrente">Recorrente</option>
-                  <option value="Nova">Nova</option>
-                </select>
-              </Field>
-            </div>
+          <div className="grid2">
+            <Field label="Tipo">
+              <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
+                <option value="Recorrente">Recorrente</option>
+                <option value="Nova">Nova</option>
+              </select>
+            </Field>
 
-            <div className="col">
-              <Field label="Sala">
-                <select className="input" value={form.room} onChange={(e) => setForm((p) => ({ ...p, room: e.target.value }))}>
-                  {ROOMS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+            <Field label="Formato">
+              <select className="input" value={form.format} onChange={(e) => setForm((p) => ({ ...p, format: e.target.value }))}>
+                {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </Field>
           </div>
 
-          <div className="row">
-            <div className="col">
-              <Field label="Data inicial">
-                <input className="input" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
-              </Field>
-            </div>
-            <div className="col">
-              <Field label="Data final">
-                <input className="input" type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
-              </Field>
-            </div>
+          <div className="grid2">
+            <Field label="Sala">
+              <select className="input" value={form.room} onChange={(e) => setForm((p) => ({ ...p, room: e.target.value }))}>
+                {ROOMS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </Field>
+
+            <Field label="Status">
+              <select className="input" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
+                <option value="Planejada">Planejada</option>
+                <option value="Confirmada">Confirmada</option>
+                <option value="Em andamento">Em andamento</option>
+                <option value="Concluída">Concluída</option>
+                <option value="Cancelada">Cancelada</option>
+              </select>
+            </Field>
           </div>
 
-          <Field label="Status">
-            <select className="input" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
-              <option value="Planejada">Planejada</option>
-              <option value="Confirmada">Confirmada</option>
-              <option value="Em andamento">Em andamento</option>
-              <option value="Concluída">Concluída</option>
-              <option value="Cancelada">Cancelada</option>
-            </select>
+          <div className="grid2">
+            <Field label="Data inicial">
+              <input className="input" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
+            </Field>
+            <Field label="Data final">
+              <input className="input" type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
+            </Field>
+          </div>
+
+          <div className="grid2">
+            <Field label="Time de educação">
+              <input className="input" value={form.education_team} onChange={(e) => setForm((p) => ({ ...p, education_team: e.target.value }))} placeholder="Ex.: Comitê de Educação" />
+            </Field>
+            <Field label="Mentores">
+              <input className="input" value={form.mentors} onChange={(e) => setForm((p) => ({ ...p, mentors: e.target.value }))} placeholder="Ex.: Nome 1, Nome 2" />
+            </Field>
+          </div>
+
+          <div className="grid2">
+            <Field label="Ordem de Serviço (link)">
+              <input className="input" value={form.os_link} onChange={(e) => setForm((p) => ({ ...p, os_link: e.target.value }))} placeholder="URL" />
+            </Field>
+            <Field label="Ficha Técnica (link)">
+              <input className="input" value={form.tech_sheet_link} onChange={(e) => setForm((p) => ({ ...p, tech_sheet_link: e.target.value }))} placeholder="URL" />
+            </Field>
+          </div>
+
+          <Field label="Precisa de staff específico?">
+            <div className="row">
+              <label className="row" style={{ gap: 8 }}>
+                <input type="checkbox" checked={form.staff_needed} onChange={(e) => setForm((p) => ({ ...p, staff_needed: e.target.checked }))} />
+                <span className="small">Sim</span>
+              </label>
+            </div>
           </Field>
+
+          {form.staff_needed ? (
+            <Field label="Justificativa do staff">
+              <textarea className="input" rows={3} value={form.staff_justification} onChange={(e) => setForm((p) => ({ ...p, staff_justification: e.target.value }))} />
+            </Field>
+          ) : null}
 
           <div className="row" style={{ justifyContent: "space-between" }}>
             <button className="btn" type="button" onClick={() => router.push("/imersoes")}>Cancelar</button>

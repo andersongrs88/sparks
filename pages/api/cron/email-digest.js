@@ -54,7 +54,7 @@ export default async function handler(req, res) {
 
     const { data: tasks, error } = await supabaseAdmin
       .from("immersion_tasks")
-      .select("id, title, due_date, status, responsible_id, immersion_id, immersions(name)")
+      .select("id, title, due_date, status, responsible_id, immersion_id, immersions(immersion_name)")
       .neq("status", "Concluída")
       .not("due_date", "is", null)
       .lte("due_date", soonStr);

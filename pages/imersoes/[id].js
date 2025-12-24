@@ -5,7 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
 import { listTasksByImmersion, createTask, updateTask, deleteTask } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { AREAS, canEditTask, roleLabel } from "../../lib/permissions";
+import { canEditTask, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
@@ -596,7 +596,7 @@ export default function ImmersionDetailEditPage() {
   }
 
   async function onQuickUpdateTask(task, patch) {
-    const allowed = canEditTask(role, task?.area) || full;
+    const allowed = canEditTask({ role, userId: user?.id, taskResponsibleId: task?.responsible_id }) || full;
     if (!allowed) {
       setTaskError(`Sem permissão para editar tarefas da área ${task?.area || "-"}.`);
       return;
@@ -614,7 +614,7 @@ export default function ImmersionDetailEditPage() {
   }
 
   async function onUploadEvidence(task, file) {
-    const allowed = canEditTask(role, task?.area) || full;
+    const allowed = canEditTask({ role, userId: user?.id, taskResponsibleId: task?.responsible_id }) || full;
     if (!allowed) {
       setTaskError(`Sem permissão para enviar evidência na área ${task?.area || "-"}.`);
       return;
@@ -712,11 +712,7 @@ export default function ImmersionDetailEditPage() {
       <form className="card" onSubmit={onSaveImmersion}>
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
-        {!full ? (
-          <div className="small" style={{ marginBottom: 12, color: "var(--warn)" }}>
-            Você está em <b>modo leitura</b>. Para editar, use um perfil com acesso total.
-          </div>
-        ) : null}
+        {}
 
         {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{error}</div> : null}
 
@@ -1021,7 +1017,6 @@ export default function ImmersionDetailEditPage() {
                     <th>Vídeo</th>
                     <th>Quando usar</th>
                     <th>Link</th>
-                    <th>Área</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1060,7 +1055,6 @@ export default function ImmersionDetailEditPage() {
                     <th>Classificação</th>
                     <th>Situação</th>
                     <th>Dono(a)</th>
-                    <th>Área</th>
                     <th>Observações</th>
                     <th></th>
                   </tr>
@@ -1071,7 +1065,6 @@ export default function ImmersionDetailEditPage() {
                       <td>{p.classification || "—"}</td>
                       <td className="cellWrap">{p.situation || "—"}</td>
                       <td>{p.reporter || "—"}</td>
-                      <td>{p.area_involved || "—"}</td>
                       <td className="cellWrap">{p.notes || "—"}</td>
                       <td><button type="button" className="btn" onClick={() => openEdit("pdca", p)} disabled={!full}>Editar</button></td>
                     </tr>
@@ -1323,11 +1316,7 @@ export default function ImmersionDetailEditPage() {
               </div>
             </div>
 
-            {!full ? (
-              <div className="small" style={{ marginBottom: 10, color: "var(--muted)" }}>
-                Perfis de área possuem acesso para <b>atualizar tarefas da própria área</b> (status/prazo/evidência), mas não podem criar novas tarefas.
-              </div>
-            ) : null}
+            {}
 
             {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
@@ -1344,19 +1333,7 @@ export default function ImmersionDetailEditPage() {
                       </option>
                     ))}
                   </select>
-                </Field>
-
-                <Field label="Área">
-                  <select className="input" value={newTask.area} onChange={(e) => setNewTask((p) => ({ ...p, area: e.target.value }))}>
-                    {AREAS.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Título">
+                </Field><Field label="Título">
                   <input
                     className="input"
                     value={newTask.title}
@@ -1437,7 +1414,6 @@ export default function ImmersionDetailEditPage() {
                       <thead>
                         <tr>
                           <th>Tarefa</th>
-                          <th>Área</th>
                           <th>Responsável</th>
                           <th>Prazo</th>
                           <th>Status</th>
@@ -1451,56 +1427,12 @@ export default function ImmersionDetailEditPage() {
                         {list.map((t) => {
                           const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
                           const late = isLate(t.due_date, t.status);
-                          const canEdit = full || canEditTask(role, t.area);
+                          const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
 
                           return (
                             <tr key={t.id}>
-                              <td>
-                                {canEdit ? (
-                                  <input
-                                    className="input"
-                                    value={t.title || ""}
-                                    onChange={(e) => onQuickUpdateTask(t, { title: e.target.value })}
-                                    placeholder="Tarefa"
-                                  />
-                                ) : (
-                                  <div style={{ fontWeight: 600 }}>{t.title}</div>
-                                )}
-
-                                {t.evidence_link ? (
-                                  <div className="small" style={{ marginTop: 6 }}>
-                                    Evidência: <a href={t.evidence_link} target="_blank" rel="noreferrer">abrir</a>
-                                  </div>
-                                ) : null}
-
-                                {t.evidence_path ? (
-                                  <div className="small" style={{ marginTop: 6 }}>
-                                    Arquivo:{" "}
-                                    <button type="button" className="linkBtn" onClick={() => onOpenUploadedEvidence(t)}>
-                                      abrir
-                                    </button>
-                                  </div>
-                                ) : null}
-                              </td>
 
                               <td>
-                                {canEdit ? (
-                                  <select
-                                    className="input"
-                                    value={t.area || ""}
-                                    onChange={(e) => onQuickUpdateTask(t, { area: e.target.value || null })}
-                                  >
-                                    <option value="">-</option>
-                                    {AREAS.map((a) => (
-                                      <option key={a.key} value={a.key}>
-                                        {a.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span className="small">{t.area || "-"}</span>
-                                )}
-                              </td><td>
                                 {full ? (
                                   <select
                                     className="input"
@@ -1521,19 +1453,6 @@ export default function ImmersionDetailEditPage() {
 
                               <td>
                                 {canEdit ? (
-                                  <input
-                                    className="input"
-                                    type="date"
-                                    value={t.due_date || ""}
-                                    onChange={(e) => onQuickUpdateTask(t, { due_date: e.target.value || null })}
-                                  />
-                                ) : (
-                                  <span>{t.due_date || "-"}</span>
-                                )}
-                              </td>
-
-                              <td>
-                                {canEdit ? (
                                   <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t, { status: e.target.value })}>
                                     {TASK_STATUSES.map((s) => (
                                       <option key={s} value={s}>
@@ -1548,14 +1467,6 @@ export default function ImmersionDetailEditPage() {
 
                               <td>
                                 {(() => { const s = deadlineStatus(t); return <span className={`badge ${s.kind}`}>{s.label}</span>; })()}
-                              </td>
-
-                              <td>
-                                {canEdit ? (
-                                  <input className="input" type="date" value={t.done_at || ""} onChange={(e) => onQuickUpdateTask(t, { done_at: e.target.value })} />
-                                ) : (
-                                  <span>{t.done_at || "—"}</span>
-                                )}
                               </td>
 
                               <td>
@@ -1746,11 +1657,7 @@ export default function ImmersionDetailEditPage() {
                   </Field>
                   <Field label="Link">
                     <input className="input" value={editDraft.link || ""} onChange={(e) => onDraft("link", e.target.value)} />
-                  </Field>
-                  <Field label="Área">
-                    <input className="input" value={editDraft.area || ""} onChange={(e) => onDraft("area", e.target.value)} />
-                  </Field>
-                </div>
+                  </Field></div>
               ) : null}
 
               {editModal.type === "pdca" ? (
@@ -1763,11 +1670,7 @@ export default function ImmersionDetailEditPage() {
                   </Field>
                   <Field label="Dono(a) do relato">
                     <input className="input" value={editDraft.reporter || ""} onChange={(e) => onDraft("reporter", e.target.value)} />
-                  </Field>
-                  <Field label="Área envolvida na solução">
-                    <input className="input" value={editDraft.area_involved || ""} onChange={(e) => onDraft("area_involved", e.target.value)} />
-                  </Field>
-                  <Field label="Observações">
+                  </Field><Field label="Observações">
                     <textarea className="input" rows={4} value={editDraft.notes || ""} onChange={(e) => onDraft("notes", e.target.value)} />
                   </Field>
                 </div>
