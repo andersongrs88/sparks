@@ -1428,13 +1428,16 @@ export default function ImmersionDetailEditPage() {
                 <div key={ph.key} className="card" style={{ marginBottom: 12 }}>
                   <div className="h2">{ph.label}</div>
 
-                  {list.length === 0 ? (
+                  {tasksLoading ? (
+                    <div className="small">Carregando...</div>
+                  ) : list.length === 0 ? (
                     <div className="small">Nenhuma tarefa nesta fase.</div>
                   ) : (
                     <table className="table">
                       <thead>
                         <tr>
                           <th>Tarefa</th>
+                          <th>Área</th>
                           <th>Responsável</th>
                           <th>Prazo</th>
                           <th>Status</th>
@@ -1453,24 +1456,51 @@ export default function ImmersionDetailEditPage() {
                           return (
                             <tr key={t.id}>
                               <td>
-                                <div style={{ fontWeight: 600 }}>{t.title}</div>
-                                <div className="small">Área: <b>{t.area || "-"}</b></div>
+                                {canEdit ? (
+                                  <input
+                                    className="input"
+                                    value={t.title || ""}
+                                    onChange={(e) => onQuickUpdateTask(t, { title: e.target.value })}
+                                    placeholder="Tarefa"
+                                  />
+                                ) : (
+                                  <div style={{ fontWeight: 600 }}>{t.title}</div>
+                                )}
+
                                 {t.evidence_link ? (
-                                  <div className="small">
+                                  <div className="small" style={{ marginTop: 6 }}>
                                     Evidência: <a href={t.evidence_link} target="_blank" rel="noreferrer">abrir</a>
                                   </div>
                                 ) : null}
+
                                 {t.evidence_path ? (
-                                  <div className="small">
-                                    Arquivo: <button type="button" className="btn" style={{ padding: "2px 8px", marginLeft: 6 }} onClick={() => onOpenUploadedEvidence(t)}>
+                                  <div className="small" style={{ marginTop: 6 }}>
+                                    Arquivo:{" "}
+                                    <button type="button" className="linkBtn" onClick={() => onOpenUploadedEvidence(t)}>
                                       abrir
                                     </button>
                                   </div>
                                 ) : null}
-                                {late ? <div className="small" style={{ color: "var(--danger)" }}>Atrasada</div> : null}
                               </td>
 
                               <td>
+                                {canEdit ? (
+                                  <select
+                                    className="input"
+                                    value={t.area || ""}
+                                    onChange={(e) => onQuickUpdateTask(t, { area: e.target.value || null })}
+                                  >
+                                    <option value="">-</option>
+                                    {AREAS.map((a) => (
+                                      <option key={a.key} value={a.key}>
+                                        {a.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span className="small">{t.area || "-"}</span>
+                                )}
+                              </td><td>
                                 {full ? (
                                   <select
                                     className="input"

@@ -247,6 +247,52 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>Tarefas atrasadas</h3>
+            <button className="btn" onClick={() => router.push("/painel")}>Abrir painel</button>
+          </div>
+
+          {!loading && (payload?.overdue || []).length === 0 ? (
+            <p style={{ opacity: 0.8, marginTop: 8 }}>Nenhuma tarefa atrasada no momento.</p>
+          ) : null}
+
+          {!loading && (payload?.overdue || []).length > 0 ? (
+            <div style={{ marginTop: 10, overflowX: "auto" }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Imersão</th>
+                    <th>Tarefa</th>
+                    <th>Fase</th>
+                    <th>Área</th>
+                    <th>Atraso</th>
+                    <th>Prazo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(payload?.overdue || []).map((t) => (
+                    <tr key={t.id}>
+                      <td>
+                        <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 600 }}>
+                          {t.immersion_name}
+                        </a>
+                        <div className="small">{t.immersion_status}</div>
+                      </td>
+                      <td>{t.title}</td>
+                      <td><span className="badge muted">{t.phase || "-"}</span></td>
+                      <td><span className="badge muted">{t.area || "-"}</span></td>
+                      <td><span className="badge danger">{t.days_late} dia(s)</span></td>
+                      <td>{t.due_date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+
         </div>
       </div>
     </Layout>

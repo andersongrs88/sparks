@@ -13,6 +13,10 @@ alter table if exists public.immersion_tasks
   add column if not exists done_at date,
   add column if not exists notes text;
 
+-- Campo de área (necessário para Painel por área)
+alter table if exists public.immersion_tasks
+  add column if not exists area text;
+
 -- ---------------------------------------------------------
 -- 2) Completar "INFORMAÇÕES" (campos na tabela immersions)
 -- ---------------------------------------------------------
