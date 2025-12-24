@@ -476,6 +476,28 @@ a:hover { text-decoration: underline; }
 
 
 /* Sections */
+.section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.sectionTitle {
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid var(--line);
+  background: var(--color-surface-2);
+}
+
+.sectionBody {
+  padding: 12px 14px;
+}
+
 .sectionHeader {
   display: flex;
   align-items: flex-start;
@@ -514,12 +536,7 @@ a:hover { text-decoration: underline; }
 .tabBtn:hover { background: rgba(96,165,250,0.10); border-color: rgba(96,165,250,0.16); }
 .tabBtn.active { background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.28); }
 
-.sectionTitle {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 850;
-  letter-spacing: -0.01em;
-}
+/* legacy sectionTitle removed (replaced above) */
 
 /* KPI */
 .kpiSection { margin-bottom: 12px; }

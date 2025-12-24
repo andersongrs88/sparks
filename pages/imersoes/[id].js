@@ -457,6 +457,9 @@ export default function ImmersionDetailEditPage() {
     if (form.need_specific_staff && !(form.staff_justification || "").trim()) {
       return setError("Como staff específico = Sim, preencha a justificativa.");
     }
+    if (!form.educational_consultant || !form.instructional_designer) {
+      return setError("Defina os 2 responsáveis do time de educação: Consultor e Designer.");
+    }
 
     try {
       setSaving(true);
@@ -1085,13 +1088,23 @@ export default function ImmersionDetailEditPage() {
             <div className="row">
               <div className="col">
                 <Field label="Consultor educacional">
-                  <input className="input" value={form.educational_consultant || ""} onChange={(e) => set("educational_consultant", e.target.value)} />
+                  <select className="input" value={form.educational_consultant || ""} onChange={(e) => set("educational_consultant", e.target.value)}>
+                    <option value="">Selecione</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.name || p.email}>{p.name || p.email}</option>
+                    ))}
+                  </select>
                 </Field>
               </div>
 
               <div className="col">
                 <Field label="Designer instrucional">
-                  <input className="input" value={form.instructional_designer || ""} onChange={(e) => set("instructional_designer", e.target.value)} />
+                  <select className="input" value={form.instructional_designer || ""} onChange={(e) => set("instructional_designer", e.target.value)}>
+                    <option value="">Selecione</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.name || p.email}>{p.name || p.email}</option>
+                    ))}
+                  </select>
                 </Field>
               </div>
             </div>

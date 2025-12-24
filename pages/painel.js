@@ -42,12 +42,12 @@ export default function PainelPage() {
       try {
         const { data, error: e } = await supabase
           .from("immersions")
-          .select("id, name, start_date")
+          .select("id, immersion_name, start_date")
           .order("start_date", { ascending: false })
           .limit(300);
         if (e) throw e;
         if (!mounted) return;
-        setImmersionOptions(data || []);
+        setImmersionOptions((data || []).map((r) => ({ id: r.id, name: r.immersion_name, start_date: r.start_date })));
       } catch {
         // ignore
       }
@@ -62,28 +62,37 @@ export default function PainelPage() {
       setError("");
       setLoading(true);
 
-      let q = supabase
-        .from("immersion_tasks")
-        .select("id, immersion_id, title, phase, status, due_date, done_at, notes, evidence_link, evidence_path, immersions(name, status)")
-        .order("due_date", { ascending: true, nullsFirst: false })
-        .limit(500);
-
-      if (immersionId !== "all") q = q.eq("immersion_id", immersionId);
-      if (phase !== "all") q = q.eq("phase", phase);
-
-      if (status === "Pendentes") q = q.neq("status", "Concluída");
-      if (status === "Concluídas") q = q.eq("status", "Concluída");
-
-      if (query.trim()) {
-        const term = query.trim();
-        q = q.ilike("title", `%${term}%`);
+      // bases antigas podem não ter evidence_link/evidence_path.
+      const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, immersions(immersion_name, status)";
+      async function run(withEvidence) {
+        const sel = withEvidence ? `${base}, evidence_link, evidence_path` : base;
+        let q = supabase
+          .from("immersion_tasks")
+          .select(sel)
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .limit(500);
+        if (immersionId !== "all") q = q.eq("immersion_id", immersionId);
+        if (phase !== "all") q = q.eq("phase", phase);
+        if (status === "Pendentes") q = q.neq("status", "Concluída");
+        if (status === "Concluídas") q = q.eq("status", "Concluída");
+        if (query.trim()) q = q.ilike("title", `%${query.trim()}%`);
+        const { data, error: e } = await q;
+        if (e) throw e;
+        return data || [];
       }
 
-      const { data, error: e } = await q;
-      if (e) throw e;
-
       const today = iso(new Date());
-      let rows = data || [];
+      let rows = [];
+      try {
+        rows = await run(true);
+      } catch (e) {
+        const msg = String(e?.message || "");
+        if ((msg.includes("evidence_link") || msg.includes("evidence_path")) && msg.includes("does not exist")) {
+          rows = await run(false);
+        } else {
+          throw e;
+        }
+      }
       if (onlyOverdue) rows = rows.filter((t) => t.due_date && t.status !== "Concluída" && t.due_date < today);
 
       setTasks(rows);

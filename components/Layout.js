@@ -65,7 +65,6 @@ export default function Layout({ title, children }) {
         <nav className="nav" aria-label="Navegação principal">
           <NavItem href="/dashboard" label="Dashboard" icon="▦" />
           <NavItem href="/imersoes" label="Imersões" icon="📅" />
-          <NavItem href="/checklists" label="Cadastrar checklist" icon="🗂" />
           <NavItem href="/painel" label="Plano de Ação" icon="✅" />
           <NavItem href="/relatorios" label="Relatórios" icon="📊" />
           {isFullAccess ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}

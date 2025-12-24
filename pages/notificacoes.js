@@ -77,7 +77,7 @@ function Section({ title, items }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600 }}>{t.title}</div>
             <div style={{ opacity: 0.8, fontSize: 13 }}>
-              Imersão: {t.immersions?.name || "-"} | Fase: {t.phase} | Área: {t.area || "-"} | Prazo: {formatDate(t.due_date)}
+              Imersão: {t.immersions?.immersion_name || "-"} | Fase: {t.phase} | Área: {t.area || "-"} | Prazo: {formatDate(t.due_date)}
             </div>
           </div>
           <a className="btn" href={`/imersoes/${t.immersion_id}`}>Abrir</a>

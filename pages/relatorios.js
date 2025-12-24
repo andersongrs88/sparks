@@ -19,13 +19,31 @@ export default function RelatoriosPage() {
         setLoading(true);
 
         // 1) Atrasos por imersão
-        const { data: taskRows, error: e1 } = await supabase
-          .from("immersion_tasks")
-          .select("id, immersion_id, status, due_date, responsible_id, immersions(name)")
-          .neq("status", "Concluída")
-          .not("due_date", "is", null)
-          .limit(5000);
-        if (e1) throw e1;
+        // Importante: bases antigas podem não ter responsible_id ainda.
+        // Tentamos com responsible_id e degradamos caso a coluna não exista.
+        const baseSelect = "id, immersion_id, status, due_date, immersions(immersion_name)";
+        async function fetchTasks(withOwner) {
+          const { data, error } = await supabase
+            .from("immersion_tasks")
+            .select(withOwner ? `${baseSelect}, responsible_id` : baseSelect)
+            .neq("status", "Concluída")
+            .not("due_date", "is", null)
+            .limit(5000);
+          if (error) throw error;
+          return data ?? [];
+        }
+
+        let taskRows = [];
+        try {
+          taskRows = await fetchTasks(true);
+        } catch (e) {
+          const msg = String(e?.message || "");
+          if (msg.includes("responsible_id") && msg.includes("does not exist")) {
+            taskRows = await fetchTasks(false);
+          } else {
+            throw e;
+          }
+        }
 
         const today = new Date(iso(new Date()) + "T00:00:00");
         const overdue = (taskRows || []).filter((t) => new Date(t.due_date + "T00:00:00") < today);
@@ -33,7 +51,7 @@ export default function RelatoriosPage() {
         const byImm = new Map();
         for (const t of overdue) {
           const key = t.immersion_id;
-          const prev = byImm.get(key) || { immersion_id: key, name: t.immersions?.name || "-", overdue: 0 };
+          const prev = byImm.get(key) || { immersion_id: key, name: t.immersions?.immersion_name || "-", overdue: 0 };
           prev.overdue += 1;
           byImm.set(key, prev);
         }
@@ -54,13 +72,13 @@ export default function RelatoriosPage() {
         // 3) Custos por imersão (total)
         const { data: costRows, error: e3 } = await supabase
           .from("immersion_costs")
-          .select("immersion_id, value, immersions(name)")
+          .select("immersion_id, value, immersions(immersion_name)")
           .limit(10000);
         if (e3) throw e3;
         const byCost = new Map();
         for (const c of costRows || []) {
           const key = c.immersion_id;
-          const prev = byCost.get(key) || { immersion_id: key, name: c.immersions?.name || "-", total: 0 };
+          const prev = byCost.get(key) || { immersion_id: key, name: c.immersions?.immersion_name || "-", total: 0 };
           prev.total += Number(c.value || 0);
           byCost.set(key, prev);
         }
