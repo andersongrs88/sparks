@@ -63,6 +63,8 @@ export default function PainelPage() {
       setLoading(true);
 
       // bases antigas podem não ter evidence_link/evidence_path.
+      // OBS: algumas bases também não têm FK entre immersion_tasks -> immersions,
+      // então o join pode retornar nulo. A tela faz fallback com um map local.
       const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, immersions(immersion_name, status)";
       async function run(withEvidence) {
         const sel = withEvidence ? `${base}, evidence_link, evidence_path` : base;
@@ -94,6 +96,25 @@ export default function PainelPage() {
         }
       }
       if (onlyOverdue) rows = rows.filter((t) => t.due_date && t.status !== "Concluída" && t.due_date < today);
+
+      // Fallback: se o join não trouxe os dados da imersão, carregamos nomes manualmente.
+      const missing = (rows || []).some((r) => !r.immersions);
+      if (missing) {
+        const ids = Array.from(new Set((rows || []).map((r) => r.immersion_id).filter(Boolean)));
+        if (ids.length) {
+          const { data: ims, error: ie } = await supabase
+            .from("immersions")
+            .select("id, immersion_name, status")
+            .in("id", ids);
+          if (!ie && ims) {
+            const map = new Map(ims.map((i) => [i.id, i]));
+            rows = (rows || []).map((r) => ({
+              ...r,
+              immersions: r.immersions || map.get(r.immersion_id) || null,
+            }));
+          }
+        }
+      }
 
       setTasks(rows);
     } catch (e) {
@@ -207,7 +228,7 @@ export default function PainelPage() {
                       <tr key={t.id}>
                         <td>
                           <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 800 }}>
-                            {t.immersions?.name || "-"}
+                            {t.immersions?.immersion_name || "-"}
                           </a>
                           <div className="small muted">{t.immersions?.status || "-"}</div>
                         </td>

@@ -162,9 +162,7 @@ export default function ImmersionDetailEditPage() {
     due_date: "",
     status: "Programada",
     done_at: "",
-    notes: "",
-    evidence_link: "",
-    evidence_path: ""
+    notes: ""
   });
 
   // Seções da planilha
@@ -586,6 +584,62 @@ export default function ImmersionDetailEditPage() {
     return { total, done, late };
   }, [tasks]);
 
+  async function onLoadPredefinedTasks() {
+    if (!id || typeof id !== "string") return;
+    if (!full) {
+      setTaskError("Sem permissão para carregar tarefas predefinidas.");
+      return;
+    }
+
+    const ok = confirm("Carregar tarefas predefinidas para esta imersão?\n\nDica: tarefas que já existirem (mesmo título e fase) serão ignoradas.");
+    if (!ok) return;
+
+    setTaskError("");
+    try {
+      setTasksLoading(true);
+
+      // Busca templates (base do usuário já tem `task_templates`)
+      const { data: templates, error: te } = await supabase
+        .from("task_templates")
+        .select("*")
+        .order("created_at", { ascending: true, nullsFirst: false })
+        .limit(500);
+      if (te) throw te;
+
+      const existing = new Set((tasks || []).map((t) => `${t.phase}::${String(t.title || "").trim().toLowerCase()}`));
+
+      const rows = (templates || [])
+        .map((r) => {
+          const title = (r.title || r.name || r.task || r.description || "").toString().trim();
+          const phase = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim();
+          const status = (r.status || r.default_status || "Programada").toString().trim();
+          return { title, phase, status };
+        })
+        .filter((r) => !!r.title)
+        .map((r) => ({
+          immersion_id: id,
+          title: r.title,
+          phase: ["PA-PRE", "DURANTE", "POS"].includes(r.phase) ? r.phase : "PA-PRE",
+          status: TASK_STATUSES.includes(r.status) ? r.status : "Programada",
+        }))
+        .filter((r) => !existing.has(`${r.phase}::${r.title.trim().toLowerCase()}`));
+
+      if (rows.length === 0) {
+        setTaskError("Nenhuma tarefa nova para carregar (todas já existem ou não há templates)." );
+        return;
+      }
+
+      const { error: ie } = await supabase.from("immersion_tasks").insert(rows);
+      if (ie) throw ie;
+
+      await loadTasks(id);
+    } catch (e) {
+      setTaskError(e?.message || "Falha ao carregar tarefas predefinidas.");
+    } finally {
+      setTasksLoading(false);
+    }
+  }
+
   async function onCreateTask() {
     if (!id || typeof id !== "string") return;
 
@@ -612,13 +666,11 @@ export default function ImmersionDetailEditPage() {
         due_date: newTask.due_date || null,
         done_at: newTask.done_at || null,
         notes: (newTask.notes || "").trim() || null,
-        status: newTask.status,
-        evidence_link: newTask.evidence_link || null,
-        evidence_path: newTask.evidence_path || null
+        status: newTask.status
       });
 
       setNewTaskOpen(false);
-      setNewTask((p) => ({ ...p, title: "", due_date: "", done_at: "", notes: "", evidence_link: "", evidence_path: "", status: "Programada" }));
+      setNewTask((p) => ({ ...p, title: "", due_date: "", done_at: "", notes: "", status: "Programada" }));
       await loadTasks(id);
     } catch (e) {
       setTaskError(e?.message || "Falha ao criar tarefa.");
@@ -1399,6 +1451,15 @@ export default function ImmersionDetailEditPage() {
                 <button type="button" className="btn" onClick={() => loadTasks(form.id)} disabled={tasksLoading}>
                   {tasksLoading ? "Atualizando..." : "Atualizar"}
                 </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={onLoadPredefinedTasks}
+                  disabled={tasksLoading || !full}
+                  title={!full ? "Apenas administradores podem carregar tarefas predefinidas." : ""}
+                >
+                  Carregar predefinidas
+                </button>
                 <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={!full}>
                   {newTaskOpen ? "Fechar" : "Nova tarefa"}
                 </button>
@@ -1472,10 +1533,6 @@ export default function ImmersionDetailEditPage() {
                     </Field>
                   </div>
                 </div>
-
-                <Field label="Evidência (link opcional)" hint="Você também pode fazer upload no botão 'Upload' dentro da tarefa.">
-                  <input className="input" value={newTask.evidence_link} onChange={(e) => setNewTask((p) => ({ ...p, evidence_link: e.target.value }))} />
-                </Field>
 
                 <div className="row">
                   <button type="button" className="btn" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
