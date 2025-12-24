@@ -1536,8 +1536,6 @@ export default function ImmersionDetailEditPage() {
                                 )}
                               </td>
 
-                              </td>
-
                               <td>
                                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                                   {canEdit ? (
