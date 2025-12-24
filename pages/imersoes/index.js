@@ -27,6 +27,7 @@ export default function ImmersionsListPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -59,7 +60,12 @@ export default function ImmersionsListPage() {
   }, [authLoading, user]);
 
   const grouped = useMemo(() => {
-    const all = items || [];
+    const q = (search || "").trim().toLowerCase();
+    const all = (items || []).filter((it) => {
+      if (!q) return true;
+      const hay = `${it.immersion_name || ""} ${it.status || ""} ${it.room_location || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
     const byStatus = {};
     for (const it of all) {
       const k = it.status || "Planejamento";
@@ -67,7 +73,7 @@ export default function ImmersionsListPage() {
       byStatus[k].push(it);
     }
     return byStatus;
-  }, [items]);
+  }, [items, search]);
 
   if (authLoading) return null;
   if (!user) return null;
@@ -75,15 +81,28 @@ export default function ImmersionsListPage() {
   return (
     <Layout title="Imersões">
       <div className="container">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>Lista de imersões</h2>
+        <div className="topbar" style={{ marginBottom: 12 }}>
+          <div>
+            <div className="h2" style={{ margin: 0 }}>Imersões</div>
+            <div className="small muted">Crie, acesse e acompanhe o andamento das imersões.</div>
+          </div>
           {isFullAccess ? (
-            <button className="btn" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
+            <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
           ) : null}
         </div>
 
-        {error ? <p style={{ color: "#ff6b6b" }}>{error}</p> : null}
-        {loading ? <p>Carregando...</p> : null}
+        <div className="toolbar">
+          <input
+            className="input sm"
+            style={{ maxWidth: 420 }}
+            placeholder="Buscar por nome, status ou sala..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {error ? <div className="alert danger" style={{ marginTop: 12 }}>{error}</div> : null}
+        {loading ? <div className="skeletonList" /> : null}
 
         {!loading && (items || []).length === 0 ? (
           <div className="card">
@@ -92,7 +111,7 @@ export default function ImmersionsListPage() {
           </div>
         ) : null}
 
-        <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
           {Object.keys(grouped).map((status) => (
             <div className="card" key={status}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -102,15 +121,23 @@ export default function ImmersionsListPage() {
 
               <div style={{ marginTop: 8 }}>
                 {(grouped[status] || []).map((it) => (
-                  <div key={it.id} className="row" style={{ cursor: "pointer" }} onClick={() => router.push(`/imersoes/${it.id}`)}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>{it.immersion_name}</div>
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>
+                  <button
+                    key={it.id}
+                    type="button"
+                    className="listItem"
+                    onClick={() => router.push(`/imersoes/${it.id}`)}
+                  >
+                    <div className="listItemMain">
+                      <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
+                      <div className="listItemMeta">
                         {it.start_date} → {it.end_date} • D-{daysUntil(it.start_date)}
                       </div>
                     </div>
-                    <div className="pill">{it.room_location || "-"}</div>
-                  </div>
+                    <div className="listItemAside">
+                      <span className="pill">{it.room_location || "-"}</span>
+                      <span className="chev">›</span>
+                    </div>
+                  </button>
                 ))}
               </div>
             </div>

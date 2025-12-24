@@ -83,9 +83,9 @@ export default function UsuariosListPage() {
           </button>
         </div>
 
-        <div className="row" style={{ marginBottom: 12 }}>
+        <div className="toolbar" style={{ marginBottom: 12 }}>
           <input
-            className="input"
+            className="input sm"
             placeholder="Buscar por nome, email ou tipo..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -100,7 +100,8 @@ export default function UsuariosListPage() {
         ) : null}
 
         {!loading && filtered.length > 0 ? (
-          <table className="table">
+          <div className="tableWrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Nome</th>
@@ -120,7 +121,8 @@ export default function UsuariosListPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         ) : null}
 
         <div className="small" style={{ marginTop: 12 }}>

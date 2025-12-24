@@ -64,7 +64,7 @@ export default function PainelPage() {
 
       let q = supabase
         .from("immersion_tasks")
-        .select("id, immersion_id, title, phase, status, due_date, done_at, notes, evidence_link, evidence_path, immersions(immersion_name, status)")
+        .select("id, immersion_id, title, phase, status, due_date, done_at, notes, evidence_link, evidence_path, immersions(name, status)")
         .order("due_date", { ascending: true, nullsFirst: false })
         .limit(500);
 
@@ -127,18 +127,18 @@ export default function PainelPage() {
             </div>
           </div>
 
-          <div className="row wrap" style={{ marginTop: 14, gap: 10 }}>
+          <div className="toolbar">
             <input
-              className="input"
+              className="input sm"
               style={{ maxWidth: 420 }}
               placeholder="Buscar por tarefa ou imersão..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
 
-            <div className="row" style={{ gap: 8 }}>
-              <span className="small muted">Imersão</span>
-              <select className="input" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
+            <div className="toolbarGroup">
+              <span className="toolbarLabel">Imersão</span>
+              <select className="input sm" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
                 <option value="all">Todas</option>
                 {(immersionOptions || []).map((i) => (
                   <option key={i.id} value={i.id}>{i.name}</option>
@@ -146,9 +146,9 @@ export default function PainelPage() {
               </select>
             </div>
 
-            <div className="row" style={{ gap: 8 }}>
-              <span className="small muted">Fase</span>
-              <select className="input" value={phase} onChange={(e) => setPhase(e.target.value)}>
+            <div className="toolbarGroup">
+              <span className="toolbarLabel">Fase</span>
+              <select className="input sm" value={phase} onChange={(e) => setPhase(e.target.value)}>
                 <option value="all">Todas</option>
                 <option value="PA-PRE">PA-PRÉ</option>
                 <option value="DURANTE">DURANTE</option>
@@ -156,15 +156,15 @@ export default function PainelPage() {
               </select>
             </div>
 
-            <div className="row" style={{ gap: 8 }}>
-              <span className="small muted">Status</span>
-              <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <div className="toolbarGroup">
+              <span className="toolbarLabel">Status</span>
+              <select className="input sm" value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="Pendentes">Pendentes</option>
                 <option value="Concluídas">Concluídas</option>
               </select>
             </div>
 
-            <label className="row" style={{ gap: 8 }}>
+            <label className="row" style={{ gap: 8, marginLeft: 2 }}>
               <input type="checkbox" checked={onlyOverdue} onChange={(e) => setOnlyOverdue(e.target.checked)} />
               <span className="small">Somente atrasadas</span>
             </label>
@@ -178,7 +178,7 @@ export default function PainelPage() {
           ) : null}
 
           {!loading && tasks.length > 0 ? (
-            <div style={{ marginTop: 12, overflowX: "auto" }}>
+            <div className="tableWrap" style={{ marginTop: 12 }}>
               <table className="table">
                 <thead>
                   <tr>
@@ -197,18 +197,20 @@ export default function PainelPage() {
                     return (
                       <tr key={t.id}>
                         <td>
-                          <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 700 }}>
+                          <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 800 }}>
                             {t.immersions?.name || "-"}
                           </a>
                           <div className="small muted">{t.immersions?.status || "-"}</div>
                         </td>
                         <td>{t.title}</td>
-                        <td><span className="badge muted">{t.phase || "-"}</span></td>
-                        <td>{t.status}</td>
+                        <td><span className="badge muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : (t.phase || "-")}</span></td>
+                        <td>
+                          <span className={t.status === "Concluída" ? "badge success" : "badge muted"}>{t.status || "-"}</span>
+                        </td>
                         <td>{late ? <span className="badge danger">{daysLate(t.due_date)} dia(s)</span> : <span className="badge muted">-</span>}</td>
                         <td>{t.due_date || "-"}</td>
                         <td>
-                          <button className="btn" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
+                          <button className="btn sm" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
                         </td>
                       </tr>
                     );

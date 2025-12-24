@@ -21,7 +21,7 @@ export default function RelatoriosPage() {
         // 1) Atrasos por imersão
         const { data: taskRows, error: e1 } = await supabase
           .from("immersion_tasks")
-          .select("id, immersion_id, status, due_date, responsible_id, immersions(immersion_name)")
+          .select("id, immersion_id, status, due_date, responsible_id, immersions(name)")
           .neq("status", "Concluída")
           .not("due_date", "is", null)
           .limit(5000);
@@ -41,7 +41,7 @@ export default function RelatoriosPage() {
         // 2) Tarefas por dono
         const { data: profiles, error: e2 } = await supabase.from("profiles").select("id, name").limit(5000);
         if (e2) throw e2;
-        const profMap = new Map((profiles || []).map((p) => [p.id, p.immersion_name]));
+        const profMap = new Map((profiles || []).map((p) => [p.id, p.name]));
         const byOwner = new Map();
         for (const t of taskRows || []) {
           const key = t.responsible_id || "-";
@@ -54,7 +54,7 @@ export default function RelatoriosPage() {
         // 3) Custos por imersão (total)
         const { data: costRows, error: e3 } = await supabase
           .from("immersion_costs")
-          .select("immersion_id, value, immersions(immersion_name)")
+          .select("immersion_id, value, immersions(name)")
           .limit(10000);
         if (e3) throw e3;
         const byCost = new Map();
@@ -99,22 +99,25 @@ export default function RelatoriosPage() {
           <div className="grid2">
             <div className="card">
               <div className="h2">Atrasos por imersão</div>
-              <table className="table" style={{ marginTop: 8 }}>
+              <div className="tableWrap" style={{ marginTop: 8 }}>
+                <table className="table">
                 <thead><tr><th>Imersão</th><th>Atrasadas</th></tr></thead>
                 <tbody>
                   {data.overdueByImmersion.map((r) => (
                     <tr key={r.immersion_id}>
-                      <td><a href={`/imersoes/${r.immersion_id}`}>{r.immersion_name}</a></td>
+                        <td><a href={`/imersoes/${r.immersion_id}`}>{r.name}</a></td>
                       <td><span className="badge danger">{r.overdue}</span></td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
 
             <div className="card">
               <div className="h2">Tarefas por dono</div>
-              <table className="table" style={{ marginTop: 8 }}>
+              <div className="tableWrap" style={{ marginTop: 8 }}>
+                <table className="table">
                 <thead><tr><th>Dono</th><th>Abertas</th><th>Concluídas</th></tr></thead>
                 <tbody>
                   {data.tasksByOwner.map((r) => (
@@ -125,22 +128,25 @@ export default function RelatoriosPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
 
             <div className="card">
               <div className="h2">Custos por imersão</div>
-              <table className="table" style={{ marginTop: 8 }}>
+              <div className="tableWrap" style={{ marginTop: 8 }}>
+                <table className="table">
                 <thead><tr><th>Imersão</th><th>Total</th></tr></thead>
                 <tbody>
                   {data.costByImmersion.map((r) => (
                     <tr key={r.immersion_id}>
-                      <td><a href={`/imersoes/${r.immersion_id}`}>{r.immersion_name}</a></td>
+                        <td><a href={`/imersoes/${r.immersion_id}`}>{r.name}</a></td>
                       <td>{r.total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
 
             <div className="card">
@@ -149,8 +155,8 @@ export default function RelatoriosPage() {
                 Sugestões: exportar Plano de Ação (CSV), custos (CSV) e lista de atrasadas.
               </div>
               <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
-                <a className="btn" href="/painel">Abrir Painel (PA)</a>
-                <a className="btn" href="/imersoes">Abrir Imersões</a>
+                <a className="btn sm" href="/painel">Abrir Plano de Ação</a>
+                <a className="btn sm" href="/imersoes">Abrir Imersões</a>
               </div>
             </div>
           </div>

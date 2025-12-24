@@ -8,6 +8,7 @@ export default function ChecklistsPage() {
   const [error, setError] = useState("");
   const [immersions, setImmersions] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -43,6 +44,12 @@ export default function ChecklistsPage() {
     }
   }
 
+  const filtered = (immersions || []).filter((im) => {
+    const q = (search || "").trim().toLowerCase();
+    if (!q) return true;
+    return (im.name || "").toLowerCase().includes(q) || (im.status || "").toLowerCase().includes(q);
+  });
+
   return (
     <Layout title="Cadastrar checklist">
       <div className="container">
@@ -50,11 +57,22 @@ export default function ChecklistsPage() {
           <div className="h1">Checklists por imersão</div>
           <div className="small muted">Defina o nome do checklist e o dono (usuário responsável). Esse checklist aparece dentro da imersão.</div>
 
+          <div className="toolbar">
+            <input
+              className="input sm"
+              style={{ maxWidth: 420 }}
+              placeholder="Buscar imersão ou status..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <div className="chip">Imersões: <b>{filtered.length}</b></div>
+          </div>
+
           {error ? <div className="small" style={{ color: "var(--danger)", marginTop: 10 }}>{error}</div> : null}
           {loading ? <div className="small" style={{ marginTop: 10 }}>Carregando...</div> : null}
 
           {!loading ? (
-            <div style={{ overflowX: "auto", marginTop: 12 }}>
+            <div className="tableWrap" style={{ marginTop: 12 }}>
               <table className="table">
                 <thead>
                   <tr>
@@ -65,7 +83,7 @@ export default function ChecklistsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {immersions.map((im) => (
+                  {filtered.map((im) => (
                     <tr key={im.id}>
                       <td>
                         <a href={`/imersoes/${im.id}`} style={{ fontWeight: 800 }}>{im.name || "(sem nome)"}</a>
@@ -74,14 +92,14 @@ export default function ChecklistsPage() {
                       <td><span className="badge muted">{im.status || "—"}</span></td>
                       <td style={{ minWidth: 220 }}>
                         <input
-                          className="input"
+                          className="input sm"
                           value={im.checklist_title || "Plano de Ação"}
                           onChange={(e) => updateChecklist(im.id, { checklist_title: e.target.value })}
                         />
                       </td>
                       <td style={{ minWidth: 240 }}>
                         <select
-                          className="input"
+                          className="input sm"
                           value={im.checklist_owner_id || ""}
                           onChange={(e) => updateChecklist(im.id, { checklist_owner_id: e.target.value || null })}
                         >
