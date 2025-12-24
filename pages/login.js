@@ -1,79 +1,88 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Layout from "../components/Layout";
+import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { loading, user, signIn } = useAuth();
 
-  const [email, setEmail] = useState("admin@exemplo.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!loading && user) router.replace("/dashboard");
+  }, [loading, user, router]);
 
   async function onSubmit(e) {
     e.preventDefault();
-    setMsg("");
-    setLoading(true);
-
+    setError("");
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok || !data?.ok) {
-        setMsg(data?.error || "Falha no login.");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ salva sessão simples
-      localStorage.setItem("sparks_user", JSON.stringify(data.user));
-
-      // ✅ redireciona (replace evita voltar pra tela de login)
-      router.replace("/dashboard");
-    } catch (err) {
-      setMsg("Erro ao conectar.");
-      setLoading(false);
+      await signIn(email.trim(), password);
+      router.push("/dashboard");
+    } catch (e) {
+      setError(e?.message || "Não foi possível entrar.");
     }
   }
 
-  function onForgot() {
-    router.push("/reset-password");
-  }
-
   return (
-    <Layout title="Login">
-      <div className="card" style={{ maxWidth: 520, margin: "0 auto" }}>
-        <div className="h1" style={{ marginBottom: 8 }}>Acesso ao sistema</div>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0b0f1a" }}>
+      <div style={{ width: 420, background: "#121a2b", padding: 24, borderRadius: 12, color: "white" }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>Acesso ao sistema</h1>
+        <p style={{ opacity: 0.85, marginTop: 8 }}>Entre com seu e-mail e senha (Supabase Auth).</p>
 
-        {msg ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{msg}</div> : null}
+        {error ? (
+          <div style={{ background: "#3a1c1c", border: "1px solid #ff6b6b", padding: 10, borderRadius: 8, marginBottom: 12 }}>
+            {error}
+          </div>
+        ) : null}
 
         <form onSubmit={onSubmit}>
           <div style={{ marginBottom: 12 }}>
-            <div className="h2">E-mail</div>
-            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <label style={{ fontSize: 12, opacity: 0.9 }}>E-mail</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seuemail@empresa.com"
+              style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #2a3551", background: "#0f1626", color: "white" }}
+              autoComplete="email"
+            />
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <div className="h2">Senha</div>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <label style={{ fontSize: 12, opacity: 0.9 }}>Senha</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              placeholder="••••••••"
+              style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #2a3551", background: "#0f1626", color: "white" }}
+              autoComplete="current-password"
+            />
           </div>
 
-          <div className="row">
-            <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Entrando..." : "Entrar"}
-            </button>
-
-            <button className="btn" type="button" onClick={onForgot} disabled={loading}>
-              Esqueci minha senha
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: 12,
+              borderRadius: 10,
+              border: "none",
+              background: "#7c5cff",
+              color: "white",
+              cursor: "pointer",
+              opacity: loading ? 0.7 : 1
+            }}
+          >
+            Entrar
+          </button>
         </form>
+
+        <div style={{ marginTop: 14, fontSize: 12, opacity: 0.8, lineHeight: 1.4 }}>
+          Dica: os usuários precisam existir no Supabase (Authentication → Users) e ter perfil na tabela <b>profiles</b> com role.
+        </div>
       </div>
-    </Layout>
+    </div>
   );
 }

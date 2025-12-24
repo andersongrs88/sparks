@@ -1,336 +1,251 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
-import { listImmersionsForDashboard, listLateTasksForDashboard, listProfilesForDashboard } from "../lib/dashboard";
-
-function toLocalDateOnly(d) {
-  if (!d) return null;
-  const date = typeof d === "string" ? new Date(d) : d;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function daysUntil(startDateValue) {
-  if (!startDateValue) return null;
-  const start = toLocalDateOnly(startDateValue);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffMs = start.getTime() - today.getTime();
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-}
-
-function getCountdownSignal(days) {
-  if (days === null) return null;
-
-  // >= 60 verde | >= 40 azul | >= 30 azul escuro | >= 20 laranja | < 20 bordô | <= 0 bordô
-  if (days <= 0) return { label: `${days}d`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
-  if (days >= 60) return { label: `${days}d`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } };
-  if (days >= 40) return { label: `${days}d`, style: { background: "#0b2b52", borderColor: "#1f4f99" } };
-  if (days >= 30) return { label: `${days}d`, style: { background: "#071a35", borderColor: "#163a7a" } };
-  if (days >= 20) return { label: `${days}d`, style: { background: "#4a2a00", borderColor: "#b86b00" } };
-  return { label: `${days}d`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
-}
-
-function isLate(dueDateStr, status) {
-  if (!dueDateStr) return false;
-  if (status === "Concluída") return false;
-  const due = toLocalDateOnly(dueDateStr);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return due.getTime() < today.getTime();
-}
-
-const STATUS_OPTIONS = ["Todos", "Planejamento", "Em execução", "Concluída", "Cancelada"];
+import { useAuth } from "../context/AuthContext";
+import { getDashboardStats } from "../lib/dashboard";
+import { supabase } from "../lib/supabaseClient";
+import { sortTasksByPriority } from "../lib/tasks";
+import { AREAS, roleLabel } from "../lib/permissions";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { loading: authLoading, user, role, isFullAccess } = useAuth();
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [payload, setPayload] = useState({ stats: null, upcoming: [] });
 
-  const [immersions, setImmersions] = useState([]);
-  const [lateTasks, setLateTasks] = useState([]);
-  const [profiles, setProfiles] = useState([]);
-
-  const [statusFilter, setStatusFilter] = useState("Todos");
-
-  const [errImm, setErrImm] = useState("");
-  const [errTasks, setErrTasks] = useState("");
-  const [errProfiles, setErrProfiles] = useState("");
+  const [myTasks, setMyTasks] = useState([]);
+  const [myLoading, setMyLoading] = useState(false);
+  const [myError, setMyError] = useState("");
+  const [areaFilter, setAreaFilter] = useState("eventos");
+  const [immersionFilter, setImmersionFilter] = useState("all");
+  const [immersionOptions, setImmersionOptions] = useState([]);
 
   useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
     let mounted = true;
 
     async function load() {
-      setLoading(true);
-      setErrImm("");
-      setErrTasks("");
-      setErrProfiles("");
-
       try {
-        const im = await listImmersionsForDashboard();
-        if (mounted) setImmersions(im || []);
+        setError("");
+        setLoading(true);
+        const data = await getDashboardStats();
+        if (!mounted) return;
+        setPayload(data);
       } catch (e) {
-        if (mounted) setErrImm(e?.message || "Falha ao carregar imersões.");
+        if (!mounted) return;
+        setError(e?.message || "Falha ao carregar dados.");
+      } finally {
+        if (mounted) setLoading(false);
       }
-
-      try {
-        const p = await listProfilesForDashboard();
-        if (mounted) setProfiles(p || []);
-      } catch (e) {
-        if (mounted) setErrProfiles(e?.message || "Falha ao carregar usuários.");
-      }
-
-      try {
-        const t = await listLateTasksForDashboard();
-        if (mounted) setLateTasks(t || []);
-      } catch (e) {
-        if (mounted) setErrTasks(e?.message || "Falha ao carregar tarefas.");
-      }
-
-      if (mounted) setLoading(false);
     }
 
     load();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [authLoading, user]);
 
-  const profileById = useMemo(() => {
-    const map = new Map();
-    for (const p of profiles) map.set(p.id, p);
-    return map;
-  }, [profiles]);
+  // Carrega opções de imersão para filtro
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from("immersions")
+          .select("id, name, start_date")
+          .order("start_date", { ascending: false })
+          .limit(300);
+        if (err) throw err;
+        if (!mounted) return;
+        setImmersionOptions(data ?? []);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [authLoading, user]);
 
-  const immersionById = useMemo(() => {
-    const map = new Map();
-    for (const i of immersions) map.set(i.id, i);
-    return map;
-  }, [immersions]);
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let mounted = true;
 
-  const immersionsFiltered = useMemo(() => {
-    if (statusFilter === "Todos") return immersions;
-    return immersions.filter((i) => (i.status || "").trim() === statusFilter);
-  }, [immersions, statusFilter]);
+    async function loadMy() {
+      try {
+        setMyError("");
+        setMyLoading(true);
 
-  const upcoming = useMemo(() => {
-    const list = [...immersionsFiltered].filter((i) => i.start_date);
-    list.sort((a, b) => (a.start_date < b.start_date ? -1 : 1));
-    return list.slice(0, 50);
-  }, [immersionsFiltered]);
+        // Full access: filtra por área escolhida.
+        // Área: mostra somente tarefas da própria área.
+        if (!isFullAccess && !AREAS.includes(role)) {
+          if (mounted) setMyTasks([]);
+          return;
+        }
 
-  const lateOnly = useMemo(() => {
-    const late = (lateTasks || []).filter((t) => isLate(t.due_date, t.status));
+        const areaToUse = isFullAccess ? areaFilter : role;
+        let query = supabase
+          .from("immersion_tasks")
+          .select("id, immersion_id, title, area, status, due_date, evidence_link")
+          .eq("area", areaToUse)
+          .neq("status", "Concluída");
 
-    if (statusFilter === "Todos") return late.slice(0, 50);
+        if (immersionFilter !== "all") query = query.eq("immersion_id", immersionFilter);
 
-    const filtered = late.filter((t) => {
-      const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
-      return im && (im.status || "").trim() === statusFilter;
-    });
+        const { data, error: qErr } = await query
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .limit(20);
 
-    return filtered.slice(0, 50);
-  }, [lateTasks, statusFilter, immersionById]);
+        if (qErr) throw qErr;
+        if (!mounted) return;
+        setMyTasks(sortTasksByPriority(data ?? []));
+      } catch (e) {
+        if (!mounted) return;
+        setMyError(e?.message || "Falha ao carregar tarefas.");
+      } finally {
+        if (mounted) setMyLoading(false);
+      }
+    }
 
-  const summary = useMemo(() => {
-    const totalImm = immersionsFiltered.length;
-    const emPlanejamento = immersionsFiltered.filter((i) => i.status === "Planejamento").length;
-    const emExecucao = immersionsFiltered.filter((i) => i.status === "Em execução").length;
-    const concluidas = immersionsFiltered.filter((i) => i.status === "Concluída").length;
-    const totalLate = lateOnly.length;
+    loadMy();
+    return () => {
+      mounted = false;
+    };
+  }, [authLoading, user, role, isFullAccess, areaFilter, immersionFilter]);
 
-    return { totalImm, emPlanejamento, emExecucao, concluidas, totalLate };
-  }, [immersionsFiltered, lateOnly]);
+  const stats = useMemo(() => {
+    const s = payload?.stats;
+    return {
+      total: s?.totalImmersions ?? 0,
+      late: s?.lateTasks ?? 0,
+      done: s?.doneTasks ?? 0,
+      tasks: s?.totalTasks ?? 0
+    };
+  }, [payload]);
 
-  const stickyThStyle = {
-    position: "sticky",
-    top: 0,
-    zIndex: 3,
-    background: "var(--card)"
-  };
+  if (authLoading) return null;
+  if (!user) return null;
 
   return (
     <Layout title="Dashboard">
-      {/* Resumo */}
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div className="topbar" style={{ marginBottom: 10 }}>
-          <div>
-            <div className="h2">Resumo</div>
-            <div className="small">
-              Filtrando por status: <b>{statusFilter}</b>
-            </div>
+      <div className="container">
+        <div className="grid">
+          <div className="card">
+            <div className="cardLabel">Imersões</div>
+            <div className="cardValue">{stats.total}</div>
           </div>
+          <div className="card">
+            <div className="cardLabel">Tarefas</div>
+            <div className="cardValue">{stats.tasks}</div>
+          </div>
+          <div className="card">
+            <div className="cardLabel">Atrasadas</div>
+            <div className="cardValue">{stats.late}</div>
+          </div>
+          <div className="card">
+            <div className="cardLabel">Concluídas</div>
+            <div className="cardValue">{stats.done}</div>
+          </div>
+        </div>
 
-          <div style={{ minWidth: 220 }}>
-            <div className="small" style={{ marginBottom: 6 }}>
-              Filtro por status
+        {(isFullAccess || AREAS.includes(role)) ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0 }}>Minhas tarefas</h3>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                {isFullAccess ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 12, opacity: 0.8 }}>Área</span>
+                    <select className="input" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
+                      {AREAS.map((a) => (
+                        <option key={a} value={a}>{roleLabel(a)}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Área: {roleLabel(role)}</div>
+                )}
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>Imersão</span>
+                  <select className="input" value={immersionFilter} onChange={(e) => setImmersionFilter(e.target.value)}>
+                    <option value="all">Todas</option>
+                    {(immersionOptions || []).map((im) => (
+                      <option key={im.id} value={im.id}>{im.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button className="btn" onClick={() => router.push("/painel")}>Abrir painel</button>
+              </div>
             </div>
-            <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+
+            {myError ? <p style={{ color: "#ff6b6b" }}>{myError}</p> : null}
+            {myLoading ? <p>Carregando...</p> : null}
+
+            {!myLoading && (myTasks || []).length === 0 ? (
+              <p style={{ opacity: 0.8 }}>Nenhuma tarefa pendente para esta área.</p>
+            ) : null}
+
+            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              {(myTasks || []).map((t) => (
+                <div
+                  key={t.id}
+                  className="row"
+                  onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{t.title}</div>
+                    <div style={{ opacity: 0.8, fontSize: 12 }}>
+                      {t.due_date ? `Prazo: ${t.due_date}` : "Sem prazo"} • {t.status} • Área: {t.area || "-"}
+                    </div>
+                  </div>
+                  <div className="pill">Abrir</div>
+                </div>
               ))}
-            </select>
-          </div>
-        </div>
-
-        {loading ? <div className="small">Carregando...</div> : null}
-
-        {errImm ? (
-          <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>
-            Imersões: {errImm}
-          </div>
-        ) : null}
-        {errTasks ? (
-          <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>
-            Tarefas: {errTasks}
-          </div>
-        ) : null}
-        {errProfiles ? (
-          <div className="small" style={{ color: "var(--danger)", marginTop: 8 }}>
-            Usuários: {errProfiles}
-          </div>
-        ) : null}
-
-        {!loading && !errImm ? (
-          <div className="row" style={{ gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-            <div className="card" style={{ minWidth: 220 }}>
-              <div className="small">Imersões</div>
-              <div className="h1" style={{ margin: 0 }}>
-                {summary.totalImm}
-              </div>
-              <div className="small">Planejamento: {summary.emPlanejamento}</div>
-              <div className="small">Em execução: {summary.emExecucao}</div>
-              <div className="small">Concluídas: {summary.concluidas}</div>
-            </div>
-
-            <div className="card" style={{ minWidth: 220 }}>
-              <div className="small">Tarefas atrasadas</div>
-              <div className="h1" style={{ margin: 0 }}>
-                {summary.totalLate}
-              </div>
-              <div className="small">Rolagem habilitada (até 50)</div>
             </div>
           </div>
         ) : null}
-      </div>
 
-      {/* Painéis */}
-      <div className="row" style={{ alignItems: "flex-start" }}>
-        {/* Próximas imersões */}
-        <div className="col">
-          <div className="card" style={{ maxHeight: 520, overflowY: "auto" }}>
-            <div className="topbar" style={{ marginBottom: 10 }}>
-              <div>
-                <div className="h2">Próximas imersões</div>
-                <div className="small">Ordenado por data de início (rolagem).</div>
-              </div>
-              <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
-                Ver todas
-              </button>
-            </div>
-
-            {!loading && upcoming.length === 0 ? <div className="small">Nenhuma imersão encontrada.</div> : null}
-
-            {!loading && upcoming.length > 0 ? (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={stickyThStyle}>Imersão</th>
-                    <th style={stickyThStyle}>Início</th>
-                    <th style={stickyThStyle}>Dias</th>
-                    <th style={stickyThStyle}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcoming.map((i) => {
-                    const d = daysUntil(i.start_date);
-                    const signal = getCountdownSignal(d);
-
-                    return (
-                      <tr key={i.id} style={{ cursor: "pointer" }} onClick={() => router.push(`/imersoes/${i.id}`)}>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{i.immersion_name || "-"}</div>
-                          <div className="small">Sala: {i.room_location || "-"}</div>
-                        </td>
-                        <td>{i.start_date || "-"}</td>
-                        <td>
-                          {signal ? (
-                            <span
-                              className="badge"
-                              style={{
-                                ...signal.style,
-                                border: "1px solid",
-                                padding: "6px 10px",
-                                borderRadius: 999
-                              }}
-                            >
-                              {signal.label}
-                            </span>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        <td>{i.status || "-"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : null}
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>Próximas imersões</h3>
+            <button className="btn" onClick={() => router.push("/imersoes")}>Ver todas</button>
           </div>
-        </div>
 
-        {/* Tarefas atrasadas */}
-        <div className="col">
-          <div className="card" style={{ maxHeight: 520, overflowY: "auto" }}>
-            <div className="topbar" style={{ marginBottom: 10 }}>
-              <div>
-                <div className="h2">Tarefas atrasadas</div>
-                <div className="small">Até 50 tarefas com prazo vencido e não concluídas (rolagem).</div>
+          {error ? <p style={{ color: "#ff6b6b" }}>{error}</p> : null}
+          {loading ? <p>Carregando...</p> : null}
+
+          {!loading && (payload?.upcoming || []).length === 0 ? (
+            <p style={{ opacity: 0.8 }}>Nenhuma imersão cadastrada.</p>
+          ) : null}
+
+          <div style={{ marginTop: 8 }}>
+            {(payload?.upcoming || []).map((it) => (
+              <div
+                key={it.id}
+                className="row"
+                onClick={() => router.push(`/imersoes/${it.id}`)}
+                style={{ cursor: "pointer" }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>{it.immersion_name}</div>
+                  <div style={{ opacity: 0.8, fontSize: 12 }}>
+                    {it.start_date} → {it.end_date} • {it.status}
+                  </div>
+                </div>
+                <div className="pill">{it.total_tasks || 0} tarefas</div>
               </div>
-            </div>
-
-            {!loading && lateOnly.length === 0 ? <div className="small">Nenhuma tarefa atrasada. Ótimo.</div> : null}
-
-            {!loading && lateOnly.length > 0 ? (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={stickyThStyle}>Tarefa</th>
-                    <th style={stickyThStyle}>Prazo</th>
-                    <th style={stickyThStyle}>Responsável</th>
-                    <th style={stickyThStyle}>Imersão</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lateOnly.map((t) => {
-                    const prof = t.owner_profile_id ? profileById.get(t.owner_profile_id) : null;
-                    const im = t.immersion_id ? immersionById.get(t.immersion_id) : null;
-
-                    return (
-                      <tr key={t.id}>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{t.title}</div>
-                          <div className="small">{t.phase}</div>
-                        </td>
-                        <td>{t.due_date || "-"}</td>
-                        <td>{prof ? `${prof.name} (${prof.role})` : "-"}</td>
-                        <td>
-                          {im?.id ? (
-                            <button className="btn" type="button" onClick={() => router.push(`/imersoes/${im.id}`)}>
-                              {im.immersion_name || "Abrir"}
-                            </button>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : null}
+            ))}
           </div>
         </div>
       </div>

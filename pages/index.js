@@ -1,14 +1,15 @@
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import { getSession } from "../lib/auth";
+import { useAuth } from "../context/AuthContext";
 
 export default function Home() {
   const router = useRouter();
+  const { loading, user } = useAuth();
 
   useEffect(() => {
-    const s = getSession();
-    router.replace(s ? "/dashboard" : "/login");
-  }, [router]);
+    if (loading) return;
+    router.replace(user ? "/dashboard" : "/login");
+  }, [loading, user, router]);
 
   return null;
 }

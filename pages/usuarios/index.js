@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../context/AuthContext";
 import { listProfiles } from "../../lib/profiles";
 
 const ROLES_LABEL = {
-  CONSULTOR: "Consultor",
-  DESIGNER: "Designer",
-  BASICO: "Básico",
-  ADMIN: "Administrador"
+  admin: "Admin",
+  consultor_educacao: "Consultor de Educação",
+  designer: "Designer",
+  eventos: "Eventos (visualização)",
+  tecnica: "Técnica (visualização)",
+  relacionamento: "Relacionamento (visualização)",
+  producao: "Produção (visualização)",
+  mentoria: "Mentoria (visualização)",
+  viewer: "Visualização"
 };
 
 export default function UsuariosListPage() {
   const router = useRouter();
+  const { loading: authLoading, user, isFullAccess } = useAuth();
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +27,15 @@ export default function UsuariosListPage() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace("/login");
+      return;
+    }
+    if (!authLoading && user && !isFullAccess) {
+      router.replace("/dashboard");
+      return;
+    }
+
     let mounted = true;
 
     async function load() {
@@ -39,7 +55,7 @@ export default function UsuariosListPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [router, authLoading, user, isFullAccess]);
 
   const filtered = useMemo(() => {
     const q = (search || "").trim().toLowerCase();

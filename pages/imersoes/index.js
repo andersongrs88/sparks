@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../context/AuthContext";
 import { listImmersions } from "../../lib/immersions";
 
 function badgeClass(status) {
@@ -13,97 +14,107 @@ function badgeClass(status) {
 function daysUntil(startDateStr) {
   if (!startDateStr) return "-";
   const start = new Date(startDateStr + "T00:00:00");
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffMs = start.getTime() - today.getTime();
+  const today = new Date();
+  const diffMs = start - today;
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   return diffDays;
 }
 
 export default function ImmersionsListPage() {
   const router = useRouter();
+  const { loading: authLoading, user, isFullAccess } = useAuth();
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
     let mounted = true;
 
     async function load() {
       try {
+        setError("");
         setLoading(true);
         const data = await listImmersions();
-        if (mounted) setItems(data);
+        if (!mounted) return;
+        setItems(data || []);
       } catch (e) {
-        if (mounted) setError(e?.message || "Falha ao carregar.");
+        if (!mounted) return;
+        setError(e?.message || "Falha ao carregar imersões.");
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
     load();
-    return () => { mounted = false; };
-  }, []);
+    return () => {
+      mounted = false;
+    };
+  }, [authLoading, user]);
 
-  const rows = useMemo(() => items, [items]);
+  const grouped = useMemo(() => {
+    const all = items || [];
+    const byStatus = {};
+    for (const it of all) {
+      const k = it.status || "Planejamento";
+      byStatus[k] = byStatus[k] || [];
+      byStatus[k].push(it);
+    }
+    return byStatus;
+  }, [items]);
+
+  if (authLoading) return null;
+  if (!user) return null;
 
   return (
     <Layout title="Imersões">
-      <div className="card">
-        <div className="topbar" style={{ marginBottom: 10 }}>
-          <div>
-            <div className="h2">Lista</div>
-            <div className="small">Cadastros reais no Supabase</div>
-          </div>
-          <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>
-            Nova imersão
-          </button>
+      <div className="container">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h2 style={{ margin: 0 }}>Lista de imersões</h2>
+          {isFullAccess ? (
+            <button className="btn" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
+          ) : null}
         </div>
 
-        {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{error}</div> : null}
-        {loading ? <div className="small">Carregando...</div> : null}
+        {error ? <p style={{ color: "#ff6b6b" }}>{error}</p> : null}
+        {loading ? <p>Carregando...</p> : null}
 
-        {!loading && rows.length === 0 ? (
-          <div className="small">Nenhuma imersão cadastrada ainda. Clique em “Nova imersão”.</div>
+        {!loading && (items || []).length === 0 ? (
+          <div className="card">
+            <p style={{ opacity: 0.85 }}>Nenhuma imersão cadastrada.</p>
+            {isFullAccess ? <button className="btn" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
+          </div>
         ) : null}
 
-        {!loading && rows.length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Imersão</th>
-                <th>Início</th>
-                <th>Fim</th>
-                <th>Dias até</th>
-                <th>Sala/Local</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((x) => (
-                <tr
-                  key={x.id}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => router.push(`/imersoes/${x.id}`)}
-                >
-                  <td>{x.immersion_name}</td>
-                  <td>{x.start_date}</td>
-                  <td>{x.end_date}</td>
-                  <td>
-                    <span className="badge">
-                      {daysUntil(x.start_date)}
-                    </span>
-                  </td>
-                  <td>{x.room_location || "-"}</td>
-                  <td><span className={badgeClass(x.status)}>{x.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : null}
+        <div style={{ display: "grid", gap: 12 }}>
+          {Object.keys(grouped).map((status) => (
+            <div className="card" key={status}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ margin: 0 }}>{status}</h3>
+                <span className={badgeClass(status)}>{(grouped[status] || []).length}</span>
+              </div>
 
-        <div className="small" style={{ marginTop: 12 }}>
-          Próximo passo: tela de detalhe/edição com todos os campos do seu cadastro.
+              <div style={{ marginTop: 8 }}>
+                {(grouped[status] || []).map((it) => (
+                  <div key={it.id} className="row" style={{ cursor: "pointer" }} onClick={() => router.push(`/imersoes/${it.id}`)}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{it.immersion_name}</div>
+                      <div style={{ fontSize: 12, opacity: 0.8 }}>
+                        {it.start_date} → {it.end_date} • D-{daysUntil(it.start_date)}
+                      </div>
+                    </div>
+                    <div className="pill">{it.room_location || "-"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </Layout>

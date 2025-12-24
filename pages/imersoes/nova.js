@@ -1,12 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
+import { listTemplates, listTemplateItems } from "../../lib/templates";
+import { createTasks } from "../../lib/tasks";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
 const initial = {
   immersion_name: "",
+  immersion_type: "Recorrente",
+  checklist_template_id: "",
   start_date: "",
   end_date: "",
   room_location: "Brasil",
@@ -47,6 +52,16 @@ const initial = {
   status: "Planejamento"
 };
 
+function addDays(dateStr, days) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + Number(days || 0));
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function Field({ label, children, hint }) {
   return (
     <div style={{ marginBottom: 12 }}>
@@ -76,9 +91,47 @@ function Tabs({ tabs, active, onChange }) {
 
 export default function NovaImersao() {
   const router = useRouter();
+  const { loading: authLoading, user, isFullAccess } = useAuth();
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+    if (!authLoading && user && !isFullAccess) router.replace("/dashboard");
+  }, [authLoading, user, isFullAccess, router]);
+
+  // Carrega templates de checklist
+  useEffect(() => {
+    let mounted = true;
+    async function loadTemplates() {
+      try {
+        setTemplatesLoading(true);
+        const data = await listTemplates();
+        if (!mounted) return;
+        const active = (data || []).filter((t) => t.is_active);
+        setTemplates(active);
+
+        // Se não houver template selecionado, define o primeiro
+        if (active.length > 0) {
+          setForm((prev) => ({
+            ...prev,
+            checklist_template_id: prev.checklist_template_id || active[0].id
+          }));
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (mounted) setTemplatesLoading(false);
+      }
+    }
+    loadTemplates();
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const [tab, setTab] = useState("essencial");
 
   const tabs = useMemo(
@@ -110,11 +163,36 @@ export default function NovaImersao() {
 
     try {
       setSaving(true);
-      await createImmersion({
+      const created = await createImmersion({
         ...form,
         immersion_name: form.immersion_name.trim(),
         staff_justification: form.need_specific_staff ? form.staff_justification : ""
       });
+
+      // Se houver template escolhido, cria as tarefas automaticamente
+      if (form.checklist_template_id) {
+        const items = await listTemplateItems(form.checklist_template_id);
+        const startBase = form.start_date;
+        const endBase = form.end_date;
+        const taskPayloads = (items || []).map((it) => {
+          const basis = it.due_basis || "start";
+          const baseDate = basis === "end" ? endBase : startBase;
+          const due = baseDate ? addDays(baseDate, it.offset_days || 0) : null;
+          return {
+            immersion_id: created.id,
+            phase: it.phase || "PA-PRE",
+            area: it.area || null,
+            title: it.title,
+            due_date: due,
+            status: "Programada",
+            responsible_id: it.responsible_id || null,
+            evidence_link: null,
+            evidence_path: null
+          };
+        });
+        await createTasks(taskPayloads);
+      }
+
       router.push("/imersoes");
     } catch (err) {
       setError(err?.message || "Falha ao salvar.");
@@ -142,6 +220,44 @@ export default function NovaImersao() {
                 onChange={(e) => set("immersion_name", e.target.value)}
               />
             </Field>
+
+            <div className="row">
+              <div className="col">
+                <Field label="Tipo">
+                  <select
+                    className="input"
+                    value={form.immersion_type}
+                    onChange={(e) => set("immersion_type", e.target.value)}
+                  >
+                    <option value="Nova">Nova</option>
+                    <option value="Recorrente">Recorrente</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="col">
+                <Field
+                  label="Template de checklist"
+                  hint="O sistema vai criar automaticamente as tarefas padrão após salvar a imersão."
+                >
+                  <select
+                    className="input"
+                    value={form.checklist_template_id}
+                    onChange={(e) => set("checklist_template_id", e.target.value)}
+                    disabled={templatesLoading || templates.length === 0}
+                  >
+                    {templates.length === 0 ? (
+                      <option value="">Nenhum template encontrado</option>
+                    ) : null}
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
 
             <div className="row">
               <div className="col">
