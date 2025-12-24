@@ -17,6 +17,15 @@ import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from ".
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
+const IMMERSION_TYPES = [
+  "Presencial",
+  "Online",
+  "Zoom",
+  "Entrada",
+  "Extras",
+  "Giants",
+  "Outras"
+];
 const PHASES = [
   { key: "PA-PRE", label: "PA-PRÉ" },
   { key: "DURANTE", label: "DURANTE" },
@@ -28,13 +37,30 @@ const TASK_STATUSES = ["Programada", "Em andamento", "Concluída"];
 function Field({ label, children, hint }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <div className="h2">{label}</div>
-      {hint ? (
-        <div className="small" style={{ marginBottom: 6 }}>
-          {hint}
-        </div>
-      ) : null}
+      <div className="labelRow">
+        <label className="label">{label}</label>
+        {hint ? <span className="hint">{hint}</span> : null}
+      </div>
       {children}
+    </div>
+  );
+}
+
+function Section({ title, description, children, right }) {
+  return (
+    <div className="section" style={{ marginTop: 12 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div>
+          <div className="sectionTitle">{title}</div>
+          {description ? (
+            <div className="small muted" style={{ marginTop: 4 }}>
+              {description}
+            </div>
+          ) : null}
+        </div>
+        {right ? <div>{right}</div> : null}
+      </div>
+      <div className="sectionBody">{children}</div>
     </div>
   );
 }
@@ -157,18 +183,19 @@ export default function ImmersionDetailEditPage() {
   const tabs = useMemo(
     () => [
       { key: "essencial", label: "Essencial" },
-      { key: "informacoes", label: "Informações" },
+      { key: "operacao", label: "Operação" },
+      { key: "time", label: "Time de Educação" },
       { key: "cronograma", label: "Cronograma" },
-      { key: "custos", label: "Custos" },
-      { key: "ferramentas", label: "Ferramentas" },
+      { key: "checklist", label: "Checklist" },
       { key: "materiais", label: "Materiais" },
+      { key: "ferramentas", label: "Ferramentas" },
+      { key: "custos", label: "Custos" },
       { key: "videos", label: "Vídeos" },
       { key: "pdca", label: "PDCA" },
-      { key: "operacao", label: "Operação" },
+      { key: "informacoes", label: "Informações" },
       { key: "narrativa", label: "Narrativa" },
       { key: "trainer", label: "Trainer" },
       { key: "terceiros", label: "Terceiros" },
-      { key: "checklist", label: "Checklist" }
     ],
     []
   );
@@ -452,6 +479,7 @@ export default function ImmersionDetailEditPage() {
     setError("");
 
     if (!form.immersion_name?.trim()) return setError("Preencha o nome da imersão.");
+    if (!form.type) return setError("Selecione o tipo da imersão.");
     if (!form.start_date) return setError("Preencha a data de início.");
     if (!form.end_date) return setError("Preencha a data de fim.");
     if (form.need_specific_staff && !(form.staff_justification || "").trim()) {
@@ -465,6 +493,7 @@ export default function ImmersionDetailEditPage() {
       setSaving(true);
       await updateImmersion(form.id, {
         immersion_name: form.immersion_name.trim(),
+        type: form.type,
         start_date: form.start_date,
         end_date: form.end_date,
         room_location: form.room_location,
@@ -682,7 +711,7 @@ export default function ImmersionDetailEditPage() {
                 {form.immersion_name}
               </div>
               <div className="small">
-                {form.start_date} → {form.end_date} • Sala: {form.room_location || "-"} • Status: {form.status}
+                {form.start_date} → {form.end_date} • Tipo: {form.type || "-"} • Sala: {form.room_location || "-"} • Status: {form.status}
               </div>
             </div>
 
@@ -724,44 +753,46 @@ export default function ImmersionDetailEditPage() {
         <fieldset disabled={!full} style={{ border: 0, padding: 0, margin: 0 }}>
         {form && tab === "essencial" ? (
           <>
-            <div className="h2">Identificação</div>
+            <Section
+              title="Essencial"
+              description="Defina o mínimo para a imersão existir: nome, tipo e datas. O restante você completa nas outras abas."
+            >
+              <Field label="Nome da imersão" hint="Obrigatório">
+                <input
+                  className="input"
+                  value={form.immersion_name || ""}
+                  onChange={(e) => set("immersion_name", e.target.value)}
+                  placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
+                />
+              </Field>
 
-            <Field label="Imersão">
-              <input className="input" value={form.immersion_name || ""} onChange={(e) => set("immersion_name", e.target.value)} />
-            </Field>
-
-            <div className="row">
-              <div className="col">
-                <Field label="Data de início">
-                  <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
+              <div className="grid2">
+                <Field label="Tipo" hint="Obrigatório">
+                  <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+                    <option value="">Selecione</option>
+                    {IMMERSION_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </div>
 
-              <div className="col">
-                <Field label="Data de fim">
+              <div className="grid2">
+                <Field label="Data de início" hint="Obrigatório">
+                  <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
+                </Field>
+
+                <Field label="Data de fim" hint="Obrigatório">
                   <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                 </Field>
               </div>
-            </div>
 
-            <Field label="Sala a ser realizada">
-              <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
-                {ROOMS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Status">
-              <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
-                <option value="Planejamento">Planejamento</option>
-                <option value="Em execução">Em execução</option>
-                <option value="Concluída">Concluída</option>
-                <option value="Cancelada">Cancelada</option>
-              </select>
-            </Field>
+              <div className="small muted" style={{ marginTop: 6 }}>
+                Dica: conclua esta aba primeiro. Depois, preencha operação, time e módulos (cronograma, checklist, materiais etc.).
+              </div>
+            </Section>
           </>
         ) : null}
 
@@ -1081,99 +1112,144 @@ export default function ImmersionDetailEditPage() {
           </>
         ) : null}
 
-{form && tab === "operacao" ? (
+        {form && tab === "time" ? (
           <>
-            <div className="h2">Time e links</div>
-
-            <div className="row">
-              <div className="col">
-                <Field label="Consultor educacional">
-                  <select className="input" value={form.educational_consultant || ""} onChange={(e) => set("educational_consultant", e.target.value)}>
+            <Section
+              title="Time de Educação"
+              description="Defina os 2 responsáveis desta imersão (Consultor e Designer). Isso alimenta notificações e relatórios."
+            >
+              <div className="grid2">
+                <Field label="Consultor (Educação)" hint="Obrigatório">
+                  <select
+                    className="input"
+                    value={form.educational_consultant || ""}
+                    onChange={(e) => set("educational_consultant", e.target.value)}
+                  >
                     <option value="">Selecione</option>
                     {profiles.map((p) => (
-                      <option key={p.id} value={p.name || p.email}>{p.name || p.email}</option>
+                      <option key={p.id} value={p.id}>
+                        {p.name ? `${p.name} (${p.email})` : p.email}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Designer instrucional" hint="Obrigatório">
+                  <select
+                    className="input"
+                    value={form.instructional_designer || ""}
+                    onChange={(e) => set("instructional_designer", e.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name ? `${p.name} (${p.email})` : p.email}
+                      </option>
                     ))}
                   </select>
                 </Field>
               </div>
 
-              <div className="col">
-                <Field label="Designer instrucional">
-                  <select className="input" value={form.instructional_designer || ""} onChange={(e) => set("instructional_designer", e.target.value)}>
-                    <option value="">Selecione</option>
-                    {profiles.map((p) => (
-                      <option key={p.id} value={p.name || p.email}>{p.name || p.email}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            </div>
-
-            <Field label="Link ordem de serviço">
-              <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} />
-            </Field>
-
-            <Field label="Link para ficha técnica">
-              <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} />
-            </Field>
-
-            <div style={{ height: 10 }} />
-            <div className="h2">Mentores e staff</div>
-
-            <Field label="Mentores que estarão presentes">
-              <textarea className="input" rows={4} value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} />
-            </Field>
-
-            <Field label="Existe a necessidade de staff específico para essa imersão?">
-              <div className="row">
-                <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
-                  Sim
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${!form.need_specific_staff ? "primary" : ""}`}
-                  onClick={() => {
-                    set("need_specific_staff", false);
-                    set("staff_justification", "");
-                  }}
-                >
-                  Não
-                </button>
-              </div>
-            </Field>
-
-            <Field label="Justificativa" hint={staffEnabled ? "Obrigatório quando staff específico = Sim." : "Habilita ao marcar Sim."}>
-              <textarea
-                className="input"
-                rows={3}
-                disabled={!staffEnabled}
-                value={form.staff_justification || ""}
-                onChange={(e) => set("staff_justification", e.target.value)}
-              />
-            </Field>
-
-            <Field label="Vai ter palestrante?">
-              <div className="row">
-                <button type="button" className={`btn ${speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", true)}>
-                  Sim
-                </button>
-                <button type="button" className={`btn ${!speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", false)}>
-                  Não
-                </button>
-              </div>
-
-              {speakerEnabled ? (
-                <div className="card" style={{ marginTop: 10 }}>
-                  <div className="h2">Cadastro de palestrante (em desenvolvimento)</div>
-                  <div className="small" style={{ marginBottom: 10 }}>
-                    No futuro, aqui vamos cadastrar o palestrante e vincular nesta imersão.
-                  </div>
-                  <button type="button" className="btn" onClick={() => alert("Em desenvolvimento: cadastro de palestrante.")}>
-                    Cadastrar palestrante (futuro)
-                  </button>
+              {(profiles || []).length === 0 ? (
+                <div className="small" style={{ color: "var(--warning)", marginTop: 8 }}>
+                  Não foi possível carregar a lista de usuários. Verifique a tabela <b>profiles</b>.
                 </div>
               ) : null}
-            </Field>
+            </Section>
+          </>
+        ) : null}
+
+{form && tab === "operacao" ? (
+          <>
+            <Section title="Operação" description="Defina local, status e links operacionais.">
+              <div className="grid2">
+                <Field label="Sala / Local" hint="Obrigatório">
+                  <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
+                    {ROOMS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Status">
+                  <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
+                    <option value="Planejamento">Planejamento</option>
+                    <option value="Em execução">Em execução</option>
+                    <option value="Concluída">Concluída</option>
+                    <option value="Cancelada">Cancelada</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="grid2">
+                <Field label="Ordem de serviço (link)">
+                  <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="https://..." />
+                </Field>
+
+                <Field label="Ficha técnica (link)">
+                  <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="https://..." />
+                </Field>
+              </div>
+            </Section>
+
+            <Section title="Mentores e staff" description="Use esta seção apenas quando necessário para execução.">
+              <Field label="Mentores que estarão presentes">
+                <textarea className="input" rows={4} value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} />
+              </Field>
+
+              <Field label="Precisa de staff específico?">
+                <div className="row">
+                  <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
+                    Sim
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${!form.need_specific_staff ? "primary" : ""}`}
+                    onClick={() => {
+                      set("need_specific_staff", false);
+                      set("staff_justification", "");
+                    }}
+                  >
+                    Não
+                  </button>
+                </div>
+              </Field>
+
+              <Field label="Justificativa" hint={staffEnabled ? "Obrigatório quando staff específico = Sim." : "Habilita ao marcar Sim."}>
+                <textarea
+                  className="input"
+                  rows={3}
+                  disabled={!staffEnabled}
+                  value={form.staff_justification || ""}
+                  onChange={(e) => set("staff_justification", e.target.value)}
+                />
+              </Field>
+
+              <Field label="Vai ter palestrante?">
+                <div className="row">
+                  <button type="button" className={`btn ${speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", true)}>
+                    Sim
+                  </button>
+                  <button type="button" className={`btn ${!speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", false)}>
+                    Não
+                  </button>
+                </div>
+
+                {speakerEnabled ? (
+                  <div className="card" style={{ marginTop: 10 }}>
+                    <div className="h2">Cadastro de palestrante (em desenvolvimento)</div>
+                    <div className="small" style={{ marginBottom: 10 }}>
+                      No futuro, aqui vamos cadastrar o palestrante e vincular nesta imersão.
+                    </div>
+                    <button type="button" className="btn" onClick={() => alert("Em desenvolvimento: cadastro de palestrante.")}>
+                      Cadastrar palestrante (futuro)
+                    </button>
+                  </div>
+                ) : null}
+              </Field>
+            </Section>
           </>
         ) : null}
 
