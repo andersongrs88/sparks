@@ -7,6 +7,13 @@ import { listTasksByImmersion, createTask, updateTask, deleteTask } from "../../
 import { listActiveProfiles } from "../../lib/profiles";
 import { AREAS, canEditTask, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
+import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
+import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
+import { listTools, createTool, updateTool, deleteTool } from "../../lib/tools";
+import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from "../../lib/materials";
+import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
+import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
+
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
@@ -34,12 +41,12 @@ function Field({ label, children, hint }) {
 
 function Tabs({ tabs, active, onChange }) {
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+    <div className="tabRow">
       {tabs.map((t) => (
         <button
           key={t.key}
           type="button"
-          className={`btn ${active === t.key ? "primary" : ""}`}
+          className={active === t.key ? "tabBtn active" : "tabBtn"}
           onClick={() => onChange(t.key)}
         >
           {t.label}
@@ -128,13 +135,35 @@ export default function ImmersionDetailEditPage() {
     responsible_id: "",
     due_date: "",
     status: "Programada",
+    done_at: "",
+    notes: "",
     evidence_link: "",
     evidence_path: ""
   });
 
+  // Seções da planilha
+  const [costs, setCosts] = useState([]);
+  const [scheduleItems, setScheduleItems] = useState([]);
+  const [tools, setTools] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [pdcaItems, setPdcaItems] = useState([]);
+
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+
+  const [editModal, setEditModal] = useState({ type: "", open: false, item: null });
+  const [editDraft, setEditDraft] = useState({});
+
   const tabs = useMemo(
     () => [
       { key: "essencial", label: "Essencial" },
+      { key: "informacoes", label: "Informações" },
+      { key: "cronograma", label: "Cronograma" },
+      { key: "custos", label: "Custos" },
+      { key: "ferramentas", label: "Ferramentas" },
+      { key: "materiais", label: "Materiais" },
+      { key: "videos", label: "Vídeos" },
+      { key: "pdca", label: "PDCA" },
       { key: "operacao", label: "Operação" },
       { key: "narrativa", label: "Narrativa" },
       { key: "trainer", label: "Trainer" },
@@ -215,6 +244,39 @@ export default function ImmersionDetailEditPage() {
     }
   }
 
+
+  async function loadSections(immersionId) {
+    setSectionsLoading(true);
+    try {
+      const [c, s, t, m, v, p] = await Promise.all([
+        listCosts(immersionId),
+        listScheduleItems(immersionId),
+        listTools(immersionId),
+        listMaterials(immersionId),
+        listVideos(immersionId),
+        listPdcaItems(immersionId)
+      ]);
+      setCosts(c);
+      setScheduleItems(s);
+      setTools(t);
+      setMaterials(m);
+      setVideos(v);
+      setPdcaItems(p);
+    } catch (e) {
+      // erros individuais aparecem ao tentar salvar; aqui evitamos travar a tela
+      console.error(e);
+    } finally {
+      setSectionsLoading(false);
+    }
+  }
+
+  // Carrega todas as seções (planilha) ao abrir a imersão
+  useEffect(() => {
+    if (!id || typeof id !== "string") return;
+    loadSections(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   // Carrega tasks quando entra na aba Checklist
   useEffect(() => {
     if (!id || typeof id !== "string") return;
@@ -226,6 +288,157 @@ export default function ImmersionDetailEditPage() {
   function set(field, value) {
     setForm((p) => ({ ...p, [field]: value }));
   }
+
+  function openEdit(type, item = null) {
+    setEditModal({ type, open: true, item });
+    setEditDraft(item ? { ...item } : {});
+  }
+
+  function closeEdit() {
+    setEditModal({ type: "", open: false, item: null });
+    setEditDraft({});
+  }
+
+  async function saveEdit() {
+    if (!id || typeof id !== "string") return;
+    const type = editModal?.type;
+    try {
+      if (type === "cost") {
+        const payload = {
+          immersion_id: id,
+          category: editDraft.category || null,
+          item: (editDraft.item || "").trim(),
+          value: editDraft.value === "" || editDraft.value === null || typeof editDraft.value === "undefined" ? null : Number(editDraft.value),
+          description: editDraft.description || null
+        };
+        if (!payload.item) return setError("Preencha o item do custo.");
+        if (editModal.item?.id) await updateCost(editModal.item.id, payload);
+        else await createCost(payload);
+      }
+
+      if (type === "schedule") {
+        const payload = {
+          immersion_id: id,
+          day_label: editDraft.day_label || null,
+          day_date: editDraft.day_date || null,
+          start_time: editDraft.start_time || null,
+          end_time: editDraft.end_time || null,
+          duration_minutes: editDraft.duration_minutes === "" || editDraft.duration_minutes === null || typeof editDraft.duration_minutes === "undefined" ? null : Number(editDraft.duration_minutes),
+          activity_type: editDraft.activity_type || null,
+          topics: editDraft.topics || null,
+          responsible: editDraft.responsible || null,
+          link: editDraft.link || null,
+          staff_notes: editDraft.staff_notes || null,
+          sort_order: editDraft.sort_order === "" || editDraft.sort_order === null || typeof editDraft.sort_order === "undefined" ? 0 : Number(editDraft.sort_order)
+        };
+        if (editModal.item?.id) await updateScheduleItem(editModal.item.id, payload);
+        else await createScheduleItem(payload);
+      }
+
+      if (type === "tool") {
+        const payload = {
+          immersion_id: id,
+          name: (editDraft.name || "").trim(),
+          link: editDraft.link || null,
+          print_guidance: editDraft.print_guidance || null,
+          print_quantity: editDraft.print_quantity === "" || editDraft.print_quantity === null || typeof editDraft.print_quantity === "undefined" ? null : Number(editDraft.print_quantity)
+        };
+        if (!payload.name) return setError("Preencha o nome da ferramenta.");
+        if (editModal.item?.id) await updateTool(editModal.item.id, payload);
+        else await createTool(payload);
+      }
+
+      if (type === "material") {
+        const payload = {
+          immersion_id: id,
+          material: (editDraft.material || "").trim(),
+          link: editDraft.link || null,
+          quantity: editDraft.quantity === "" || editDraft.quantity === null || typeof editDraft.quantity === "undefined" ? null : Number(editDraft.quantity),
+          specification: editDraft.specification || null,
+          reference: editDraft.reference || null
+        };
+        if (!payload.material) return setError("Preencha o material.");
+        if (editModal.item?.id) await updateMaterial(editModal.item.id, payload);
+        else await createMaterial(payload);
+      }
+
+      if (type === "video") {
+        const payload = {
+          immersion_id: id,
+          title: (editDraft.title || "").trim(),
+          when_to_use: editDraft.when_to_use || null,
+          link: editDraft.link || null,
+          area: editDraft.area || null
+        };
+        if (!payload.title) return setError("Preencha o título do vídeo.");
+        if (editModal.item?.id) await updateVideo(editModal.item.id, payload);
+        else await createVideo(payload);
+      }
+
+      if (type === "pdca") {
+        const payload = {
+          immersion_id: id,
+          classification: editDraft.classification || null,
+          situation: editDraft.situation || null,
+          reporter: editDraft.reporter || null,
+          area_involved: editDraft.area_involved || null,
+          notes: editDraft.notes || null
+        };
+        if (editModal.item?.id) await updatePdcaItem(editModal.item.id, payload);
+        else await createPdcaItem(payload);
+      }
+
+      await loadSections(id);
+      closeEdit();
+    } catch (e) {
+      setError(e?.message || "Falha ao salvar item.");
+    }
+  }
+
+  async function deleteEditItem() {
+    if (!id || typeof id !== "string") return;
+    const type = editModal?.type;
+    const itemId = editModal?.item?.id;
+    if (!itemId) return;
+    try {
+      if (type === "cost") await deleteCost(itemId);
+      if (type === "schedule") await deleteScheduleItem(itemId);
+      if (type === "tool") await deleteTool(itemId);
+      if (type === "material") await deleteMaterial(itemId);
+      if (type === "video") await deleteVideo(itemId);
+      if (type === "pdca") await deletePdcaItem(itemId);
+
+      await loadSections(id);
+      closeEdit();
+    } catch (e) {
+      setError(e?.message || "Falha ao excluir item.");
+    }
+  }
+
+  function onDraft(field, value) {
+    setEditDraft((p) => ({ ...p, [field]: value }));
+  }
+
+  function deadlineStatus(task) {
+    const due = task?.due_date ? new Date(task.due_date + "T00:00:00") : null;
+    const done = task?.done_at ? new Date(task.done_at + "T00:00:00") : null;
+    if (!due) return { label: "—", kind: "muted" };
+
+    if (task?.status === "Concluída" || done) {
+      if (!done) return { label: "Concluída", kind: "ok" };
+      return done.getTime() <= due.getTime() ? { label: "No prazo", kind: "ok" } : { label: "Fora do prazo", kind: "warn" };
+    }
+
+    const today = new Date();
+    const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const diffDays = Math.ceil((due.getTime() - t0.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return { label: "Atrasada", kind: "danger" };
+    if (diffDays === 0) return { label: "Vence hoje", kind: "warn" };
+    if (diffDays <= 3) return { label: `Vence em ${diffDays}d`, kind: "warn" };
+    return { label: `Em dia (${diffDays}d)`, kind: "ok" };
+  }
+
 
   async function onSaveImmersion(e) {
     e.preventDefault();
@@ -365,13 +578,15 @@ export default function ImmersionDetailEditPage() {
         title: newTask.title.trim(),
         responsible_id: newTask.responsible_id || null,
         due_date: newTask.due_date || null,
+        done_at: newTask.done_at || null,
+        notes: (newTask.notes || "").trim() || null,
         status: newTask.status,
         evidence_link: newTask.evidence_link || null,
         evidence_path: newTask.evidence_path || null
       });
 
       setNewTaskOpen(false);
-      setNewTask((p) => ({ ...p, title: "", due_date: "", evidence_link: "", evidence_path: "", status: "Programada" }));
+      setNewTask((p) => ({ ...p, title: "", due_date: "", done_at: "", notes: "", evidence_link: "", evidence_path: "", status: "Programada" }));
       await loadTasks(id);
     } catch (e) {
       setTaskError(e?.message || "Falha ao criar tarefa.");
@@ -388,7 +603,10 @@ export default function ImmersionDetailEditPage() {
     }
     setTaskError("");
     try {
-      await updateTask(task.id, patch);
+      const normalized = { ...patch };
+      if (Object.prototype.hasOwnProperty.call(normalized, "done_at") && !normalized.done_at) normalized.done_at = null;
+      if (Object.prototype.hasOwnProperty.call(normalized, "notes") && typeof normalized.notes === "string") normalized.notes = normalized.notes.trim() || null;
+      await updateTask(task.id, normalized);
       await loadTasks(id);
     } catch (e) {
       setTaskError(e?.message || "Falha ao atualizar tarefa.");
@@ -548,7 +766,326 @@ export default function ImmersionDetailEditPage() {
           </>
         ) : null}
 
-        {form && tab === "operacao" ? (
+        
+        {form && tab === "informacoes" ? (
+          <>
+            <div className="h2">Informações da imersão</div>
+
+            <div className="grid2">
+              <Field label="Formato">
+                <input className="input" value={form.format || ""} onChange={(e) => set("format", e.target.value)} placeholder="Ex.: Presencial / Híbrido / Online" />
+              </Field>
+
+              <Field label="Time de educação responsável">
+                <input className="input" value={form.education_team || ""} onChange={(e) => set("education_team", e.target.value)} />
+              </Field>
+
+              <Field label="Mentores presentes">
+                <input className="input" value={form.mentors || ""} onChange={(e) => set("mentors", e.target.value)} placeholder="Nomes ou papéis" />
+              </Field>
+
+              <Field label="Necessita staff específico?">
+                <label className="row" style={{ gap: 10 }}>
+                  <input type="checkbox" checked={!!form.staff_needed} onChange={(e) => set("staff_needed", e.target.checked)} />
+                  <span className="small">Sim</span>
+                </label>
+              </Field>
+
+              <Field label="Justificativa (staff)">
+                <textarea className="input" rows={3} value={form.staff_justification || ""} onChange={(e) => set("staff_justification", e.target.value)} />
+              </Field>
+
+              <Field label="Ordem de Serviço (link)">
+                <input className="input" value={form.os_link || ""} onChange={(e) => set("os_link", e.target.value)} placeholder="https://..." />
+              </Field>
+
+              <Field label="Ficha Técnica (link)">
+                <input className="input" value={form.tech_sheet_link || ""} onChange={(e) => set("tech_sheet_link", e.target.value)} placeholder="https://..." />
+              </Field>
+            </div>
+
+            <div className="h2" style={{ marginTop: 18 }}>Narrativa e dinâmicas</div>
+
+            <Field label="Título / eixo de narrativa">
+              <input className="input" value={form.narrative_title || ""} onChange={(e) => set("narrative_title", e.target.value)} />
+            </Field>
+
+            <Field label="Informações para narrativa">
+              <textarea className="input" rows={5} value={form.narrative_text || ""} onChange={(e) => set("narrative_text", e.target.value)} />
+            </Field>
+
+            <Field label="Informações para dinâmicas">
+              <textarea className="input" rows={5} value={form.dynamics_text || ""} onChange={(e) => set("dynamics_text", e.target.value)} />
+            </Field>
+          </>
+        ) : null}
+
+        {form && tab === "cronograma" ? (
+          <>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div className="h2" style={{ margin: 0 }}>Cronograma</div>
+              <button type="button" className="btn primary" onClick={() => openEdit("schedule", null)} disabled={!full}>
+                Novo item
+              </button>
+            </div>
+
+            <div className="small" style={{ color: "var(--muted)", marginBottom: 10 }}>
+              Dica: use "Dia (label)" para separar por DIA 1, DIA 2, etc. A "Ordem" ajuda na ordenação quando não houver horário.
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Dia</th>
+                    <th>Data</th>
+                    <th>Início</th>
+                    <th>Término</th>
+                    <th>Tempo</th>
+                    <th>Tipo</th>
+                    <th>Temas</th>
+                    <th>Responsável</th>
+                    <th>Link</th>
+                    <th>Orientações</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(scheduleItems || []).map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.day_label || "—"}</td>
+                      <td>{it.day_date || "—"}</td>
+                      <td>{it.start_time || "—"}</td>
+                      <td>{it.end_time || "—"}</td>
+                      <td>{typeof it.duration_minutes === "number" ? `${it.duration_minutes}m` : "—"}</td>
+                      <td>{it.activity_type || "—"}</td>
+                      <td className="cellWrap">{it.topics || "—"}</td>
+                      <td>{it.responsible || "—"}</td>
+                      <td className="cellWrap">{it.link ? <a href={it.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
+                      <td className="cellWrap">{it.staff_notes || "—"}</td>
+                      <td>
+                        <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {(scheduleItems || []).length === 0 ? (
+                    <tr><td colSpan={11} className="small" style={{ color: "var(--muted)" }}>Sem itens cadastrados.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
+        {form && tab === "custos" ? (
+          <>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div className="h2" style={{ margin: 0 }}>Custos</div>
+              <button type="button" className="btn primary" onClick={() => openEdit("cost", null)} disabled={!full}>
+                Novo custo
+              </button>
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Categoria</th>
+                    <th>Item</th>
+                    <th>Valor</th>
+                    <th>Descrição</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(costs || []).map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.category || "—"}</td>
+                      <td>{c.item}</td>
+                      <td>{typeof c.value === "number" ? c.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</td>
+                      <td className="cellWrap">{c.description || "—"}</td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("cost", c)} disabled={!full}>Editar</button></td>
+                    </tr>
+                  ))}
+                  {(costs || []).length === 0 ? (
+                    <tr><td colSpan={5} className="small" style={{ color: "var(--muted)" }}>Sem custos cadastrados.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <div className="small" style={{ color: "var(--muted)" }}>Total</div>
+                <div className="h2" style={{ margin: 0 }}>
+                  {(costs || []).reduce((acc, c) => acc + (typeof c.value === "number" ? c.value : 0), 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {form && tab === "ferramentas" ? (
+          <>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div className="h2" style={{ margin: 0 }}>Ferramentas</div>
+              <button type="button" className="btn primary" onClick={() => openEdit("tool", null)} disabled={!full}>
+                Nova ferramenta
+              </button>
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Ferramenta</th>
+                    <th>Link</th>
+                    <th>Orientações</th>
+                    <th>Qtd.</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(tools || []).map((t) => (
+                    <tr key={t.id}>
+                      <td>{t.name}</td>
+                      <td>{t.link ? <a href={t.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
+                      <td className="cellWrap">{t.print_guidance || "—"}</td>
+                      <td>{typeof t.print_quantity === "number" ? t.print_quantity : "—"}</td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("tool", t)} disabled={!full}>Editar</button></td>
+                    </tr>
+                  ))}
+                  {(tools || []).length === 0 ? (
+                    <tr><td colSpan={5} className="small" style={{ color: "var(--muted)" }}>Sem ferramentas cadastradas.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
+        {form && tab === "materiais" ? (
+          <>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div className="h2" style={{ margin: 0 }}>Materiais</div>
+              <button type="button" className="btn primary" onClick={() => openEdit("material", null)} disabled={!full}>
+                Novo material
+              </button>
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Material</th>
+                    <th>Link</th>
+                    <th>Qtd.</th>
+                    <th>Especificação</th>
+                    <th>Referência</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(materials || []).map((m) => (
+                    <tr key={m.id}>
+                      <td>{m.material}</td>
+                      <td>{m.link ? <a href={m.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
+                      <td>{m.quantity ?? "—"}</td>
+                      <td className="cellWrap">{m.specification || "—"}</td>
+                      <td className="cellWrap">{m.reference || "—"}</td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("material", m)} disabled={!full}>Editar</button></td>
+                    </tr>
+                  ))}
+                  {(materials || []).length === 0 ? (
+                    <tr><td colSpan={6} className="small" style={{ color: "var(--muted)" }}>Sem materiais cadastrados.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
+        {form && tab === "videos" ? (
+          <>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div className="h2" style={{ margin: 0 }}>Vídeos</div>
+              <button type="button" className="btn primary" onClick={() => openEdit("video", null)} disabled={!full}>
+                Novo vídeo
+              </button>
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Vídeo</th>
+                    <th>Quando usar</th>
+                    <th>Link</th>
+                    <th>Área</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(videos || []).map((v) => (
+                    <tr key={v.id}>
+                      <td>{v.title}</td>
+                      <td className="cellWrap">{v.when_to_use || "—"}</td>
+                      <td>{v.link ? <a href={v.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
+                      <td>{v.area || "—"}</td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("video", v)} disabled={!full}>Editar</button></td>
+                    </tr>
+                  ))}
+                  {(videos || []).length === 0 ? (
+                    <tr><td colSpan={5} className="small" style={{ color: "var(--muted)" }}>Sem vídeos cadastrados.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
+        {form && tab === "pdca" ? (
+          <>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <div className="h2" style={{ margin: 0 }}>PDCA</div>
+              <button type="button" className="btn primary" onClick={() => openEdit("pdca", null)} disabled={!full}>
+                Novo relato
+              </button>
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Classificação</th>
+                    <th>Situação</th>
+                    <th>Dono(a)</th>
+                    <th>Área</th>
+                    <th>Observações</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(pdcaItems || []).map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.classification || "—"}</td>
+                      <td className="cellWrap">{p.situation || "—"}</td>
+                      <td>{p.reporter || "—"}</td>
+                      <td>{p.area_involved || "—"}</td>
+                      <td className="cellWrap">{p.notes || "—"}</td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("pdca", p)} disabled={!full}>Editar</button></td>
+                    </tr>
+                  ))}
+                  {(pdcaItems || []).length === 0 ? (
+                    <tr><td colSpan={6} className="small" style={{ color: "var(--muted)" }}>Sem registros.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
+{form && tab === "operacao" ? (
           <>
             <div className="h2">Time e links</div>
 
@@ -901,6 +1438,9 @@ export default function ImmersionDetailEditPage() {
                           <th>Responsável</th>
                           <th>Prazo</th>
                           <th>Status</th>
+                          <th>Status prazo</th>
+                          <th>Data realizada</th>
+                          <th>Observações</th>
                           <th>Ações</th>
                         </tr>
                       </thead>
@@ -977,6 +1517,28 @@ export default function ImmersionDetailEditPage() {
                               </td>
 
                               <td>
+                                {(() => { const s = deadlineStatus(t); return <span className={`badge ${s.kind}`}>{s.label}</span>; })()}
+                              </td>
+
+                              <td>
+                                {canEdit ? (
+                                  <input className="input" type="date" value={t.done_at || ""} onChange={(e) => onQuickUpdateTask(t, { done_at: e.target.value })} />
+                                ) : (
+                                  <span>{t.done_at || "—"}</span>
+                                )}
+                              </td>
+
+                              <td>
+                                {canEdit ? (
+                                  <input className="input" value={t.notes || ""} onChange={(e) => onQuickUpdateTask(t, { notes: e.target.value })} placeholder="Observações" />
+                                ) : (
+                                  <span className="small">{t.notes || "—"}</span>
+                                )}
+                              </td>
+
+                              </td>
+
+                              <td>
                                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                                   {canEdit ? (
                                     <>
@@ -992,7 +1554,7 @@ export default function ImmersionDetailEditPage() {
                                           }}
                                         />
                                       </label>
-                                      <button type="button" className="btn" onClick={() => onQuickUpdateTask(t, { status: "Concluída" })}>
+                                      <button type="button" className="btn" onClick={() => onQuickUpdateTask(t, { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0,10) })}>
                                         Concluir
                                       </button>
                                     </>
@@ -1037,6 +1599,165 @@ export default function ImmersionDetailEditPage() {
           </div>
         )}
       </form>
+
+      {editModal?.open ? (
+        <div className="overlay" role="dialog" aria-modal="true">
+          <div className="dialog">
+            <div className="dialogHeader">
+              <div className="h2" style={{ margin: 0 }}>
+                {editModal.type === "cost" ? "Custo" : null}
+                {editModal.type === "schedule" ? "Item do Cronograma" : null}
+                {editModal.type === "tool" ? "Ferramenta" : null}
+                {editModal.type === "material" ? "Material" : null}
+                {editModal.type === "video" ? "Vídeo" : null}
+                {editModal.type === "pdca" ? "PDCA" : null}
+              </div>
+              <button type="button" className="btn" onClick={closeEdit}>Fechar</button>
+            </div>
+
+            <div className="dialogBody">
+              {editModal.type === "cost" ? (
+                <div className="grid2">
+                  <Field label="Categoria">
+                    <input className="input" value={editDraft.category || ""} onChange={(e) => onDraft("category", e.target.value)} />
+                  </Field>
+                  <Field label="Valor (R$)">
+                    <input className="input" inputMode="decimal" value={editDraft.value ?? ""} onChange={(e) => onDraft("value", e.target.value)} />
+                  </Field>
+                  <Field label="Item">
+                    <input className="input" value={editDraft.item || ""} onChange={(e) => onDraft("item", e.target.value)} />
+                  </Field>
+                  <Field label="Descrição">
+                    <textarea className="input" rows={3} value={editDraft.description || ""} onChange={(e) => onDraft("description", e.target.value)} />
+                  </Field>
+                </div>
+              ) : null}
+
+              {editModal.type === "schedule" ? (
+                <div className="grid2">
+                  <Field label="Dia (label)">
+                    <input className="input" placeholder="DIA 1" value={editDraft.day_label || ""} onChange={(e) => onDraft("day_label", e.target.value)} />
+                  </Field>
+                  <Field label="Data do dia">
+                    <input className="input" type="date" value={editDraft.day_date || ""} onChange={(e) => onDraft("day_date", e.target.value)} />
+                  </Field>
+                  <Field label="Início">
+                    <input className="input" type="time" value={editDraft.start_time || ""} onChange={(e) => onDraft("start_time", e.target.value)} />
+                  </Field>
+                  <Field label="Término">
+                    <input className="input" type="time" value={editDraft.end_time || ""} onChange={(e) => onDraft("end_time", e.target.value)} />
+                  </Field>
+                  <Field label="Tempo realizado (min)">
+                    <input className="input" inputMode="numeric" value={editDraft.duration_minutes ?? ""} onChange={(e) => onDraft("duration_minutes", e.target.value)} />
+                  </Field>
+                  <Field label="Ordem">
+                    <input className="input" inputMode="numeric" value={editDraft.sort_order ?? 0} onChange={(e) => onDraft("sort_order", e.target.value)} />
+                  </Field>
+                  <Field label="Tipo de atividade">
+                    <input className="input" value={editDraft.activity_type || ""} onChange={(e) => onDraft("activity_type", e.target.value)} />
+                  </Field>
+                  <Field label="Temas abordados">
+                    <textarea className="input" rows={3} value={editDraft.topics || ""} onChange={(e) => onDraft("topics", e.target.value)} />
+                  </Field>
+                  <Field label="Responsável">
+                    <input className="input" value={editDraft.responsible || ""} onChange={(e) => onDraft("responsible", e.target.value)} />
+                  </Field>
+                  <Field label="Link (PPT/Ferramenta)">
+                    <input className="input" value={editDraft.link || ""} onChange={(e) => onDraft("link", e.target.value)} />
+                  </Field>
+                  <Field label="Orientações para eventos/staff">
+                    <textarea className="input" rows={3} value={editDraft.staff_notes || ""} onChange={(e) => onDraft("staff_notes", e.target.value)} />
+                  </Field>
+                </div>
+              ) : null}
+
+              {editModal.type === "tool" ? (
+                <div className="grid2">
+                  <Field label="Nome da ferramenta">
+                    <input className="input" value={editDraft.name || ""} onChange={(e) => onDraft("name", e.target.value)} />
+                  </Field>
+                  <Field label="Link">
+                    <input className="input" value={editDraft.link || ""} onChange={(e) => onDraft("link", e.target.value)} />
+                  </Field>
+                  <Field label="Orientações para impressão">
+                    <textarea className="input" rows={3} value={editDraft.print_guidance || ""} onChange={(e) => onDraft("print_guidance", e.target.value)} />
+                  </Field>
+                  <Field label="Quantidade para impressão">
+                    <input className="input" inputMode="numeric" value={editDraft.print_quantity ?? ""} onChange={(e) => onDraft("print_quantity", e.target.value)} />
+                  </Field>
+                </div>
+              ) : null}
+
+              {editModal.type === "material" ? (
+                <div className="grid2">
+                  <Field label="Material">
+                    <input className="input" value={editDraft.material || ""} onChange={(e) => onDraft("material", e.target.value)} />
+                  </Field>
+                  <Field label="Link">
+                    <input className="input" value={editDraft.link || ""} onChange={(e) => onDraft("link", e.target.value)} />
+                  </Field>
+                  <Field label="Quantidade necessária">
+                    <input className="input" inputMode="decimal" value={editDraft.quantity ?? ""} onChange={(e) => onDraft("quantity", e.target.value)} />
+                  </Field>
+                  <Field label="Especificação">
+                    <textarea className="input" rows={3} value={editDraft.specification || ""} onChange={(e) => onDraft("specification", e.target.value)} />
+                  </Field>
+                  <Field label="Referência">
+                    <input className="input" value={editDraft.reference || ""} onChange={(e) => onDraft("reference", e.target.value)} />
+                  </Field>
+                </div>
+              ) : null}
+
+              {editModal.type === "video" ? (
+                <div className="grid2">
+                  <Field label="Vídeo">
+                    <input className="input" value={editDraft.title || ""} onChange={(e) => onDraft("title", e.target.value)} />
+                  </Field>
+                  <Field label="Quando usar">
+                    <input className="input" value={editDraft.when_to_use || ""} onChange={(e) => onDraft("when_to_use", e.target.value)} />
+                  </Field>
+                  <Field label="Link">
+                    <input className="input" value={editDraft.link || ""} onChange={(e) => onDraft("link", e.target.value)} />
+                  </Field>
+                  <Field label="Área">
+                    <input className="input" value={editDraft.area || ""} onChange={(e) => onDraft("area", e.target.value)} />
+                  </Field>
+                </div>
+              ) : null}
+
+              {editModal.type === "pdca" ? (
+                <div className="grid2">
+                  <Field label="Classificação">
+                    <input className="input" value={editDraft.classification || ""} onChange={(e) => onDraft("classification", e.target.value)} />
+                  </Field>
+                  <Field label="Situação">
+                    <input className="input" value={editDraft.situation || ""} onChange={(e) => onDraft("situation", e.target.value)} />
+                  </Field>
+                  <Field label="Dono(a) do relato">
+                    <input className="input" value={editDraft.reporter || ""} onChange={(e) => onDraft("reporter", e.target.value)} />
+                  </Field>
+                  <Field label="Área envolvida na solução">
+                    <input className="input" value={editDraft.area_involved || ""} onChange={(e) => onDraft("area_involved", e.target.value)} />
+                  </Field>
+                  <Field label="Observações">
+                    <textarea className="input" rows={4} value={editDraft.notes || ""} onChange={(e) => onDraft("notes", e.target.value)} />
+                  </Field>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="dialogFooter">
+              {editModal.item?.id ? (
+                <button type="button" className="btn danger" onClick={deleteEditItem}>Excluir</button>
+              ) : null}
+              <div style={{ flex: 1 }} />
+              <button type="button" className="btn" onClick={closeEdit}>Cancelar</button>
+              <button type="button" className="btn primary" onClick={saveEdit}>Salvar</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
     </Layout>
   );
 }
