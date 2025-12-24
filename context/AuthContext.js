@@ -1,99 +1,37 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
-import { FULL_ACCESS_ROLES } from "../lib/permissions";
+import { createContext, useContext, useMemo } from "react";
+
+// AUTENTICAÇÃO TEMPORARIAMENTE DESABILITADA
+// Para o MVP sem login, todo mundo entra com acesso total.
+// Quando você quiser reativar, basta restaurar o AuthContext com Supabase Auth.
 
 const AuthContext = createContext(null);
 
-async function fetchProfile(userId) {
-  if (!userId) return null;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, email, name, role, is_active, created_at")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ?? null;
-}
-
 export function AuthProvider({ children }) {
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function init() {
-      try {
-        const { data } = await supabase.auth.getSession();
-        const sessionUser = data?.session?.user ?? null;
-        if (!mounted) return;
-        setUser(sessionUser);
-
-        if (sessionUser) {
-          const p = await fetchProfile(sessionUser.id);
-          if (!mounted) return;
-          setProfile(p);
-        } else {
-          setProfile(null);
-        }
-      } catch (e) {
-        console.error(e);
-        if (!mounted) return;
-        setUser(null);
-        setProfile(null);
-      } finally {
-        if (mounted) setLoading(false);
+  const value = useMemo(
+    () => ({
+      loading: false,
+      // Mantemos um "user" e "profile" fictícios para não quebrar as telas.
+      user: { id: "noauth", email: "noauth@local" },
+      profile: {
+        id: "noauth",
+        email: "noauth@local",
+        name: "Acesso Livre",
+        role: "admin",
+        is_active: true
+      },
+      role: "admin",
+      isFullAccess: true,
+      async signIn() {
+        // no-op
+        return true;
+      },
+      async signOut() {
+        // no-op
+        return true;
       }
-    }
-
-    init();
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      try {
-        const sessionUser = session?.user ?? null;
-        setUser(sessionUser);
-        if (sessionUser) {
-          const p = await fetchProfile(sessionUser.id);
-          setProfile(p);
-        } else {
-          setProfile(null);
-        }
-      } catch (e) {
-        console.error(e);
-        setProfile(null);
-      } finally {
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      sub?.subscription?.unsubscribe?.();
-    };
-  }, []);
-
-  const role = profile?.role ?? null;
-  const isFullAccess = role ? FULL_ACCESS_ROLES.includes(role) : false;
-
-  const value = useMemo(() => ({
-    loading,
-    user,
-    profile,
-    role,
-    isFullAccess,
-    async signIn(email, password) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      return true;
-    },
-    async signOut() {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      return true;
-    }
-  }), [loading, user, profile, role, isFullAccess]);
+    }),
+    []
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

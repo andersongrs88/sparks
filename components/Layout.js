@@ -6,18 +6,10 @@ import NotificationsBell from "./NotificationsBell";
 
 export default function Layout({ title, children }) {
   const router = useRouter();
-  const { loading, user, profile, isFullAccess, signOut } = useAuth();
+  const { loading, user, profile, isFullAccess } = useAuth();
   const role = profile?.role;
 
-  async function onLogout() {
-    try {
-      await signOut();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      router.push("/login");
-    }
-  }
+  // Autenticação removida: não há logout.
 
   return (
     <div>
@@ -26,11 +18,9 @@ export default function Layout({ title, children }) {
           <div>
             <div className="appTitle">{title || "Sparks MVP"}</div>
             <div className="subTitle">
-              {loading ? "Carregando..." : user ? (
-                <>
-                  {roleLabel(profile?.role)} • {profile?.email || user.email}
-                </>
-              ) : "Desconectado"}
+              {loading
+                ? "Carregando..."
+                : `Acesso livre (sem login) • ${roleLabel(profile?.role)}`}
             </div>
           </div>
 
@@ -41,7 +31,6 @@ export default function Layout({ title, children }) {
             {isFullAccess ? <Link href="/usuarios" className="btn">Usuários</Link> : null}
             {isFullAccess ? <Link href="/configuracoes/templates" className="btn">Configurações</Link> : null}
             <NotificationsBell />
-            <button className="btn danger" onClick={onLogout}>Sair</button>
           </div>
         </div>
       </div>
