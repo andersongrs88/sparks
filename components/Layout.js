@@ -52,7 +52,7 @@ export default function Layout({ title, children }) {
       <aside className={mobileOpen ? "sidebar open" : "sidebar"}>
         <div className="sidebarHeader">
           <div className="brand">Sparks</div>
-          <button type="button" className="btn icon" onClick={() => setMobileOpen(false)} aria-label="Fechar menu">
+          <button type="button" className="btn icon mobileOnly" onClick={() => setMobileOpen(false)} aria-label="Fechar menu">
             ✕
           </button>
         </div>
@@ -66,7 +66,7 @@ export default function Layout({ title, children }) {
           <NavItem href="/dashboard" label="Dashboard" icon="▦" />
           <NavItem href="/imersoes" label="Imersões" icon="📅" />
           <NavItem href="/checklists" label="Cadastrar checklist" icon="🗂" />
-          <NavItem href="/painel" label="Painel (PA)" icon="✅" />
+          <NavItem href="/painel" label="Plano de Ação" icon="✅" />
           <NavItem href="/relatorios" label="Relatórios" icon="📊" />
           {isFullAccess ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
           <NavItem href="/notificacoes" label="Notificações" icon="🔔" />
@@ -76,7 +76,7 @@ export default function Layout({ title, children }) {
       <div className="main">
         <header className="header">
           <div className="row" style={{ gap: 10 }}>
-            <button type="button" className="btn icon" onClick={() => setMobileOpen(true)} aria-label="Abrir menu">
+            <button type="button" className="btn icon mobileOnly" onClick={() => setMobileOpen(true)} aria-label="Abrir menu">
               ☰
             </button>
             <div>

@@ -28,8 +28,9 @@ export default function NotificationsBell() {
   if (!user) return null;
 
   return (
-    <Link href="/notificacoes" className="btn" title="Notificações">
-      Notificações{count > 0 ? ` (${count})` : ""}
+    <Link href="/notificacoes" className="iconBadge" aria-label={count > 0 ? `Notificações. ${count} novas.` : "Notificações"}>
+      <span aria-hidden="true">🔔</span>
+      {count > 0 ? <span className="badgeDot">{count > 99 ? "99+" : count}</span> : null}
     </Link>
   );
 }

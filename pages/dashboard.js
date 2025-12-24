@@ -75,9 +75,11 @@ export default function DashboardPage() {
         setMyError("");
         setMyLoading(true);
 
+        // Keep the select list aligned with the actual database schema.
+        // Some deployments may not have an evidence_link column, so we avoid selecting it here.
         let query = supabase
           .from("immersion_tasks")
-          .select("id, immersion_id, title, status, due_date, evidence_link, immersions(immersion_name)")
+          .select("id, immersion_id, title, status, due_date, immersions(immersion_name)")
           .eq("responsible_id", user.id)
           .neq("status", "Concluída");
 
@@ -118,29 +120,38 @@ export default function DashboardPage() {
   return (
     <Layout title="Dashboard">
       <div className="container">
-        <div className="grid" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
-          <div className="card">
-            <div className="cardLabel">Imersões</div>
-            <div className="cardValue">{stats.totalImmersions}</div>
+        <section className="kpiSection" aria-label="Indicadores">
+          <div className="kpiGrid">
+            <div className="kpiCard">
+              <div className="kpiLabel">Imersões</div>
+              <div className="kpiValue">{stats.totalImmersions}</div>
+              <div className="kpiMeta">Cadastradas no sistema</div>
+            </div>
+            <div className="kpiCard">
+              <div className="kpiLabel">Tarefas</div>
+              <div className="kpiValue">{stats.totalTasks}</div>
+              <div className="kpiMeta">Total registradas</div>
+            </div>
+            <div className="kpiCard danger">
+              <div className="kpiLabel">Atrasadas</div>
+              <div className="kpiValue">{stats.lateTasks}</div>
+              <div className="kpiMeta">Prioridade máxima</div>
+            </div>
+            <div className="kpiCard success">
+              <div className="kpiLabel">Concluídas</div>
+              <div className="kpiValue">{stats.doneTasks}</div>
+              <div className="kpiMeta">Entregas finalizadas</div>
+            </div>
           </div>
-          <div className="card">
-            <div className="cardLabel">Tarefas</div>
-            <div className="cardValue">{stats.totalTasks}</div>
-          </div>
-          <div className="card">
-            <div className="cardLabel">Atrasadas</div>
-            <div className="cardValue">{stats.lateTasks}</div>
-          </div>
-          <div className="card">
-            <div className="cardLabel">Concluídas</div>
-            <div className="cardValue">{stats.doneTasks}</div>
-          </div>
-        </div>
+        </section>
 
         <div className="grid2" style={{ marginTop: 16 }}>
           <div className="card">
-            <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0 }}>Minhas tarefas</h3>
+            <div className="sectionHeader">
+              <div>
+                <h3 className="sectionTitle">Minhas tarefas</h3>
+                <div className="small muted">Entregas pendentes atribuídas a você</div>
+              </div>
               <div className="row wrap" style={{ gap: 10 }}>
                 <div className="row" style={{ gap: 8 }}>
                   <span className="small muted">Imersão</span>
@@ -151,54 +162,79 @@ export default function DashboardPage() {
                     ))}
                   </select>
                 </div>
-                <button className="btn" onClick={() => router.push("/painel")}>Abrir painel</button>
+                <button className="btn" onClick={() => router.push("/painel")}>Abrir plano de ação</button>
               </div>
             </div>
 
-            {myError ? <p className="dangerText">{myError}</p> : null}
-            {myLoading ? <p className="muted">Carregando...</p> : null}
+            {myError ? (
+              <div className="alert danger" role="status">
+                Não foi possível carregar suas tarefas. Tente novamente.
+              </div>
+            ) : null}
+            {myLoading ? <div className="skeletonList" aria-label="Carregando tarefas" /> : null}
 
             {!myLoading && (myTasks || []).length === 0 ? (
-              <p className="muted" style={{ marginTop: 10 }}>Nenhuma tarefa atribuída a você.</p>
+              <div className="emptyState" style={{ marginTop: 12 }}>
+                <div className="emptyTitle">Nenhuma tarefa pendente</div>
+                <div className="small muted">Você está em dia. Selecione outra imersão para filtrar ou acesse o plano de ação.</div>
+              </div>
             ) : null}
 
-            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+            <div className="list" style={{ marginTop: 12 }}>
               {(myTasks || []).map((t) => (
-                <div key={t.id} className="row" style={{ justifyContent: "space-between" }}>
-                  <div>
-                    <div style={{ fontWeight: 800 }}>{t.title}</div>
-                    <div className="small muted">
-                      {t?.immersions?.name ? `Imersão: ${t.immersions.immersion_name} • ` : ""}
-                      {t.due_date ? `Prazo: ${t.due_date}` : "Sem prazo"} • {t.status}
+                <button
+                  key={t.id}
+                  type="button"
+                  className="listItem"
+                  onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
+                >
+                  <div className="listItemMain">
+                    <div className="listItemTitle">{t.title}</div>
+                    <div className="listItemMeta">
+                      {t?.immersions?.immersion_name ? `Imersão: ${t.immersions.immersion_name} • ` : ""}
+                      {t.due_date ? `Prazo: ${t.due_date}` : "Sem prazo"}
                     </div>
                   </div>
-                  <button className="btn" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
-                </div>
+                  <div className="listItemAside">
+                    <span className={t.due_date ? "badge" : "badge muted"}>{t.status}</span>
+                    <span className="chev" aria-hidden="true">›</span>
+                  </div>
+                </button>
               ))}
             </div>
           </div>
 
           <div className="card">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <h3 style={{ margin: 0 }}>Próximas imersões</h3>
+            <div className="sectionHeader">
+              <div>
+                <h3 className="sectionTitle">Próximas imersões</h3>
+                <div className="small muted">Planejamento e status operacional</div>
+              </div>
               <button className="btn" onClick={() => router.push("/imersoes")}>Ver todas</button>
             </div>
 
-            {error ? <p className="dangerText">{error}</p> : null}
-            {loading ? <p className="muted">Carregando...</p> : null}
+            {error ? (
+              <div className="alert danger" role="status">
+                Não foi possível carregar as imersões. Tente novamente.
+              </div>
+            ) : null}
+            {loading ? <div className="skeletonList" aria-label="Carregando imersões" /> : null}
 
             {!loading && (payload?.upcoming || []).length === 0 ? (
               <p className="muted" style={{ marginTop: 10 }}>Nenhuma imersão cadastrada.</p>
             ) : null}
 
-            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+            <div className="cardsList" style={{ marginTop: 12 }}>
               {(payload?.upcoming || []).map((it) => (
-                <div key={it.id} className="row" style={{ justifyContent: "space-between" }}>
-                  <div>
-                    <div style={{ fontWeight: 800 }}>{it.immersion_name}</div>
-                    <div className="small muted">{it.start_date} → {it.end_date} • {it.status}</div>
+                <div key={it.id} className="miniCard" role="group" aria-label={it.immersion_name}>
+                  <div className="miniCardMain">
+                    <div className="miniCardTitle">{it.immersion_name}</div>
+                    <div className="miniCardMeta">{it.start_date} → {it.end_date} • {it.status}</div>
                   </div>
-                  <div className="pill">{it.total_tasks || 0} tarefas</div>
+                  <div className="miniCardAside">
+                    <span className="pill">{it.total_tasks || 0} tarefas</span>
+                    <button className="btn" onClick={() => router.push(`/imersoes/${it.id}`)}>Abrir</button>
+                  </div>
                 </div>
               ))}
             </div>
