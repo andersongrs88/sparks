@@ -8,8 +8,8 @@ import { applyTypeTemplates } from "../../lib/templates";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
-// Tipo (domínio fechado) conforme definido por você
-const IMMERSION_TYPES = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
+// Formato (domínio fechado) conforme definido por você. (Mesma nomenclatura da tela de visualização.)
+const IMMERSION_FORMATS = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
 
 function Field({ label, children, hint }) {
   return (
@@ -33,7 +33,7 @@ export default function NovaImersaoPage() {
 
   const [form, setForm] = useState({
     immersion_name: "",
-    // Coluna `type` (alguns bancos antigos não possuem `immersion_type`)
+    // Coluna `type` (Formato) — alguns bancos antigos não possuem `immersion_type`
     type: "",
     start_date: "",
     end_date: "",
@@ -154,10 +154,10 @@ if (loadTypeTemplates) {
               </Field>
 
               <div className="grid2">
-                <Field label="Tipo" hint="Obrigatório">
+                <Field label="Formato" hint="Obrigatório">
                   <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
                     <option value="">Selecione</option>
-                    {IMMERSION_TYPES.map((t) => (
+                    {IMMERSION_FORMATS.map((t) => (
                       <option key={t} value={t}>
                         {t}
                       </option>
