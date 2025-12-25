@@ -4,7 +4,7 @@ import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import { getDashboardStats } from "../lib/dashboard";
 import { supabase } from "../lib/supabaseClient";
-import { sortTasksByPriority } from "../lib/tasks";
+import { sortTasksByPriority, syncOverdueTasksGlobal } from "../lib/tasks";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -32,6 +32,8 @@ export default function DashboardPage() {
       try {
         setError("");
         setLoading(true);
+        // Governança: sincroniza atrasos (best-effort)
+        try { await syncOverdueTasksGlobal(); } catch {}
         const data = await getDashboardStats();
         if (!mounted) return;
         setPayload(data);
@@ -75,6 +77,9 @@ export default function DashboardPage() {
         setMyError("");
         setMyLoading(true);
 
+        // Best-effort: mantém status "Atrasada" atualizado.
+        try { await syncOverdueTasksGlobal(); } catch {}
+
         // Keep the select list aligned with the actual database schema.
         // Some deployments may not have an evidence_link column, so we avoid selecting it here.
         let query = supabase
@@ -113,6 +118,9 @@ export default function DashboardPage() {
       doneTasks: s?.doneTasks ?? 0
     };
   }, [payload]);
+
+  const riskImmersions = payload?.riskImmersions ?? [];
+  const workload = payload?.workload ?? [];
 
   if (authLoading) return null;
   if (!user) return null;
@@ -280,6 +288,88 @@ export default function DashboardPage() {
               </table>
             </div>
           ) : null}
+        </div>
+
+        <div className="grid2" style={{ marginTop: 16 }}>
+          <div className="card">
+            <div className="sectionHeader">
+              <div>
+                <h3 className="sectionTitle">Imersões em risco</h3>
+                <div className="small muted">Sinalização automática por atrasos, prazos próximos e tarefas sem dono</div>
+              </div>
+              <button className="btn" onClick={() => router.push("/relatorios")}>Ver relatórios</button>
+            </div>
+
+            {!loading && riskImmersions.length === 0 ? (
+              <div className="emptyState" style={{ marginTop: 12 }}>
+                <div className="emptyTitle">Nenhum risco relevante</div>
+                <div className="small muted">No momento, as imersões estão em controle operacional.</div>
+              </div>
+            ) : null}
+
+            {riskImmersions.length > 0 ? (
+              <div className="list" style={{ marginTop: 12 }}>
+                {riskImmersions.map((r) => (
+                  <button key={r.immersion_id} className="listItem" type="button" onClick={() => router.push(`/imersoes/${r.immersion_id}`)}>
+                    <div className="listItemMain">
+                      <div className="listItemTitle">{r.immersion_name}</div>
+                      <div className="listItemMeta">
+                        {r.start_date ? `Início: ${r.start_date} • ` : ""}
+                        {r.status ? `Status: ${r.status}` : ""}
+                        {r.reasons?.length ? ` • ${r.reasons.join(", ")}` : ""}
+                      </div>
+                    </div>
+                    <div className="listItemAside">
+                      <span className={r.level === "Alto" ? "badge danger" : r.level === "Médio" ? "badge" : "badge muted"}>{r.level}</span>
+                      <span className="chev" aria-hidden="true">›</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="card">
+            <div className="sectionHeader">
+              <div>
+                <h3 className="sectionTitle">Sobrecarga por responsável</h3>
+                <div className="small muted">Abertas, atrasadas e vencendo em até 3 dias</div>
+              </div>
+              <button className="btn" onClick={() => router.push("/usuarios")}>Gerenciar usuários</button>
+            </div>
+
+            {!loading && workload.length === 0 ? (
+              <div className="emptyState" style={{ marginTop: 12 }}>
+                <div className="emptyTitle">Sem dados de responsáveis</div>
+                <div className="small muted">Defina o responsável nas tarefas para ativar esta visão.</div>
+              </div>
+            ) : null}
+
+            {workload.length > 0 ? (
+              <div className="tableWrap" style={{ marginTop: 10 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Responsável</th>
+                      <th>Abertas</th>
+                      <th>Atrasadas</th>
+                      <th>Vencem (3d)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workload.map((w) => (
+                      <tr key={w.responsible_id}>
+                        <td>{w.responsible}</td>
+                        <td><span className="badge">{w.open}</span></td>
+                        <td><span className={w.overdue ? "badge danger" : "badge muted"}>{w.overdue}</span></td>
+                        <td><span className={w.dueSoon ? "badge" : "badge muted"}>{w.dueSoon}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </Layout>

@@ -3,7 +3,8 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
-import { listTasksByImmersion, createTask, updateTask, deleteTask } from "../../lib/tasks";
+import { supabase } from "../../lib/supabaseClient";
+import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
 import { canEditTask, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
@@ -13,7 +14,7 @@ import { listTools, createTool, updateTool, deleteTool } from "../../lib/tools";
 import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from "../../lib/materials";
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
-
+import { applyTypeTemplates } from "../../lib/templates";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
@@ -32,7 +33,7 @@ const PHASES = [
   { key: "POS", label: "PÓS" }
 ];
 
-const TASK_STATUSES = ["Programada", "Em andamento", "Concluída"];
+const TASK_STATUSES = ["Programada", "Em andamento", "Atrasada", "Concluída"];
 
 function Field({ label, children, hint }) {
   return (
@@ -144,7 +145,38 @@ export default function ImmersionDetailEditPage() {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState(null);
+  const [originalStatus, setOriginalStatus] = useState(null);
 
+  // Governança: bloqueio para concluir imersão com pendências
+  const [closeBlock, setCloseBlock] = useState({ open: false, summary: null, sample: [] });
+
+  // Workflow: concluir imersão (botão dedicado)
+  const [closeFlow, setCloseFlow] = useState({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
+
+  // Clonagem de imersão
+  const [cloneFlow, setCloneFlow] = useState({ open: false, loading: false, error: "" });
+  const [cloneForm, setCloneForm] = useState({
+    immersion_name: "",
+    type: "",
+    start_date: "",
+    end_date: "",
+    room_location: "Brasil",
+    status: "Planejamento",
+    include_templates: true,
+    include_schedule: true,
+    include_materials: true,
+    include_tools: true,
+    include_videos: true,
+    phases: { "PA-PRE": true, DURANTE: true, POS: true },
+  });
+
+
+  // Aplicar templates por tipo (em imersões existentes)
+  const [applyTplFlow, setApplyTplFlow] = useState({ open: false, loading: false, error: "" });
+  const [applyTplForm, setApplyTplForm] = useState({
+    immersion_type: "",
+    include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
+  });
   // Checklist
   const [profiles, setProfiles] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -215,7 +247,10 @@ export default function ImmersionDetailEditPage() {
         setError("");
         setLoading(true);
         const data = await getImmersion(id);
-        if (mounted) setForm(data);
+        if (mounted) {
+          setForm(data);
+          setOriginalStatus((prev) => (prev === null ? (data?.status || "") : prev));
+        }
       } catch (e) {
         if (mounted) setError(e?.message || "Falha ao carregar a imersão.");
       } finally {
@@ -260,6 +295,12 @@ export default function ImmersionDetailEditPage() {
     setTaskError("");
     setTasksLoading(true);
     try {
+      // Governança: mantém o status "Atrasada" sincronizado.
+      try {
+        await syncOverdueTasksForImmersion(immersionId);
+      } catch {
+        // best-effort
+      }
       const data = await listTasksByImmersion(immersionId);
       setTasks(data);
     } catch (e) {
@@ -488,6 +529,41 @@ export default function ImmersionDetailEditPage() {
     }
 
     try {
+      // Governança: bloquear "Concluída" com pendências
+      const isTryingToClose = form.status === "Concluída" && originalStatus !== "Concluída";
+      if (isTryingToClose) {
+        let currentTasks = tasks;
+        if (!currentTasks || currentTasks.length === 0) {
+          try {
+            await syncOverdueTasksForImmersion(form.id);
+          } catch {
+            // best-effort
+          }
+          try {
+            currentTasks = await listTasksByImmersion(form.id);
+          } catch {
+            currentTasks = tasks || [];
+          }
+        }
+
+        const open = (currentTasks || []).filter((t) => t.status !== "Concluída");
+        const overdue = open.filter((t) => isLate(t.due_date, t.status));
+        const orphan = open.filter((t) => !t.responsible_id);
+
+        if (open.length > 0 || overdue.length > 0 || orphan.length > 0) {
+          setCloseBlock({
+            open: true,
+            summary: {
+              open: open.length,
+              overdue: overdue.length,
+              orphan: orphan.length,
+            },
+            sample: open.slice(0, 8),
+          });
+          return;
+        }
+      }
+
       setSaving(true);
       await updateImmersion(form.id, {
         immersion_name: form.immersion_name.trim(),
@@ -533,10 +609,300 @@ export default function ImmersionDetailEditPage() {
       });
 
       alert("Alterações salvas.");
+      setOriginalStatus(form.status);
     } catch (e) {
       setError(e?.message || "Falha ao salvar.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ----------------------------
+  // Workflow: Concluir imersão (botão dedicado)
+  // ----------------------------
+  async function openCloseImmersionFlow() {
+    if (!form) return;
+    if (!full) {
+      setError("Sem permissão para concluir esta imersão.");
+      return;
+    }
+
+    setCloseFlow({ open: true, loading: true, error: "", summary: null, sample: [], canClose: false, confirm: false });
+    try {
+      try {
+        await syncOverdueTasksForImmersion(form.id);
+      } catch {
+        // best-effort
+      }
+
+      const currentTasks = await listTasksByImmersion(form.id);
+      const open = (currentTasks || []).filter((t) => t.status !== "Concluída");
+      const overdue = open.filter((t) => isLate(t.due_date, t.status));
+      const orphan = open.filter((t) => !t.responsible_id);
+
+      const canClose = open.length === 0 && overdue.length === 0 && orphan.length === 0;
+      setCloseFlow((p) => ({
+        ...p,
+        loading: false,
+        summary: { open: open.length, overdue: overdue.length, orphan: orphan.length },
+        sample: open.slice(0, 10),
+        canClose,
+      }));
+    } catch (e) {
+      setCloseFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao validar checklist." }));
+    }
+  }
+
+  async function confirmCloseImmersionFlow() {
+    if (!form) return;
+    if (!full) return;
+    if (!closeFlow?.canClose) return;
+    if (!closeFlow?.confirm) {
+      setCloseFlow((p) => ({ ...p, error: "Confirme para concluir a imersão." }));
+      return;
+    }
+
+    try {
+      setCloseFlow((p) => ({ ...p, loading: true, error: "" }));
+      await updateImmersion(form.id, { status: "Concluída" });
+      setForm((p) => ({ ...p, status: "Concluída" }));
+      setOriginalStatus("Concluída");
+      setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
+      alert("Imersão concluída.");
+    } catch (e) {
+      setCloseFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao concluir." }));
+    }
+  }
+
+  // ----------------------------
+  // Workflow: Clonar imersão
+  // ----------------------------
+  function openCloneImmersionFlow() {
+    if (!form) return;
+    if (!full) {
+      setError("Sem permissão para clonar imersões.");
+      return;
+    }
+
+
+function openApplyTemplatesFlow() {
+  if (!full) return;
+  setApplyTplForm({
+    immersion_type: form?.type || "",
+    include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
+  });
+  setApplyTplFlow({ open: true, loading: false, error: "" });
+}
+
+async function confirmApplyTemplatesFlow() {
+  if (!full) {
+    setApplyTplFlow((p) => ({ ...p, error: "Sem permissão." }));
+    return;
+  }
+  setApplyTplFlow((p) => ({ ...p, loading: true, error: "" }));
+  try {
+    await applyTypeTemplates({
+      immersionId: id,
+      immersionType: applyTplForm.immersion_type || form?.type || null,
+      startDate: form?.start_date || null,
+      endDate: form?.end_date || null,
+      include: applyTplForm.include,
+    });
+    setApplyTplFlow({ open: false, loading: false, error: "" });
+    // recarregar módulos principais que podem ter sido alterados
+    await loadTasks(id);
+    await loadSchedule(id);
+    await loadMaterials(id);
+    await loadTools(id);
+    await loadVideos(id);
+  } catch (e) {
+    setApplyTplFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao aplicar templates." }));
+  }
+}
+    setCloneForm({
+      immersion_name: `${form.immersion_name || "Imersão"} (cópia)`,
+      type: form.type || "",
+      start_date: "",
+      end_date: "",
+      room_location: form.room_location || "Brasil",
+      status: "Planejamento",
+      include_templates: true,
+      include_schedule: true,
+      include_materials: true,
+      include_tools: true,
+      include_videos: true,
+      phases: { "PA-PRE": true, DURANTE: true, POS: true },
+    });
+    setCloneFlow({ open: true, loading: false, error: "" });
+  }
+
+  function normalizeTemplatesForClone(items) {
+    const phaseOk = new Set(["PA-PRE", "DURANTE", "POS"]);
+    return (items || [])
+      .map((t) => {
+        const title = (t.title || t.task_title || t.name || "").toString().trim();
+        const phase = (t.phase || t.task_phase || "PA-PRE").toString().trim();
+        const status = (t.status || t.default_status || "Programada").toString().trim();
+        return { title, phase: phaseOk.has(phase) ? phase : "PA-PRE", status };
+      })
+      .filter((t) => !!t.title);
+  }
+
+  async function confirmCloneImmersionFlow() {
+    if (!form) return;
+    if (!full) return;
+
+    setCloneFlow((p) => ({ ...p, loading: true, error: "" }));
+    try {
+      if (!cloneForm.immersion_name?.trim()) throw new Error("Informe o nome da nova imersão.");
+      if (!cloneForm.type) throw new Error("Selecione o tipo.");
+      if (!cloneForm.start_date || !cloneForm.end_date) throw new Error("Informe data inicial e final.");
+      if (new Date(cloneForm.end_date) < new Date(cloneForm.start_date)) throw new Error("A data final não pode ser anterior à inicial.");
+
+      const created = await supabase
+        .from("immersions")
+        .insert([
+          {
+            immersion_name: cloneForm.immersion_name.trim(),
+            type: cloneForm.type,
+            start_date: cloneForm.start_date,
+            end_date: cloneForm.end_date,
+            room_location: cloneForm.room_location,
+            status: "Planejamento",
+
+            // Responsáveis copiados da imersão origem
+            educational_consultant: form.educational_consultant || null,
+            instructional_designer: form.instructional_designer || null,
+          },
+        ])
+        .select("*")
+        .single();
+
+      if (created.error) throw created.error;
+      const newImmersion = created.data;
+
+      if (cloneForm.include_templates) {
+        // Carrega templates se ainda não estiverem na memória
+        if (!templatesData || templatesData.length === 0) {
+          try {
+            await fetchTemplates();
+          } catch {
+            // se falhar, segue sem templates
+          }
+        }
+
+        const norm = normalizeTemplatesForClone(templatesData || []);
+        const phaseEnabled = cloneForm.phases || { "PA-PRE": true, DURANTE: true, POS: true };
+        const chosen = norm.filter((t) => !!phaseEnabled[t.phase]);
+
+        if (chosen.length > 0) {
+          const rows = chosen.map((t) => ({
+            immersion_id: newImmersion.id,
+            title: t.title,
+            phase: t.phase,
+            status: t.status,
+            created_by: user?.id || null,
+          }));
+          await createTasks(rows);
+        }
+      }
+
+      // Copiar cronograma (itens de agenda)
+      if (cloneForm.include_schedule) {
+        try {
+          const src = await listScheduleItems(form.id);
+          const rows = (src || []).map((it) => ({
+            immersion_id: newImmersion.id,
+            day_label: it.day_label ?? null,
+            day_date: it.day_date ?? null,
+            sort_order: it.sort_order ?? null,
+            start_time: it.start_time ?? null,
+            end_time: it.end_time ?? null,
+            duration_minutes: typeof it.duration_minutes === "number" ? it.duration_minutes : (it.duration_minutes ?? null),
+            activity_type: it.activity_type ?? null,
+            topics: it.topics ?? null,
+            responsible: it.responsible ?? null,
+            link: it.link ?? null,
+            staff_notes: it.staff_notes ?? null,
+          }));
+
+          if (rows.length > 0) {
+            const { error: schErr } = await supabase.from("immersion_schedule_items").insert(rows);
+            if (schErr) throw schErr;
+          }
+        } catch (e) {
+          throw new Error(e?.message || "Falha ao copiar cronograma.");
+        }
+      }
+
+      // Copiar materiais
+      if (cloneForm.include_materials) {
+        try {
+          const src = await listMaterials(form.id);
+          const rows = (src || []).map((m) => ({
+            immersion_id: newImmersion.id,
+            material: m.material ?? null,
+            link: m.link ?? null,
+            quantity: m.quantity ?? null,
+            specification: m.specification ?? null,
+            reference: m.reference ?? null,
+          }));
+
+          if (rows.length > 0) {
+            const { error: matErr } = await supabase.from("immersion_materials").insert(rows);
+            if (matErr) throw matErr;
+          }
+        } catch (e) {
+          throw new Error(e?.message || "Falha ao copiar materiais.");
+        }
+      }
+
+      // Copiar ferramentas
+      if (cloneForm.include_tools) {
+        try {
+          const src = await listTools(form.id);
+          const rows = (src || []).map((t) => ({
+            immersion_id: newImmersion.id,
+            name: t.name ?? null,
+            link: t.link ?? null,
+            print_guidance: t.print_guidance ?? null,
+            print_quantity: t.print_quantity ?? null,
+          }));
+
+          if (rows.length > 0) {
+            const { error: toolErr } = await supabase.from("immersion_tools").insert(rows);
+            if (toolErr) throw toolErr;
+          }
+        } catch (e) {
+          throw new Error(e?.message || "Falha ao copiar ferramentas.");
+        }
+      }
+
+      // Copiar vídeos
+      if (cloneForm.include_videos) {
+        try {
+          const src = await listVideos(form.id);
+          const rows = (src || []).map((v) => ({
+            immersion_id: newImmersion.id,
+            title: v.title ?? null,
+            when_to_use: v.when_to_use ?? null,
+            link: v.link ?? null,
+            area: v.area ?? null,
+          }));
+
+          if (rows.length > 0) {
+            const { error: vidErr } = await supabase.from("immersion_videos").insert(rows);
+            if (vidErr) throw vidErr;
+          }
+        } catch (e) {
+          throw new Error(e?.message || "Falha ao copiar vídeos.");
+        }
+      }
+
+      setCloneFlow({ open: false, loading: false, error: "" });
+      router.push(`/imersoes/${newImmersion.id}`);
+    } catch (e) {
+      setCloneFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao clonar." }));
     }
   }
 
@@ -584,6 +950,146 @@ export default function ImmersionDetailEditPage() {
     return { total, done, late };
   }, [tasks]);
 
+  // Templates (tarefas predefinidas) — loader guiado com preview e confirmação
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState("");
+  const [templatesData, setTemplatesData] = useState([]);
+  const [templatesPhase, setTemplatesPhase] = useState({ "PA-PRE": true, "DURANTE": true, "POS": true });
+  const [templatesSelected, setTemplatesSelected] = useState(() => new Set());
+  const [templatesQuery, setTemplatesQuery] = useState("");
+
+  const existingTaskKey = useMemo(() => {
+    return new Set((tasks || []).map((t) => `${t.phase}::${String(t.title || "").trim().toLowerCase()}`));
+  }, [tasks]);
+
+  const normalizedTemplates = useMemo(() => {
+    const norm = (templatesData || [])
+      .map((r, idx) => {
+        const title = (r.title || r.name || r.task || r.description || "").toString().trim();
+        const phaseRaw = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim();
+        const phase = ["PA-PRE", "DURANTE", "POS"].includes(phaseRaw) ? phaseRaw : "PA-PRE";
+        const statusRaw = (r.status || r.default_status || "Programada").toString().trim();
+        const status = TASK_STATUSES.includes(statusRaw) ? statusRaw : "Programada";
+        const key = `${phase}::${title.trim().toLowerCase()}`;
+        const duplicate = existingTaskKey.has(key);
+        const templateId = r.id || r.template_id || null;
+        const idKey = templateId ? `id:${templateId}` : `idx:${idx}:${key}`;
+        return { idKey, key, title, phase, status, duplicate };
+      })
+      .filter((t) => !!t.title);
+
+    // Ordenação: fase -> duplicadas por último -> título
+    const phaseOrder = { "PA-PRE": 1, DURANTE: 2, POS: 3 };
+    norm.sort((a, b) => {
+      const pa = phaseOrder[a.phase] || 9;
+      const pb = phaseOrder[b.phase] || 9;
+      if (pa !== pb) return pa - pb;
+      if (a.duplicate !== b.duplicate) return a.duplicate ? 1 : -1;
+      return a.title.localeCompare(b.title);
+    });
+    return norm;
+  }, [templatesData, existingTaskKey]);
+
+  const templatesCounts = useMemo(() => {
+    const counts = {
+      "PA-PRE": { total: 0, new: 0, dup: 0 },
+      DURANTE: { total: 0, new: 0, dup: 0 },
+      POS: { total: 0, new: 0, dup: 0 },
+    };
+    for (const t of normalizedTemplates) {
+      counts[t.phase].total += 1;
+      if (t.duplicate) counts[t.phase].dup += 1;
+      else counts[t.phase].new += 1;
+    }
+    return counts;
+  }, [normalizedTemplates]);
+
+  const visibleTemplates = useMemo(() => {
+    const q = (templatesQuery || "").trim().toLowerCase();
+    return normalizedTemplates.filter((t) => {
+      if (!templatesPhase[t.phase]) return false;
+      if (!q) return true;
+      return t.title.toLowerCase().includes(q);
+    });
+  }, [normalizedTemplates, templatesPhase, templatesQuery]);
+
+  useEffect(() => {
+    if (!templatesOpen) return;
+    // Pré-seleciona apenas itens NÃO duplicados nas fases ativas
+    const next = new Set();
+    for (const t of normalizedTemplates) {
+      if (t.duplicate) continue;
+      if (!templatesPhase[t.phase]) continue;
+      next.add(t.idKey);
+    }
+    setTemplatesSelected(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templatesOpen, normalizedTemplates]);
+
+  function openTemplates() {
+    if (!full) {
+      setTaskError("Sem permissão para carregar tarefas predefinidas.");
+      return;
+    }
+    setTemplatesError("");
+    setTemplatesQuery("");
+    setTemplatesPhase({ "PA-PRE": true, "DURANTE": true, "POS": true });
+    setTemplatesOpen(true);
+  }
+
+  async function fetchTemplates() {
+    setTemplatesError("");
+    setTemplatesLoading(true);
+    try {
+      const { data: templates, error: te } = await supabase
+        .from("task_templates")
+        .select("*")
+        .order("created_at", { ascending: true, nullsFirst: false })
+        .limit(1000);
+      if (te) throw te;
+      setTemplatesData(templates || []);
+    } catch (e) {
+      setTemplatesError(e?.message || "Falha ao carregar templates.");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!templatesOpen) return;
+    // Carrega templates quando o modal abrir
+    fetchTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templatesOpen]);
+
+  function toggleTemplate(idKey, disabled) {
+    if (disabled) return;
+    setTemplatesSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(idKey)) next.delete(idKey);
+      else next.add(idKey);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setTemplatesSelected((prev) => {
+      const next = new Set(prev);
+      for (const t of visibleTemplates) {
+        if (t.duplicate) continue;
+        next.add(t.idKey);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setTemplatesSelected(new Set());
+  }
+
+  const selectedCount = useMemo(() => templatesSelected.size, [templatesSelected]);
+
   async function onLoadPredefinedTasks() {
     if (!id || typeof id !== "string") return;
     if (!full) {
@@ -591,50 +1097,44 @@ export default function ImmersionDetailEditPage() {
       return;
     }
 
-    const ok = confirm("Carregar tarefas predefinidas para esta imersão?\n\nDica: tarefas que já existirem (mesmo título e fase) serão ignoradas.");
-    if (!ok) return;
+    // Mantido por compatibilidade; agora o fluxo abre o modal guiado.
+    openTemplates();
+  }
 
+  async function onConfirmLoadTemplates() {
+    if (!id || typeof id !== "string") return;
+    if (!full) {
+      setTemplatesError("Sem permissão para carregar tarefas predefinidas.");
+      return;
+    }
+    setTemplatesError("");
     setTaskError("");
+
     try {
       setTasksLoading(true);
+      const selected = new Set(templatesSelected);
+      const chosen = normalizedTemplates.filter((t) => selected.has(t.idKey) && !t.duplicate);
 
-      // Busca templates (base do usuário já tem `task_templates`)
-      const { data: templates, error: te } = await supabase
-        .from("task_templates")
-        .select("*")
-        .order("created_at", { ascending: true, nullsFirst: false })
-        .limit(500);
-      if (te) throw te;
-
-      const existing = new Set((tasks || []).map((t) => `${t.phase}::${String(t.title || "").trim().toLowerCase()}`));
-
-      const rows = (templates || [])
-        .map((r) => {
-          const title = (r.title || r.name || r.task || r.description || "").toString().trim();
-          const phase = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim();
-          const status = (r.status || r.default_status || "Programada").toString().trim();
-          return { title, phase, status };
-        })
-        .filter((r) => !!r.title)
-        .map((r) => ({
-          immersion_id: id,
-          title: r.title,
-          phase: ["PA-PRE", "DURANTE", "POS"].includes(r.phase) ? r.phase : "PA-PRE",
-          status: TASK_STATUSES.includes(r.status) ? r.status : "Programada",
-        }))
-        .filter((r) => !existing.has(`${r.phase}::${r.title.trim().toLowerCase()}`));
-
-      if (rows.length === 0) {
-        setTaskError("Nenhuma tarefa nova para carregar (todas já existem ou não há templates)." );
+      if (chosen.length === 0) {
+        setTemplatesError("Selecione pelo menos 1 tarefa nova para carregar.");
         return;
       }
 
-      const { error: ie } = await supabase.from("immersion_tasks").insert(rows);
-      if (ie) throw ie;
+      const rows = chosen.map((t) => ({
+        immersion_id: id,
+        title: t.title,
+        phase: t.phase,
+        status: t.status,
+        created_by: user?.id || null,
+        // responsible_id e due_date serão preenchidos automaticamente no lib/tasks
+      }));
 
+      await createTasks(rows);
+
+      setTemplatesOpen(false);
       await loadTasks(id);
     } catch (e) {
-      setTaskError(e?.message || "Falha ao carregar tarefas predefinidas.");
+      setTemplatesError(e?.message || "Falha ao carregar tarefas predefinidas.");
     } finally {
       setTasksLoading(false);
     }
@@ -666,7 +1166,8 @@ export default function ImmersionDetailEditPage() {
         due_date: newTask.due_date || null,
         done_at: newTask.done_at || null,
         notes: (newTask.notes || "").trim() || null,
-        status: newTask.status
+        status: newTask.status,
+        created_by: user?.id || null
       });
 
       setNewTaskOpen(false);
@@ -688,6 +1189,15 @@ export default function ImmersionDetailEditPage() {
     setTaskError("");
     try {
       const normalized = { ...patch };
+
+      // Auditoria mínima ao concluir tarefa
+      if (Object.prototype.hasOwnProperty.call(normalized, "status") && normalized.status === "Concluída") {
+        const now = new Date();
+        normalized.completed_by = user?.id || null;
+        normalized.completed_at = now.toISOString();
+        // compat: algumas bases usam done_at como date-only
+        normalized.done_at = now.toISOString().slice(0, 10);
+      }
       if (Object.prototype.hasOwnProperty.call(normalized, "done_at") && !normalized.done_at) normalized.done_at = null;
       if (Object.prototype.hasOwnProperty.call(normalized, "notes") && typeof normalized.notes === "string") normalized.notes = normalized.notes.trim() || null;
       await updateTask(task.id, normalized);
@@ -782,6 +1292,30 @@ export default function ImmersionDetailEditPage() {
                   {signal.label} até
                 </span>
               ) : null}
+
+              {form?.status !== "Concluída" ? (
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
+                  Clonar
+                </button>
+              ) : (
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full}>
+                  Clonar
+                </button>
+              )}
+
+              <button type="button" className="btn" onClick={openApplyTemplatesFlow} disabled={!full} title="Aplicar templates por tipo nesta imersão (sem duplicar itens)">
+                Aplicar templates
+              </button>
+
+              {form?.status !== "Concluída" ? (
+                <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full}>
+                  Concluir imersão
+                </button>
+              ) : (
+                <span className="badge" style={{ background: "var(--success-soft)", color: "var(--success)", border: "1px solid var(--border)" }}>
+                  Concluída
+                </span>
+              )}
 
               <button type="button" className="btn danger" onClick={onDeleteImmersion} disabled={removing}>
                 {removing ? "Excluindo..." : "Excluir"}
@@ -1229,9 +1763,11 @@ export default function ImmersionDetailEditPage() {
                   <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                     <option value="Planejamento">Planejamento</option>
                     <option value="Em execução">Em execução</option>
-                    <option value="Concluída">Concluída</option>
                     <option value="Cancelada">Cancelada</option>
                   </select>
+                  <div className="small muted" style={{ marginTop: 6 }}>
+                    Para concluir, use o botão <b>Concluir imersão</b> no topo. Isso garante que não existam tarefas pendentes.
+                  </div>
                 </Field>
               </div>
 
@@ -1466,7 +2002,147 @@ export default function ImmersionDetailEditPage() {
               </div>
             </div>
 
-            {}
+            {templatesOpen ? (
+              <div className="overlay" role="dialog" aria-modal="true">
+                <div className="dialog" style={{ maxWidth: 980 }}>
+                  <div className="dialogHeader">
+                    <div>
+                      <div className="h2" style={{ margin: 0 }}>Carregar tarefas predefinidas</div>
+                      <div className="small muted" style={{ marginTop: 2 }}>
+                        Selecione fases, revise as tarefas e confirme. Itens marcados como “Já existe” não serão inseridos.
+                      </div>
+                    </div>
+                    <div className="row" style={{ gap: 10 }}>
+                      <button type="button" className="btn" onClick={() => setTemplatesOpen(false)}>
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={onConfirmLoadTemplates}
+                        disabled={tasksLoading || templatesLoading || selectedCount === 0}
+                        title={selectedCount === 0 ? "Selecione tarefas para carregar." : ""}
+                      >
+                        Carregar selecionadas ({selectedCount})
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="dialogBody">
+                    {templatesError ? (
+                      <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{templatesError}</div>
+                    ) : null}
+
+                    <div className="card" style={{ marginBottom: 12 }}>
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className={`btn ${templatesPhase["PA-PRE"] ? "primary" : ""}`}
+                            onClick={() => setTemplatesPhase((p) => ({ ...p, "PA-PRE": !p["PA-PRE"] }))}
+                            title={`PA-PRÉ: ${templatesCounts["PA-PRE"].new} novas • ${templatesCounts["PA-PRE"].dup} já existem`}
+                          >
+                            PA-PRÉ ({templatesCounts["PA-PRE"].new}/{templatesCounts["PA-PRE"].total})
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn ${templatesPhase.DURANTE ? "primary" : ""}`}
+                            onClick={() => setTemplatesPhase((p) => ({ ...p, DURANTE: !p.DURANTE }))}
+                            title={`DURANTE: ${templatesCounts.DURANTE.new} novas • ${templatesCounts.DURANTE.dup} já existem`}
+                          >
+                            DURANTE ({templatesCounts.DURANTE.new}/{templatesCounts.DURANTE.total})
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn ${templatesPhase.POS ? "primary" : ""}`}
+                            onClick={() => setTemplatesPhase((p) => ({ ...p, POS: !p.POS }))}
+                            title={`PÓS: ${templatesCounts.POS.new} novas • ${templatesCounts.POS.dup} já existem`}
+                          >
+                            PÓS ({templatesCounts.POS.new}/{templatesCounts.POS.total})
+                          </button>
+                        </div>
+
+                        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                          <input
+                            className="input"
+                            placeholder="Buscar tarefa..."
+                            value={templatesQuery}
+                            onChange={(e) => setTemplatesQuery(e.target.value)}
+                            style={{ width: 280, maxWidth: "100%" }}
+                          />
+                          <button type="button" className="btn" onClick={selectAllVisible} disabled={templatesLoading}>
+                            Selecionar visíveis
+                          </button>
+                          <button type="button" className="btn" onClick={clearSelection} disabled={templatesLoading}>
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                      <div style={{ maxHeight: 420, overflow: "auto" }}>
+                        {templatesLoading ? (
+                          <div className="small" style={{ padding: 12 }}>Carregando templates...</div>
+                        ) : visibleTemplates.length === 0 ? (
+                          <div className="small" style={{ padding: 12 }}>Nenhuma tarefa encontrada para os filtros atuais.</div>
+                        ) : (
+                          <table className="table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: 44 }} />
+                                <th>Tarefa</th>
+                                <th style={{ width: 110 }}>Fase</th>
+                                <th style={{ width: 140 }}>Status</th>
+                                <th style={{ width: 120 }}>Situação</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleTemplates.map((t) => {
+                                const checked = templatesSelected.has(t.idKey);
+                                const disabled = t.duplicate;
+                                return (
+                                  <tr key={t.idKey} style={{ opacity: disabled ? 0.6 : 1 }}>
+                                    <td>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={disabled}
+                                        onChange={() => toggleTemplate(t.idKey, disabled)}
+                                      />
+                                    </td>
+                                    <td>{t.title}</td>
+                                    <td>
+                                      <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                                        {t.phase === "PA-PRE" ? "PA-PRÉ" : t.phase === "POS" ? "PÓS" : t.phase}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>{t.status}</span>
+                                    </td>
+                                    <td>
+                                      {t.duplicate ? (
+                                        <span className="badge" style={{ background: "var(--warning-soft)", border: "1px solid var(--border)", color: "var(--text)" }}>
+                                          Já existe
+                                        </span>
+                                      ) : (
+                                        <span className="badge" style={{ background: "var(--success-soft)", border: "1px solid var(--border)", color: "var(--text)" }}>
+                                          Nova
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
@@ -1830,6 +2506,405 @@ export default function ImmersionDetailEditPage() {
               <div style={{ flex: 1 }} />
               <button type="button" className="btn" onClick={closeEdit}>Cancelar</button>
               <button type="button" className="btn primary" onClick={saveEdit}>Salvar</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {closeFlow?.open ? (
+        <div className="overlay" role="dialog" aria-modal="true">
+          <div className="dialog" style={{ maxWidth: 820 }}>
+            <div className="dialogHeader">
+              <div>
+                <div className="h2" style={{ margin: 0 }}>Concluir imersão</div>
+                <div className="small muted" style={{ marginTop: 2 }}>
+                  Este fluxo valida se não existem tarefas pendentes/atrasadas ou sem responsável.
+                </div>
+              </div>
+              <div className="row" style={{ gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false })}
+                  disabled={!!closeFlow.loading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={confirmCloseImmersionFlow}
+                  disabled={!!closeFlow.loading || !closeFlow.canClose}
+                  title={!closeFlow.canClose ? "Existe pendência no checklist." : ""}
+                >
+                  {closeFlow.loading ? "Concluindo..." : "Concluir agora"}
+                </button>
+              </div>
+            </div>
+
+            <div className="dialogBody">
+              {closeFlow.error ? (
+                <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{closeFlow.error}</div>
+              ) : null}
+
+              {closeFlow.loading && !closeFlow.summary ? (
+                <div className="small">Validando checklist...</div>
+              ) : null}
+
+              {closeFlow.summary ? (
+                <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                    Pendentes: {closeFlow.summary.open}
+                  </span>
+                  <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                    Atrasadas: {closeFlow.summary.overdue}
+                  </span>
+                  <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                    Sem responsável: {closeFlow.summary.orphan}
+                  </span>
+                </div>
+              ) : null}
+
+              {!closeFlow.loading && closeFlow.summary && !closeFlow.canClose ? (
+                <>
+                  <div className="small" style={{ marginBottom: 10 }}>
+                    Para concluir, resolva as pendências abaixo (amostra). Use o checklist para corrigir rapidamente.
+                  </div>
+                  {closeFlow.sample?.length ? (
+                    <div className="tableWrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Tarefa</th>
+                            <th>Fase</th>
+                            <th>Prazo</th>
+                            <th>Responsável</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {closeFlow.sample.map((t) => {
+                            const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
+                            return (
+                              <tr key={t.id}>
+                                <td>{t.title}</td>
+                                <td>{t.phase || "-"}</td>
+                                <td>{t.due_date || "-"}</td>
+                                <td>{prof ? prof.name : "-"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => {
+                        setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
+                        setTab("checklist");
+                      }}
+                    >
+                      Ir para Checklist
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {!closeFlow.loading && closeFlow.summary && closeFlow.canClose ? (
+                <>
+                  <div className="small" style={{ marginBottom: 12 }}>
+                    Checklist validado. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
+                  </div>
+                  <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!closeFlow.confirm}
+                      onChange={(e) => setCloseFlow((p) => ({ ...p, confirm: e.target.checked, error: "" }))}
+                    />
+                    <span className="small">Confirmo que a imersão está pronta para ser concluída.</span>
+                  </label>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      
+      {applyTplFlow?.open ? (
+        <div className="overlay" role="dialog" aria-modal="true">
+          <div className="dialog" style={{ maxWidth: 860 }}>
+            <div className="dialogHeader">
+              <div>
+                <div className="h2" style={{ margin: 0 }}>Aplicar templates por tipo</div>
+                <div className="small muted" style={{ marginTop: 2 }}>
+                  Aplica itens do tipo selecionado nesta imersão. Não duplica itens que já existem.
+                </div>
+              </div>
+              <div className="row" style={{ gap: 10 }}>
+                <button type="button" className="btn" onClick={() => setApplyTplFlow({ open: false, loading: false, error: "" })} disabled={applyTplFlow.loading}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn primary" onClick={confirmApplyTemplatesFlow} disabled={applyTplFlow.loading}>
+                  {applyTplFlow.loading ? "Aplicando..." : "Aplicar"}
+                </button>
+              </div>
+            </div>
+
+            <div className="dialogBody">
+              {applyTplFlow.error ? (
+                <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{applyTplFlow.error}</div>
+              ) : null}
+
+              <div className="grid2">
+                <Field label="Tipo de template">
+                  <select className="input" value={applyTplForm.immersion_type} onChange={(e) => setApplyTplForm((p) => ({ ...p, immersion_type: e.target.value }))}>
+                    <option value="">Usar tipo atual ({form?.type || "-"})</option>
+                    {IMMERSION_TYPES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="O que aplicar">
+                  <div className="stack" style={{ gap: 10 }}>
+                    {Object.entries({
+                      tasks: "Tarefas",
+                      schedule: "Cronograma",
+                      materials: "Materiais",
+                      tools: "Ferramentas",
+                      videos: "Vídeos",
+                    }).map(([key, label]) => (
+                      <label key={key} className="row" style={{ gap: 10, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!applyTplForm.include?.[key]}
+                          onChange={(e) =>
+                            setApplyTplForm((p) => ({
+                              ...p,
+                              include: { ...p.include, [key]: e.target.checked },
+                            }))
+                          }
+                        />
+                        <span className="small">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+              </div>
+
+              <div className="small muted" style={{ marginTop: 10 }}>
+                Dica: publique os templates que devem ser aplicados em massa e mantenha rascunhos para evolução sem impactar o padrão atual.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+{cloneFlow?.open ? (
+        <div className="overlay" role="dialog" aria-modal="true">
+          <div className="dialog" style={{ maxWidth: 920 }}>
+            <div className="dialogHeader">
+              <div>
+                <div className="h2" style={{ margin: 0 }}>Clonar imersão</div>
+                <div className="small muted" style={{ marginTop: 2 }}>
+                  Copia responsáveis e permite trazer tarefas predefinidas, cronograma, materiais, ferramentas e vídeos da imersão origem.
+                </div>
+              </div>
+              <div className="row" style={{ gap: 10 }}>
+                <button type="button" className="btn" onClick={() => setCloneFlow({ open: false, loading: false, error: "" })} disabled={cloneFlow.loading}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn primary" onClick={confirmCloneImmersionFlow} disabled={cloneFlow.loading}>
+                  {cloneFlow.loading ? "Clonando..." : "Criar cópia"}
+                </button>
+              </div>
+            </div>
+
+            <div className="dialogBody">
+              {cloneFlow.error ? (
+                <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{cloneFlow.error}</div>
+              ) : null}
+
+              <div className="grid2">
+                <Field label="Nome da nova imersão" hint="Obrigatório">
+                  <input className="input" value={cloneForm.immersion_name} onChange={(e) => setCloneForm((p) => ({ ...p, immersion_name: e.target.value }))} />
+                </Field>
+
+                <Field label="Tipo" hint="Obrigatório">
+                  <select className="input" value={cloneForm.type} onChange={(e) => setCloneForm((p) => ({ ...p, type: e.target.value }))}>
+                    <option value="">Selecione</option>
+                    {IMMERSION_TYPES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <div className="grid2">
+                <Field label="Data de início" hint="Obrigatório">
+                  <input className="input" type="date" value={cloneForm.start_date} onChange={(e) => setCloneForm((p) => ({ ...p, start_date: e.target.value }))} />
+                </Field>
+                <Field label="Data de fim" hint="Obrigatório">
+                  <input className="input" type="date" value={cloneForm.end_date} onChange={(e) => setCloneForm((p) => ({ ...p, end_date: e.target.value }))} />
+                </Field>
+              </div>
+
+              <div className="grid2">
+                <Field label="Sala / Local">
+                  <select className="input" value={cloneForm.room_location} onChange={(e) => setCloneForm((p) => ({ ...p, room_location: e.target.value }))}>
+                    {ROOMS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Tarefas predefinidas">
+                  <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                    <input type="checkbox" checked={!!cloneForm.include_templates} onChange={(e) => setCloneForm((p) => ({ ...p, include_templates: e.target.checked }))} />
+                    <span className="small">Carregar tarefas automaticamente</span>
+                  </label>
+                  {cloneForm.include_templates ? (
+                    <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                      <button type="button" className={`btn ${cloneForm.phases["PA-PRE"] ? "primary" : ""}`} onClick={() => setCloneForm((p) => ({ ...p, phases: { ...p.phases, "PA-PRE": !p.phases["PA-PRE"] } }))}>
+                        PA-PRÉ
+                      </button>
+                      <button type="button" className={`btn ${cloneForm.phases.DURANTE ? "primary" : ""}`} onClick={() => setCloneForm((p) => ({ ...p, phases: { ...p.phases, DURANTE: !p.phases.DURANTE } }))}>
+                        DURANTE
+                      </button>
+                      <button type="button" className={`btn ${cloneForm.phases.POS ? "primary" : ""}`} onClick={() => setCloneForm((p) => ({ ...p, phases: { ...p.phases, POS: !p.phases.POS } }))}>
+                        PÓS
+                      </button>
+                    </div>
+                  ) : null}
+                </Field>
+
+                <Field label="Copiar conteúdo">
+                  <div className="small muted" style={{ marginBottom: 8 }}>
+                    Recomendado ao clonar: mantém o mesmo cronograma, materiais, ferramentas e vídeos da imersão origem.
+                  </div>
+                  <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                    <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!cloneForm.include_schedule}
+                        onChange={(e) => setCloneForm((p) => ({ ...p, include_schedule: e.target.checked }))}
+                      />
+                      <span className="small">Copiar cronograma</span>
+                    </label>
+                    <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!cloneForm.include_materials}
+                        onChange={(e) => setCloneForm((p) => ({ ...p, include_materials: e.target.checked }))}
+                      />
+                      <span className="small">Copiar materiais</span>
+                    </label>
+                    <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!cloneForm.include_tools}
+                        onChange={(e) => setCloneForm((p) => ({ ...p, include_tools: e.target.checked }))}
+                      />
+                      <span className="small">Copiar ferramentas</span>
+                    </label>
+                    <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!cloneForm.include_videos}
+                        onChange={(e) => setCloneForm((p) => ({ ...p, include_videos: e.target.checked }))}
+                      />
+                      <span className="small">Copiar vídeos</span>
+                    </label>
+                  </div>
+                </Field>
+              </div>
+
+              <div className="small muted">
+                Responsáveis (Consultor e Designer) são copiados da imersão origem.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {closeBlock?.open ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 9999,
+          }}
+          onClick={() => setCloseBlock({ open: false, summary: null, sample: [] })}
+        >
+          <div
+            className="card"
+            style={{ maxWidth: 760, width: "100%", cursor: "default" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h2">Não é possível concluir a imersão</div>
+            <div className="small muted" style={{ marginTop: 6 }}>
+              Para garantir governança, a imersão só pode ser marcada como <b>Concluída</b> quando não houver pendências no checklist.
+            </div>
+
+            <div className="row" style={{ gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+              <span className="badge warn">{closeBlock?.summary?.open || 0} tarefa(s) em aberto</span>
+              <span className="badge danger">{closeBlock?.summary?.overdue || 0} atrasada(s)</span>
+              <span className="badge">{closeBlock?.summary?.orphan || 0} sem responsável</span>
+            </div>
+
+            {closeBlock.sample?.length ? (
+              <div className="tableWrap" style={{ marginTop: 12 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Tarefa</th>
+                      <th>Fase</th>
+                      <th>Responsável</th>
+                      <th>Prazo</th>
+                      <th>Status prazo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closeBlock.sample.map((t) => {
+                      const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
+                      const ds = deadlineStatus(t);
+                      return (
+                        <tr key={t.id}>
+                          <td>{t.title}</td>
+                          <td>{t.phase || "-"}</td>
+                          <td>{prof ? prof.name : "-"}</td>
+                          <td>{t.due_date || "-"}</td>
+                          <td><span className={`badge ${ds.kind}`}>{ds.label}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <div className="row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <button type="button" className="btn" onClick={() => setCloseBlock({ open: false, summary: null, sample: [] })}>
+                Entendi
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  setCloseBlock({ open: false, summary: null, sample: [] });
+                  setTab("checklist");
+                }}
+              >
+                Ir para Checklist
+              </button>
             </div>
           </div>
         </div>

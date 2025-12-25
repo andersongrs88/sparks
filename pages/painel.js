@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Layout from "../components/Layout";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
+import { syncOverdueTasksGlobal } from "../lib/tasks";
 
 function iso(d) {
   return d.toISOString().slice(0, 10);
@@ -61,6 +62,9 @@ export default function PainelPage() {
     try {
       setError("");
       setLoading(true);
+
+      // Governança: mantém tarefas vencidas com status "Atrasada" (best-effort)
+      try { await syncOverdueTasksGlobal(); } catch {}
 
       // bases antigas podem não ter evidence_link/evidence_path.
       // OBS: algumas bases também não têm FK entre immersion_tasks -> immersions,

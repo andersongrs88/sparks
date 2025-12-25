@@ -4,6 +4,7 @@ import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
+import { applyTypeTemplates } from "../../lib/templates";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
@@ -46,6 +47,9 @@ export default function NovaImersaoPage() {
     service_order_link: "",
     technical_sheet_link: ""
   });
+
+  const [loadTypeTemplates, setLoadTypeTemplates] = useState(true);
+  const [templateModules, setTemplateModules] = useState({ tasks: true, schedule: true, materials: true, tools: true, videos: true });
 
   useEffect(() => {
     if (authLoading) return;
@@ -108,6 +112,21 @@ export default function NovaImersaoPage() {
         technical_sheet_link: form.technical_sheet_link || null
       });
 
+if (loadTypeTemplates) {
+        try {
+          await applyTypeTemplates({
+            immersionId: created.id,
+            immersionType: form.type,
+            startDate: form.start_date,
+            endDate: form.end_date,
+            include: templateModules
+          });
+        } catch (e) {
+          // best-effort: do not block creation if templates tables are missing
+          console.warn("applyTypeTemplates failed", e);
+        }
+      }
+
       router.push(`/imersoes/${created.id}`);
     } catch (err) {
       setError(err?.message || "Erro ao criar imersão.");
@@ -146,6 +165,36 @@ export default function NovaImersaoPage() {
                   </select>
                 </Field>
               </div>
+              <div className="card" style={{ padding: 12, marginTop: 8, background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div className="small" style={{ fontWeight: 700 }}>Templates do tipo</div>
+                    <div className="small muted">Ao criar, o sistema pode pré-carregar tarefas, cronograma, materiais, ferramentas e vídeos para este tipo.</div>
+                  </div>
+                  <label className="row" style={{ gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={loadTypeTemplates} onChange={(e) => setLoadTypeTemplates(e.target.checked)} />
+                    <span className="small">Carregar automaticamente</span>
+                  </label>
+                </div>
+
+                {loadTypeTemplates ? (
+                  <div className="row" style={{ gap: 14, flexWrap: "wrap", marginTop: 10 }}>
+                    {(["tasks","schedule","materials","tools","videos"]).map((k) => (
+                      <label key={k} className="row" style={{ gap: 8, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!templateModules[k]}
+                          onChange={(e) => setTemplateModules((p) => ({ ...p, [k]: e.target.checked }))}
+                        />
+                        <span className="small">
+                          {k === "tasks" ? "Tarefas" : k === "schedule" ? "Cronograma" : k === "materials" ? "Materiais" : k === "tools" ? "Ferramentas" : "Vídeos"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
 
               <div className="grid2">
                 <Field label="Sala">

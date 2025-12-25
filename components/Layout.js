@@ -67,6 +67,7 @@ export default function Layout({ title, children }) {
           <NavItem href="/imersoes" label="Imersões" icon="📅" />
           <NavItem href="/painel" label="Plano de Ação" icon="✅" />
           <NavItem href="/relatorios" label="Relatórios" icon="📊" />
+          {isFullAccess ? <NavItem href="/templates" label="Templates" icon="🧩" /> : null}
           {isFullAccess ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
           <NavItem href="/notificacoes" label="Notificações" icon="🔔" />
         </nav>

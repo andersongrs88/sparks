@@ -1,6 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import Layout from "../components/Layout";
 import { supabase } from "../lib/supabaseClient";
+import { getDashboardStats } from "../lib/dashboard";
+
+function downloadCSV(filename, rows) {
+  const escape = (v) => {
+    if (v === null || typeof v === "undefined") return "";
+    const s = String(v);
+    if (s.includes("\"") || s.includes(",") || s.includes("\n")) return `"${s.replace(/\"/g, "\"\"")}"`;
+    return s;
+  };
+  const csv = (rows || []).map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function iso(d) {
   return d.toISOString().slice(0, 10);
@@ -9,7 +29,7 @@ function iso(d) {
 export default function RelatoriosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [data, setData] = useState({ overdueByImmersion: [], tasksByOwner: [], costByImmersion: [] });
+  const [data, setData] = useState({ overdueByImmersion: [], tasksByOwner: [], costByImmersion: [], riskImmersions: [], workload: [] });
 
   useEffect(() => {
     let mounted = true;
@@ -83,11 +103,24 @@ export default function RelatoriosPage() {
           byCost.set(key, prev);
         }
 
+        // 4) Visão executiva (risco + sobrecarga) reaproveitando a mesma heurística do Dashboard
+        let riskImmersions = [];
+        let workload = [];
+        try {
+          const dash = await getDashboardStats();
+          riskImmersions = dash?.riskImmersions || [];
+          workload = dash?.workload || [];
+        } catch {
+          // best-effort
+        }
+
         if (!mounted) return;
         setData({
           overdueByImmersion: Array.from(byImm.values()).sort((a, b) => b.overdue - a.overdue).slice(0, 30),
           tasksByOwner: Array.from(byOwner.values()).sort((a, b) => (b.open + b.done) - (a.open + a.done)).slice(0, 30),
-          costByImmersion: Array.from(byCost.values()).sort((a, b) => b.total - a.total).slice(0, 30)
+          costByImmersion: Array.from(byCost.values()).sort((a, b) => b.total - a.total).slice(0, 30),
+          riskImmersions,
+          workload
         });
       } catch (e) {
         if (!mounted) return;
@@ -99,7 +132,10 @@ export default function RelatoriosPage() {
     return () => { mounted = false; };
   }, []);
 
-  const hasAny = useMemo(() => (data.overdueByImmersion.length + data.tasksByOwner.length + data.costByImmersion.length) > 0, [data]);
+  const hasAny = useMemo(
+    () => (data.overdueByImmersion.length + data.tasksByOwner.length + data.costByImmersion.length + data.riskImmersions.length + data.workload.length) > 0,
+    [data]
+  );
 
   return (
     <Layout title="Relatórios">
@@ -116,7 +152,20 @@ export default function RelatoriosPage() {
         {!loading ? (
           <div className="grid2">
             <div className="card">
-              <div className="h2">Atrasos por imersão</div>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="h2">Atrasos por imersão</div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => downloadCSV(
+                    "atrasos_por_imersao.csv",
+                    [["Imersão", "Atrasadas"], ...data.overdueByImmersion.map((r) => [r.name, r.overdue])]
+                  )}
+                  disabled={!data.overdueByImmersion.length}
+                >
+                  Exportar CSV
+                </button>
+              </div>
               <div className="tableWrap" style={{ marginTop: 8 }}>
                 <table className="table">
                 <thead><tr><th>Imersão</th><th>Atrasadas</th></tr></thead>
@@ -133,7 +182,20 @@ export default function RelatoriosPage() {
             </div>
 
             <div className="card">
-              <div className="h2">Tarefas por dono</div>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="h2">Tarefas por dono</div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => downloadCSV(
+                    "tarefas_por_dono.csv",
+                    [["Dono", "Abertas", "Concluídas"], ...data.tasksByOwner.map((r) => [r.owner, r.open, r.done])]
+                  )}
+                  disabled={!data.tasksByOwner.length}
+                >
+                  Exportar CSV
+                </button>
+              </div>
               <div className="tableWrap" style={{ marginTop: 8 }}>
                 <table className="table">
                 <thead><tr><th>Dono</th><th>Abertas</th><th>Concluídas</th></tr></thead>
@@ -151,7 +213,20 @@ export default function RelatoriosPage() {
             </div>
 
             <div className="card">
-              <div className="h2">Custos por imersão</div>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="h2">Custos por imersão</div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => downloadCSV(
+                    "custos_por_imersao.csv",
+                    [["Imersão", "Total"], ...data.costByImmersion.map((r) => [r.name, r.total])]
+                  )}
+                  disabled={!data.costByImmersion.length}
+                >
+                  Exportar CSV
+                </button>
+              </div>
               <div className="tableWrap" style={{ marginTop: 8 }}>
                 <table className="table">
                 <thead><tr><th>Imersão</th><th>Total</th></tr></thead>
@@ -163,6 +238,85 @@ export default function RelatoriosPage() {
                     </tr>
                   ))}
                 </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="h2">Imersões em risco</div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => downloadCSV(
+                    "imressoes_em_risco.csv",
+                    [["Imersão", "Nível", "Score", "Motivos"], ...data.riskImmersions.map((r) => [r.immersion_name, r.level, r.score, (r.reasons || []).join("; ")])]
+                  )}
+                  disabled={!data.riskImmersions.length}
+                >
+                  Exportar CSV
+                </button>
+              </div>
+
+              <div className="tableWrap" style={{ marginTop: 8 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Imersão</th>
+                      <th>Nível</th>
+                      <th>Score</th>
+                      <th>Motivos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.riskImmersions.map((r) => (
+                      <tr key={r.immersion_id}>
+                        <td><a href={`/imersoes/${r.immersion_id}`}>{r.immersion_name}</a></td>
+                        <td><span className={`badge ${r.level === "Alto" ? "danger" : r.level === "Médio" ? "warn" : "muted"}`}>{r.level}</span></td>
+                        <td>{r.score}</td>
+                        <td className="small">{(r.reasons || []).join(" • ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="h2">Sobrecarga por responsável</div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => downloadCSV(
+                    "sobrecarga_por_responsavel.csv",
+                    [["Responsável", "Abertas", "Atrasadas", "Vence em até 3 dias"], ...data.workload.map((w) => [w.responsible, w.open, w.overdue, w.dueSoon])]
+                  )}
+                  disabled={!data.workload.length}
+                >
+                  Exportar CSV
+                </button>
+              </div>
+              <div className="tableWrap" style={{ marginTop: 8 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Responsável</th>
+                      <th>Abertas</th>
+                      <th>Atrasadas</th>
+                      <th>Vence em 3d</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.workload.map((w) => (
+                      <tr key={w.responsible_id}>
+                        <td>{w.responsible}</td>
+                        <td>{w.open}</td>
+                        <td><span className={w.overdue > 0 ? "badge danger" : "badge muted"}>{w.overdue}</span></td>
+                        <td><span className={w.dueSoon > 0 ? "badge warn" : "badge muted"}>{w.dueSoon}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
               </div>
             </div>
