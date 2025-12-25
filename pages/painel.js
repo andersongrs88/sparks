@@ -4,32 +4,44 @@ import Layout from "../components/Layout";
 import BottomSheet from "../components/BottomSheet";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
-import { syncOverdueTasksGlobal, bulkUpdateTasks, isTaskDone, normalizeTaskStatus } from "../lib/tasks";
+import { bulkUpdateTasks, isTaskDone, syncOverdueTasksGlobal } from "../lib/tasks";
 
 function iso(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function daysLate(due) {
-  if (!due) return 0;
-  const today = new Date();
-  const t = new Date(iso(today) + "T00:00:00");
-  const d = new Date(due + "T00:00:00");
-  return Math.floor((t.getTime() - d.getTime()) / (24 * 3600 * 1000));
+function toDateOnly(isoStr) {
+  if (!isoStr) return null;
+  return new Date(isoStr + "T00:00:00");
+}
 
-function isTodayISO(dateISO) {
-  if (!dateISO) return false;
-  const today = new Date();
-  return dateISO === iso(today);
+function daysBetween(aISO, bISO) {
+  const a = toDateOnly(aISO);
+  const b = toDateOnly(bISO);
+  if (!a || !b) return null;
+  const diff = b.getTime() - a.getTime();
+  return Math.floor(diff / (24 * 3600 * 1000));
 }
-function withinNextDays(dateISO, days) {
-  if (!dateISO) return false;
-  const today = new Date(iso(new Date()) + "T00:00:00");
-  const d = new Date(dateISO + "T00:00:00");
-  const diff = Math.floor((d.getTime() - today.getTime()) / (24 * 3600 * 1000));
-  return diff >= 0 && diff <= days;
+
+function slaForTask(task) {
+  const today = iso(new Date());
+  if (!task?.due_date || isTaskDone(task)) return { label: "Sem SLA", className: "badge muted" };
+
+  if (task.due_date < today) {
+    const late = Math.abs(daysBetween(task.due_date, today) || 0);
+    return { label: `Atrasada ${late}d`, className: "badge danger" };
+  }
+  if (task.due_date === today) return { label: "Vence hoje", className: "badge" };
+  const inDays = daysBetween(today, task.due_date);
+  if (typeof inDays === "number" && inDays >= 0 && inDays <= 7) return { label: `Em ${inDays}d`, className: "badge" };
+  return { label: "No prazo", className: "badge muted" };
 }
-}
+
+const PHASES = [
+  { value: "PA-PRE", label: "PA-PRÉ" },
+  { value: "DURANTE", label: "DURANTE" },
+  { value: "POS", label: "PÓS" },
+];
 
 export default function PainelPage() {
   const router = useRouter();
@@ -37,39 +49,96 @@ export default function PainelPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [tasks, setTasks] = useState([]);
+  const [profiles, setProfiles] = useState([]);
 
   const [query, setQuery] = useState("");
-  // A tela foi redesenhada para operar por blocos (Atrasadas, Vencem hoje, Próximos 7 dias, Todas).
-  // Mantemos o filtro "Somente atrasadas" como atalho, mas o comportamento principal é por agrupamento.
-  const [onlyOverdue, setOnlyOverdue] = useState(false);
+  const [immersionId, setImmersionId] = useState("all");
   const [phase, setPhase] = useState("all");
   const [status, setStatus] = useState("Pendentes");
-  const [immersionId, setImmersionId] = useState("all");
+  const [onlyOverdue, setOnlyOverdue] = useState(false);
+
   const [immersionOptions, setImmersionOptions] = useState([]);
+
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const selectedCount = selectedIds.size;
 
   const [showFilters, setShowFilters] = useState(false);
 
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  // Bulk state
+  const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkDue, setBulkDue] = useState("");
+  const [bulkPhase, setBulkPhase] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState("");
 
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
 
-  async function load() {
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { data, error: e } = await supabase
+          .from("immersions")
+          .select("id, immersion_name, start_date")
+          .order("start_date", { ascending: false })
+          .limit(400);
+        if (e) throw e;
+        if (!mounted) return;
+        setImmersionOptions((data || []).map((r) => ({ id: r.id, name: r.immersion_name, start_date: r.start_date })));
+      } catch {
+        // ignore
+      }
+    })();
+
+    (async () => {
+      try {
+        const { data, error: e } = await supabase
+          .from("profiles")
+          .select("id, name, email, is_active")
+          .order("is_active", { ascending: false })
+          .order("name", { ascending: true })
+          .limit(2000);
+        if (e) throw e;
+        if (!mounted) return;
+        setProfiles(data || []);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [authLoading, user]);
+
+  async function loadTasks() {
     try {
       setError("");
       setLoading(true);
-      // Sincroniza tarefas atrasadas (protege bases antigas)
-      await syncOverdueTasksGlobal();
 
+      // Governança: tenta manter atrasadas sinalizadas (best-effort)
+      try {
+        await syncOverdueTasksGlobal();
+      } catch {}
+
+      // Select compatível com bases antigas
+      const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";
       let q = supabase
         .from("immersion_tasks")
-        .select("id, immersion_id, title, phase, status, due_date, responsible_id, notes, updated_at, done_at, created_at, immersions:immersions(id, immersion_name)")
+        .select(base)
         .order("due_date", { ascending: true, nullsFirst: false })
         .limit(1200);
 
       if (immersionId !== "all") q = q.eq("immersion_id", immersionId);
       if (phase !== "all") q = q.eq("phase", phase);
 
-      // Status: pendentes vs concluídas usando helper robusto
       if (status === "Concluídas") {
         q = q.or("status.ilike.%conclu%,done_at.not.is.null");
       } else {
@@ -78,114 +147,33 @@ export default function PainelPage() {
 
       if (query?.trim()) {
         const term = query.trim();
+        // busca por título + nome da imersão (join)
         q = q.or(`title.ilike.%${term}%,immersions.immersion_name.ilike.%${term}%`);
       }
 
       const { data, error: e } = await q;
       if (e) throw e;
 
-      const rows = (data || []).map((t) => ({
+      let rows = (data || []).map((t) => ({
         ...t,
-        immersion_name: t?.immersions?.immersion_name || t?.immersion_name || "—",
+        immersion_name: t?.immersions?.immersion_name || "—",
       }));
 
-      setTasks(rows || []);
-    } catch (e) {
-      setError(e?.message || "Erro ao carregar tarefas.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    let mounted = true;
-    (async () => {
-      try {
-        const { data, error: e } = await supabase
-          .from("immersions")
-          .select("id, immersion_name, start_date")
-          .order("start_date", { ascending: false })
-          .limit(300);
-        if (e) throw e;
-        if (!mounted) return;
-        setImmersionOptions((data || []).map((r) => ({ id: r.id, name: r.immersion_name, start_date: r.start_date })));
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [authLoading, user]);
-
-  async function load() {
-    try {
-      setError("");
-      setLoading(true);
-
-      // Governança: mantém tarefas vencidas com status "Atrasada" (best-effort)
-      try { await syncOverdueTasksGlobal(); } catch {}
-
-      // bases antigas podem não ter evidence_link/evidence_path.
-      // OBS: algumas bases também não têm FK entre immersion_tasks -> immersions,
-      // então o join pode retornar nulo. A tela faz fallback com um map local.
-      const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, immersions(immersion_name, status)";
-      async function run(withEvidence) {
-        const sel = withEvidence ? `${base}, evidence_link, evidence_path` : base;
-        let q = supabase
-          .from("immersion_tasks")
-          .select(sel)
-          .order("due_date", { ascending: true, nullsFirst: false })
-          .limit(500);
-        if (immersionId !== "all") q = q.eq("immersion_id", immersionId);
-        if (phase !== "all") q = q.eq("phase", phase);
-        if (status === "Pendentes") q = q.neq("status", "Concluída");
-        if (status === "Concluídas") q = q.eq("status", "Concluída");
-        if (query.trim()) q = q.ilike("title", `%${query.trim()}%`);
-        const { data, error: e } = await q;
-        if (e) throw e;
-        return data || [];
-      }
-
-      const today = iso(new Date());
-      let rows = [];
-      try {
-        rows = await run(true);
-      } catch (e) {
-        const msg = String(e?.message || "");
-        if ((msg.includes("evidence_link") || msg.includes("evidence_path")) && msg.includes("does not exist")) {
-          rows = await run(false);
-        } else {
-          throw e;
-        }
-      }
-      if (onlyOverdue) rows = rows.filter((t) => t.due_date && t.status !== "Concluída" && t.due_date < today);
-
-      // Fallback: se o join não trouxe os dados da imersão, carregamos nomes manualmente.
-      const missing = (rows || []).some((r) => !r.immersions);
-      if (missing) {
-        const ids = Array.from(new Set((rows || []).map((r) => r.immersion_id).filter(Boolean)));
-        if (ids.length) {
-          const { data: ims, error: ie } = await supabase
-            .from("immersions")
-            .select("id, immersion_name, status")
-            .in("id", ids);
-          if (!ie && ims) {
-            const map = new Map(ims.map((i) => [i.id, i]));
-            rows = (rows || []).map((r) => ({
-              ...r,
-              immersions: r.immersions || map.get(r.immersion_id) || null,
-            }));
-          }
-        }
+      if (onlyOverdue) {
+        const today = iso(new Date());
+        rows = rows.filter((t) => t.due_date && !isTaskDone(t) && t.due_date < today);
       }
 
       setTasks(rows);
+
+      // seleção: remove ids que não existem mais no filtro
+      setSelectedIds((prev) => {
+        if (!prev.size) return prev;
+        const ids = new Set(rows.map((r) => r.id));
+        const next = new Set();
+        for (const id of prev) if (ids.has(id)) next.add(id);
+        return next;
+      });
     } catch (e) {
       setError(e?.message || "Falha ao carregar.");
     } finally {
@@ -195,368 +183,350 @@ export default function PainelPage() {
 
   useEffect(() => {
     if (authLoading || !user) return;
-    load();
+    loadTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, query, onlyOverdue, phase, status, immersionId]);
+  }, [authLoading, user, query, immersionId, phase, status, onlyOverdue]);
 
-  const counts = useMemo(() => {
-    const today = iso(new Date());
-    const total = tasks.length;
-    // Robustez: bases podem usar "Concluida" (sem acento) ou preencher done_at.
-    const done = tasks.filter((t) => isTaskDone(t)).length;
-    const overdue = tasks.filter((t) => t.due_date && !isTaskDone(t) && t.due_date < today).length;
-    return { total, done, overdue };
-  }, [tasks]);
+  const profileLabelById = useMemo(() => {
+    const map = new Map();
+    for (const p of profiles || []) {
+      map.set(p.id, (p.name || p.email || p.id));
+    }
+    return map;
+  }, [profiles]);
 
   const grouped = useMemo(() => {
     const today = iso(new Date());
-    const t7 = new Date(today + "T00:00:00");
-    t7.setDate(t7.getDate() + 7);
-    const plus7 = iso(t7);
+    const add7 = new Date(today + "T00:00:00");
+    add7.setDate(add7.getDate() + 7);
+    const plus7 = iso(add7);
 
-    const pending = (tasks || []).filter((t) => !(t.status === "Concluída" || t.status === "Concluida" || !!t.done_at));
+    const pending = (tasks || []).filter((t) => !isTaskDone(t));
+
+    const inbox = pending.filter((t) => !t.responsible_id || !t.due_date || !t.phase);
     const overdue = pending.filter((t) => t.due_date && t.due_date < today);
-    const dueToday = pending.filter((t) => t.due_date && t.due_date === today);
+    const dueToday = pending.filter((t) => t.due_date === today);
     const next7 = pending.filter((t) => t.due_date && t.due_date > today && t.due_date <= plus7);
 
-    return {
-      overdue,
-      dueToday,
-      next7,
-      all: tasks || [],
-      plus7
-    };
+    return { inbox, overdue, dueToday, next7, all: tasks || [] };
   }, [tasks]);
 
-  function TaskRow({ t, selectedIds, setSelectedIds }) {
-    const done = isTaskDone(t);
-    const due = t?.due_date || null;
+  function toggleSelected(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
-    const lateDays = (!done && due) ? daysLate(due) : 0;
-    const isLate = lateDays > 0;
+  function clearSelection() {
+    setSelectedIds(new Set());
+    setBulkMsg("");
+  }
 
-    const slaLabel = isLate ? `Atrasada ${lateDays}d` : (isTodayISO(due) ? "Vence hoje" : (withinNextDays(due, 7) ? "Em 7 dias" : ""));
-    const slaBadge = isLate ? "badge danger" : (isTodayISO(due) ? "badge warn" : (withinNextDays(due, 7) ? "badge info" : "badge muted"));
+  async function applyBulk(patch) {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
 
-    const checked = selectedIds?.has(t.id);
+    try {
+      setBulkBusy(true);
+      setBulkMsg("");
 
+      await bulkUpdateTasks(ids, patch);
+      await loadTasks();
+
+      setBulkMsg("Alterações aplicadas.");
+      setTimeout(() => setBulkMsg(""), 2200);
+    } catch (e) {
+      setBulkMsg(e?.message || "Falha ao aplicar alterações.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkConclude() {
+    await applyBulk({ status: "Concluída", done_at: new Date().toISOString() });
+    clearSelection();
+  }
+
+  async function handleBulkReassign() {
+    // bulkOwner: "" = não aplica, "__none__" = remover
+    if (!bulkOwner) return;
+    const patch = bulkOwner === "__none__" ? { responsible_id: null } : { responsible_id: bulkOwner };
+    await applyBulk(patch);
+    setBulkOwner("");
+  }
+
+  async function handleBulkReschedule() {
+    if (!bulkDue) return;
+    await applyBulk({ due_date: bulkDue });
+    setBulkDue("");
+  }
+
+  async function handleBulkPhase() {
+    if (!bulkPhase) return;
+    await applyBulk({ phase: bulkPhase });
+    setBulkPhase("");
+  }
+
+  function FiltersContent() {
     return (
-      <tr key={t.id}>
-        <td style={{ width: 36 }}>
-          <input
-            type="checkbox"
-            checked={!!checked}
-            onChange={(e) => {
-              const c = e.target.checked;
-              setSelectedIds((prev) => {
-                const next = new Set(prev);
-                if (c) next.add(t.id);
-                else next.delete(t.id);
-                return next;
-              });
-            }}
-            aria-label="Selecionar tarefa"
-          />
-        </td>
-        <td>
-          <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 800 }}>
-            {t.immersions?.immersion_name || t.immersion_name || "-"}
-          </a>
-          <div className="small muted">{t.immersions?.status || "-"}</div>
-        </td>
-        <td>{t.title}</td>
-        <td><span className="badge muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : (t.phase || "-")}</span></td>
-        <td>
-          <span className={done ? "badge success" : "badge muted"}>
-            {done ? "Concluída" : ((t.status === "Concluida" ? "Concluída" : t.status) || "Pendente")}
-          </span>
-        </td>
-        <td>{slaLabel ? <span className={slaBadge}>{slaLabel}</span> : <span className="small muted">—</span>}</td>
-        <td>{due ? new Date(due + "T00:00:00").toLocaleDateString("pt-BR") : <span className="small muted">—</span>}</td>
-        <td>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn sm" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
+      <div className="grid" style={{ gap: 12 }}>
+        <div className="grid" style={{ gap: 6 }}>
+          <label className="label">Buscar</label>
+          <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tarefa ou imersão" />
+        </div>
+
+        <div className="grid" style={{ gap: 6 }}>
+          <label className="label">Imersão</label>
+          <select className="input" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
+            <option value="all">Todas</option>
+            {(immersionOptions || []).map((im) => (
+              <option key={im.id} value={im.id}>
+                {im.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="row" style={{ gap: 12 }}>
+          <div className="grid" style={{ gap: 6, flex: 1 }}>
+            <label className="label">Fase</label>
+            <select className="input" value={phase} onChange={(e) => setPhase(e.target.value)}>
+              <option value="all">Todas</option>
+              {PHASES.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </div>
-        </td>
-      </tr>
+          <div className="grid" style={{ gap: 6, flex: 1 }}>
+            <label className="label">Status</label>
+            <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="Pendentes">Pendentes</option>
+              <option value="Concluídas">Concluídas</option>
+            </select>
+          </div>
+        </div>
+
+        <label className="row" style={{ gap: 10 }}>
+          <input type="checkbox" checked={onlyOverdue} onChange={(e) => setOnlyOverdue(e.target.checked)} />
+          <span className="small">Somente atrasadas (atalho)</span>
+        </label>
+
+        <div className="row" style={{ gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn" type="button" onClick={() => {
+            setQuery("");
+            setImmersionId("all");
+            setPhase("all");
+            setStatus("Pendentes");
+            setOnlyOverdue(false);
+          }}>
+            Limpar
+          </button>
+          <button className="btn primary" type="button" onClick={() => setShowFilters(false)}>
+            Aplicar
+          </button>
+        </div>
+      </div>
     );
   }
 
+  function TaskRow({ t }) {
+    const sla = slaForTask(t);
+    return (
+      <div className="listItem" style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 10, alignItems: "center" }}>
+        <input
+          aria-label="Selecionar tarefa"
+          type="checkbox"
+          checked={selectedIds.has(t.id)}
+          onChange={() => toggleSelected(t.id)}
+        />
+
+        <button
+          type="button"
+          className="listItemMain"
+          style={{ textAlign: "left", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
+          onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
+        >
+          <div className="listItemTitle">{t.title}</div>
+          <div className="listItemMeta">
+            {t.immersion_name ? `Imersão: ${t.immersion_name} • ` : ""}
+            {t.phase ? `Fase: ${t.phase} • ` : "Sem fase • "}
+            {t.responsible_id ? `Responsável: ${profileLabelById.get(t.responsible_id) || t.responsible_id}` : "Sem responsável"}
+            {t.due_date ? ` • Prazo: ${t.due_date}` : " • Sem prazo"}
+          </div>
+        </button>
+
+        <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+          <span className={sla.className}>{sla.label}</span>
+          <span className={isTaskDone(t) ? "badge success" : "badge muted"}>{isTaskDone(t) ? "Concluída" : "Aberta"}</span>
+        </div>
+      </div>
+    );
+  }
+
+  function Block({ title, hint, items }) {
+    return (
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="sectionHeader">
+          <div>
+            <h3 className="sectionTitle">{title}</h3>
+            {hint ? <div className="small muted">{hint}</div> : null}
+          </div>
+          <span className="pill">{items.length}</span>
+        </div>
+
+        {items.length === 0 ? (
+          <div className="emptyState" style={{ marginTop: 10 }}>
+            <div className="small muted">Sem itens neste bloco.</div>
+          </div>
+        ) : (
+          <div className="list" style={{ marginTop: 10 }}>
+            {items.map((t) => (
+              <TaskRow key={t.id} t={t} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const bulkBar = selectedCount > 0 ? (
+    <div className="bulkBar" role="region" aria-label="Ações em lote">
+      <div className="bulkBarInner">
+        <div className="row wrap" style={{ gap: 10, alignItems: "center" }}>
+          <span className="badge">{selectedCount} selecionada(s)</span>
+          <button className="btn" type="button" onClick={clearSelection} disabled={bulkBusy}>
+            Limpar seleção
+          </button>
+        </div>
+
+        <div className="row wrap" style={{ gap: 10, justifyContent: "flex-end" }}>
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <span className="small muted">Reatribuir</span>
+            <select className="input" value={bulkOwner} onChange={(e) => setBulkOwner(e.target.value)} style={{ minWidth: 220 }}>
+              <option value="">Selecionar</option>
+              <option value="__none__">Remover responsável</option>
+              {(profiles || []).map((p) => (
+                <option key={p.id} value={p.id}>{p.name || p.email || p.id}</option>
+              ))}
+            </select>
+            <button className="btn" type="button" onClick={handleBulkReassign} disabled={bulkBusy || !bulkOwner}>
+              Aplicar
+            </button>
+          </div>
+
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <span className="small muted">Reagendar</span>
+            <input className="input" type="date" value={bulkDue} onChange={(e) => setBulkDue(e.target.value)} />
+            <button className="btn" type="button" onClick={handleBulkReschedule} disabled={bulkBusy || !bulkDue}>
+              Aplicar
+            </button>
+          </div>
+
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <span className="small muted">Mudar fase</span>
+            <select className="input" value={bulkPhase} onChange={(e) => setBulkPhase(e.target.value)}>
+              <option value="">Selecionar</option>
+              {PHASES.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <button className="btn" type="button" onClick={handleBulkPhase} disabled={bulkBusy || !bulkPhase}>
+              Aplicar
+            </button>
+          </div>
+
+          <button className="btn primary" type="button" onClick={handleBulkConclude} disabled={bulkBusy}>
+            Concluir
+          </button>
+        </div>
+
+        {bulkMsg ? <div className="small muted" style={{ marginTop: 8 }}>{bulkMsg}</div> : null}
+      </div>
+    </div>
+  ) : null;
 
   if (authLoading) return null;
   if (!user) return null;
 
   return (
-    <Layout title="Painel por Plano de Ação">
+    <Layout title="Plano de Ação">
       <div className="container">
-        <div className="card">
-          <div className="row wrap" style={{ justifyContent: "space-between" }}>
-            <div>
-              <div className="h1" style={{ marginBottom: 6 }}>Painel por Plano de Ação</div>
-              <div className="small muted">Acompanhe PA-PRÉ, DURANTE, PÓS e ações cadastradas manualmente.</div>
-            </div>
-            <div className="row wrap" style={{ gap: 10 }}>
-              <div className="pill">Total: <b>{counts.total}</b></div>
-              <div className="pill">Atrasadas: <b>{counts.overdue}</b></div>
-              <div className="pill">Concluídas: <b>{counts.done}</b></div>
-            </div>
+        <div className="sectionHeader">
+          <div>
+            <h2 style={{ margin: 0 }}>Plano de Ação</h2>
+            <div className="small muted">Triagem e execução por prioridade (web e mobile)</div>
           </div>
 
-          <div className="toolbar">
-            <input
-              className="input sm"
-              style={{ maxWidth: 420 }}
-              placeholder="Buscar por tarefa ou imersão..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-
-            <div className="onlyMobile">
-              <button className="btn sm" onClick={() => setShowFilters(true)}>Filtros</button>
-            </div>
-
-            <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div className="toolbarGroup">
-              <span className="toolbarLabel">Imersão</span>
-              <select className="input sm" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
-                <option value="all">Todas</option>
-                {(immersionOptions || []).map((i) => (
-                  <option key={i.id} value={i.id}>{i.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="toolbarGroup">
-              <span className="toolbarLabel">Fase</span>
-              <select className="input sm" value={phase} onChange={(e) => setPhase(e.target.value)}>
-                <option value="all">Todas</option>
-                <option value="PA-PRE">PA-PRÉ</option>
-                <option value="DURANTE">DURANTE</option>
-                <option value="POS">PÓS</option>
-              </select>
-            </div>
-
-            <div className="toolbarGroup">
-              <span className="toolbarLabel">Status</span>
-              <select className="input sm" value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="Pendentes">Pendentes</option>
-                <option value="Concluídas">Concluídas</option>
-              </select>
-            </div>
-
-            <label className="row" style={{ gap: 8, marginLeft: 2 }}>
-              <input type="checkbox" checked={onlyOverdue} onChange={(e) => setOnlyOverdue(e.target.checked)} />
-              <span className="small">Somente atrasadas</span>
-            </label>
+          <div className="row wrap" style={{ gap: 10 }}>
+            <button className="btn onlyDesktop" type="button" onClick={() => setShowFilters(true)}>
+              Filtros
+            </button>
+            <button className="btn onlyMobile" type="button" onClick={() => setShowFilters(true)}>
+              Filtros
+            </button>
+            <button className="btn" type="button" onClick={loadTasks}>
+              Atualizar
+            </button>
           </div>
-
-          
-          <BottomSheet
-            open={showFilters}
-            title="Filtros"
-            onClose={() => setShowFilters(false)}
-            footer={
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button className="btn ghost" onClick={() => { setQuery(""); setPhase("all"); setStatus("Pendentes"); setImmersionId("all"); setOnlyOverdue(false); }}>Limpar</button>
-                <button className="btn" onClick={() => setShowFilters(false)}>Aplicar</button>
-              </div>
-            }
-          >
-            <div className="grid2" style={{ gap: 12 }}>
-              <div>
-                <div className="label">Imersão</div>
-                <select className="input" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
-                  <option value="all">Todas</option>
-                  {(immersionOptions || []).map((i) => (
-                    <option key={i.id} value={i.id}>{i.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <div className="label">Fase</div>
-                <select className="input" value={phase} onChange={(e) => setPhase(e.target.value)}>
-                  <option value="all">Todas</option>
-                  <option value="PA-PRE">PA-PRÉ</option>
-                  <option value="DURANTE">DURANTE</option>
-                  <option value="POS">PÓS</option>
-                </select>
-              </div>
-              <div>
-                <div className="label">Status</div>
-                <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-                  <option value="Pendentes">Pendentes</option>
-                  <option value="Concluídas">Concluídas</option>
-                </select>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 24 }}>
-                <input id="onlyOverdue" type="checkbox" checked={onlyOverdue} onChange={(e) => setOnlyOverdue(e.target.checked)} />
-                <label htmlFor="onlyOverdue" className="small">Somente atrasadas</label>
-              </div>
-            </div>
-          </BottomSheet>
-
-{error ? <p style={{ color: "var(--danger)" }}>{error}</p> : null}
-          {loading ? <p>Carregando...</p> : null}
-
-          {!loading && tasks.length === 0 ? (
-            <p className="muted" style={{ marginTop: 12 }}>Nenhuma tarefa encontrada para os filtros selecionados.</p>
-          ) : null}
-
-          {!loading && tasks.length > 0 ? (
-
-            {selectedIds.size > 0 ? (
-              <div className="card" style={{ margin: 0 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="h2" style={{ margin: 0 }}>Ações em lote</div>
-                    <div className="small muted" style={{ marginTop: 4 }}>{selectedIds.size} selecionada(s)</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button className="btn sm ghost" onClick={() => setSelectedIds(new Set())}>Limpar seleção</button>
-                    <button className="btn sm" onClick={async () => {
-                      try {
-                        setLoading(true);
-                        await bulkUpdateTasks(Array.from(selectedIds), { status: "Concluída", done_at: new Date().toISOString() });
-                        // refresh
-                        await load();
-                        setSelectedIds(new Set());
-                      } catch (e) { setError(e?.message || "Erro ao concluir em lote"); }
-                      finally { setLoading(false); }
-                    }}>Concluir</button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-              {/* BLOCO 1: Atrasadas */}
-              <div className="card" style={{ margin: 0 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="h2" style={{ margin: 0 }}>Atrasadas</div>
-                    <div className="small muted" style={{ marginTop: 4 }}>Ação imediata para destravar execução.</div>
-                  </div>
-                  <span className="badge danger">{grouped.overdue.length}</span>
-                </div>
-                {grouped.overdue.length === 0 ? <div className="small muted" style={{ marginTop: 10 }}>Nenhuma tarefa atrasada.</div> : (
-                  <div className="tableWrap" style={{ marginTop: 10 }}>
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: 36 }}></th>
-                          <th>Imersão</th>
-                          <th>Tarefa</th>
-                          <th>Fase</th>
-                          <th>Status</th>
-                          <th>Atraso</th>
-                          <th>Prazo</th>
-                          <th>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grouped.overdue.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* BLOCO 2: Vencem hoje */}
-              <div className="card" style={{ margin: 0 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="h2" style={{ margin: 0 }}>Vencem hoje</div>
-                    <div className="small muted" style={{ marginTop: 4 }}>Priorize entregas com prazo do dia.</div>
-                  </div>
-                  <span className="badge">{grouped.dueToday.length}</span>
-                </div>
-                {grouped.dueToday.length === 0 ? <div className="small muted" style={{ marginTop: 10 }}>Nenhuma tarefa vencendo hoje.</div> : (
-                  <div className="tableWrap" style={{ marginTop: 10 }}>
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: 36 }}></th>
-                          <th>Imersão</th>
-                          <th>Tarefa</th>
-                          <th>Fase</th>
-                          <th>Status</th>
-                          <th>Atraso</th>
-                          <th>Prazo</th>
-                          <th>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grouped.dueToday.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* BLOCO 3: Próximos 7 dias */}
-              <div className="card" style={{ margin: 0 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="h2" style={{ margin: 0 }}>Próximos 7 dias</div>
-                    <div className="small muted" style={{ marginTop: 4 }}>Foco no que vence até {grouped.plus7}.</div>
-                  </div>
-                  <span className="badge">{grouped.next7.length}</span>
-                </div>
-                {grouped.next7.length === 0 ? <div className="small muted" style={{ marginTop: 10 }}>Nenhuma tarefa vencendo nos próximos 7 dias.</div> : (
-                  <div className="tableWrap" style={{ marginTop: 10 }}>
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: 36 }}></th>
-                          <th>Imersão</th>
-                          <th>Tarefa</th>
-                          <th>Fase</th>
-                          <th>Status</th>
-                          <th>Atraso</th>
-                          <th>Prazo</th>
-                          <th>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grouped.next7.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* BLOCO 4: Todas */}
-              <div className="card" style={{ margin: 0 }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="h2" style={{ margin: 0 }}>Todas</div>
-                    <div className="small muted" style={{ marginTop: 4 }}>Visão completa, respeitando filtros acima.</div>
-                  </div>
-                  <span className="badge muted">{grouped.all.length}</span>
-                </div>
-                <div className="tableWrap" style={{ marginTop: 10 }}>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 36 }}></th>
-                          <th>Imersão</th>
-                          <th>Tarefa</th>
-                        <th>Fase</th>
-                        <th>Status</th>
-                        <th>Atraso</th>
-                        <th>Prazo</th>
-                        <th>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {grouped.all.slice(0, 120).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
-                    </tbody>
-                  </table>
-                </div>
-                {grouped.all.length > 120 ? <div className="small muted" style={{ marginTop: 8 }}>Mostrando 120 de {grouped.all.length}. Refine os filtros para reduzir a lista.</div> : null}
-              </div>
-            </div>
-          ) : null}
         </div>
+
+        {error ? (
+          <div className="alert danger" role="status">{error}</div>
+        ) : null}
+
+        {loading ? <div className="skeletonList" aria-label="Carregando" /> : null}
+
+        {!loading ? (
+          <>
+            <Block
+              title="Inbox"
+              hint="Tarefas sem responsável, sem prazo ou sem fase. Use as ações em lote para triagem rápida."
+              items={grouped.inbox}
+            />
+            <Block
+              title="Atrasadas"
+              hint="Prioridade máxima. Resolva ou reagende."
+              items={grouped.overdue}
+            />
+            <Block
+              title="Vencem hoje"
+              hint="Fechamento do dia."
+              items={grouped.dueToday}
+            />
+            <Block
+              title="Próximos 7 dias"
+              hint="Planejamento imediato."
+              items={grouped.next7}
+            />
+            <Block
+              title="Todas"
+              hint="Visão completa conforme filtros."
+              items={grouped.all}
+            />
+          </>
+        ) : null}
+
+        {bulkBar}
+
+        <BottomSheet
+          open={showFilters}
+          onClose={() => setShowFilters(false)}
+          title="Filtros"
+          footer={
+            <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+              <button className="btn" type="button" onClick={() => setShowFilters(false)}>
+                Fechar
+              </button>
+            </div>
+          }
+        >
+          <FiltersContent />
+        </BottomSheet>
       </div>
     </Layout>
   );

@@ -825,3 +825,34 @@ a:hover { text-decoration: underline; }
   .onlyMobile { display: block; }
   .onlyDesktop { display: none; }
 }
+
+/* Bulk actions bar (Plano de Ação) */
+.bulkBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(15,23,42,0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+}
+:root[data-theme="light"] .bulkBar { background: rgba(255,255,255,0.85); }
+
+.bulkGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+@media (max-width: 920px) {
+  .bulkGrid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .bulkGrid { grid-template-columns: 1fr; }
+}
+
+.bulkHelp { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+

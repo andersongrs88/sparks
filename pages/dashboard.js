@@ -279,8 +279,15 @@ export default function DashboardPage() {
                       <div className="listItemMeta">
                         {r.start_date ? `Início: ${r.start_date} • ` : ""}
                         {r.status ? `Status: ${r.status}` : ""}
-                        {r.reasons?.length ? ` • ${r.reasons.join(", ")}` : ""}
+                        {r.reasons?.length ? ` • Motivos: ${r.reasons.join(", ")}` : ""}
                       </div>
+                      {r.reasons?.length ? (
+                        <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
+                          {r.reasons.slice(0, 4).map((tx, idx) => (
+                            <span key={idx} className="pill">{tx}</span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="listItemAside">
                       <span className={r.level === "Alto" ? "badge danger" : r.level === "Médio" ? "badge" : "badge muted"}>{r.level}</span>
@@ -322,7 +329,16 @@ export default function DashboardPage() {
                   <tbody>
                     {workload.map((w) => (
                       <tr key={w.responsible_id}>
-                        <td>{w.responsible}</td>
+                        <td>
+                          <div style={{ fontWeight: 850 }}>{w.responsible}</div>
+                          {w.reasons?.length ? (
+                            <div className="small muted" style={{ marginTop: 4 }}>
+                              Motivo: {w.reasons.join(", ")}
+                            </div>
+                          ) : (
+                            <div className="small muted" style={{ marginTop: 4 }}>Carga operacional normal</div>
+                          )}
+                        </td>
                         <td><span className="badge">{w.open}</span></td>
                         <td><span className={w.overdue ? "badge danger" : "badge muted"}>{w.overdue}</span></td>
                         <td><span className={w.dueSoon ? "badge" : "badge muted"}>{w.dueSoon}</span></td>
