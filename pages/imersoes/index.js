@@ -131,6 +131,7 @@ export default function ImmersionsListPage() {
                       <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
                       <div className="listItemMeta">
                         {it.start_date} → {it.end_date} • D-{daysUntil(it.start_date)}
+                        {it.next_action?.title ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}` : ""}
                       </div>
                     </div>
                     <div className="listItemAside">

@@ -237,7 +237,10 @@ export default function DashboardPage() {
                 <div key={it.id} className="miniCard" role="group" aria-label={it.immersion_name}>
                   <div className="miniCardMain">
                     <div className="miniCardTitle">{it.immersion_name}</div>
-                    <div className="miniCardMeta">{it.start_date} → {it.end_date} • {it.status}</div>
+                    <div className="miniCardMeta">
+                      {it.start_date} → {it.end_date} • {it.status}
+                      {it.next_action?.title ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}` : ""}
+                    </div>
                   </div>
                   <div className="miniCardAside">
                     <span className="pill">{it.total_tasks || 0} tarefas</span>
@@ -249,47 +252,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <h3 style={{ margin: 0 }}>Tarefas atrasadas</h3>
-            <button className="btn" onClick={() => router.push("/painel")}>Abrir painel</button>
-          </div>
-
-          {!loading && (payload?.overdue || []).length === 0 ? (
-            <p className="muted" style={{ marginTop: 10 }}>Nenhuma tarefa atrasada no momento.</p>
-          ) : null}
-
-          {!loading && (payload?.overdue || []).length > 0 ? (
-            <div style={{ marginTop: 10, overflowX: "auto" }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Imersão</th>
-                    <th>Tarefa</th>
-                    <th>Fase</th>
-                    <th>Atraso</th>
-                    <th>Prazo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(payload?.overdue || []).map((t) => (
-                    <tr key={t.id}>
-                      <td>
-                        <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 700 }}>{t.immersion_name}</a>
-                        <div className="small muted">{t.immersion_status}</div>
-                      </td>
-                      <td>{t.title}</td>
-                      <td><span className="badge muted">{t.phase || "-"}</span></td>
-                      <td><span className="badge danger">{t.days_late} dia(s)</span></td>
-                      <td>{t.due_date}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </div>
-
+        {/* Prioridade de leitura: sinais de execução primeiro, detalhes de atrasos por último. */}
         <div className="grid2" style={{ marginTop: 16 }}>
           <div className="card">
             <div className="sectionHeader">
@@ -370,6 +333,47 @@ export default function DashboardPage() {
               </div>
             ) : null}
           </div>
+        </div>
+
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>Tarefas atrasadas</h3>
+            <button className="btn" onClick={() => router.push("/painel")}>Abrir painel</button>
+          </div>
+
+          {!loading && (payload?.overdue || []).length === 0 ? (
+            <p className="muted" style={{ marginTop: 10 }}>Nenhuma tarefa atrasada no momento.</p>
+          ) : null}
+
+          {!loading && (payload?.overdue || []).length > 0 ? (
+            <div style={{ marginTop: 10, overflowX: "auto" }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Imersão</th>
+                    <th>Tarefa</th>
+                    <th>Fase</th>
+                    <th>Atraso</th>
+                    <th>Prazo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(payload?.overdue || []).map((t) => (
+                    <tr key={t.id}>
+                      <td>
+                        <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 700 }}>{t.immersion_name}</a>
+                        <div className="small muted">{t.immersion_status}</div>
+                      </td>
+                      <td>{t.title}</td>
+                      <td><span className="badge muted">{t.phase || "-"}</span></td>
+                      <td><span className="badge danger">{t.days_late} dia(s)</span></td>
+                      <td>{t.due_date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
       </div>
     </Layout>

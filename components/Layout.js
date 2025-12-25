@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { roleLabel } from "../lib/permissions";
-import NotificationsBell from "./NotificationsBell";
+// Notificações removidas por opção de produto (tela não utilizada).
 
 const SYSTEM_FULL_NAME = "Sparks — Sistema Estratégico de Planejamento e Gestão do Conhecimento";
 const DEVELOPED_BY = "Desenvolvido pela Wizze Tecnologia Inteligente";
@@ -86,7 +86,6 @@ export default function Layout({ title, children }) {
           <NavItem href="/relatorios" label="Relatórios" icon="📊" />
           {isFullAccess ? <NavItem href="/templates" label="Templates" icon="🧩" /> : null}
           {isFullAccess ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
-          <NavItem href="/notificacoes" label="Notificações" icon="🔔" />
         </nav>
       </aside>
 
@@ -104,7 +103,6 @@ export default function Layout({ title, children }) {
 
           <div className="row" style={{ gap: 10 }}>
             <ThemeToggle />
-            <NotificationsBell />
           </div>
         </header>
 

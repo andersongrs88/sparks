@@ -210,6 +210,27 @@ export default function ImmersionDetailEditPage() {
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
 
+  // UX: filtros/visões para Checklist e Cronograma
+  const [taskUi, setTaskUi] = useState({
+    q: "",
+    phase: "ALL",
+    status: "ALL",
+    responsible: "ALL",
+    onlyLate: false,
+    hideDone: false,
+    sort: "due", // due | title | status | responsible
+    view: "cards", // cards | table
+    open: { "PA-PRE": true, DURANTE: true, POS: true },
+  });
+
+  const [scheduleUi, setScheduleUi] = useState({
+    q: "",
+    day: "ALL",
+    type: "ALL",
+    view: "cards", // cards | table
+    open: {},
+  });
+
   // criação de tarefa
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTask, setNewTask] = useState({
@@ -964,12 +985,123 @@ function normalizeTemplatesForClone(items) {
     return map;
   }, [tasks]);
 
+  const filteredTasksByPhase = useMemo(() => {
+    const q = (taskUi.q || "").trim().toLowerCase();
+    // Na visão Kanban, mostramos todas as fases em colunas (PA-PRÉ/DURANTE/PÓS),
+    // portanto ignoramos o filtro de fase para não “esvaziar” o board.
+    const wantPhase = taskUi.view === "kanban" ? "ALL" : taskUi.phase;
+    const wantStatus = taskUi.status;
+    const wantResp = taskUi.responsible;
+    const onlyLate = !!taskUi.onlyLate;
+    const hideDone = !!taskUi.hideDone;
+
+    const sortKey = taskUi.sort || "due";
+    const phaseOrder = { "PA-PRE": 1, DURANTE: 2, POS: 3 };
+
+    const sortFn = (a, b) => {
+      if (sortKey === "title") return String(a.title || "").localeCompare(String(b.title || ""));
+      if (sortKey === "status") return String(a.status || "").localeCompare(String(b.status || ""));
+      if (sortKey === "responsible") {
+        const pa = profileById.get(a.responsible_id)?.name || "";
+        const pb = profileById.get(b.responsible_id)?.name || "";
+        const c = pa.localeCompare(pb);
+        if (c !== 0) return c;
+      }
+      // default: due date (sem prazo por último)
+      const da = a.due_date ? new Date(a.due_date + "T00:00:00").getTime() : Number.POSITIVE_INFINITY;
+      const db = b.due_date ? new Date(b.due_date + "T00:00:00").getTime() : Number.POSITIVE_INFINITY;
+      if (da !== db) return da - db;
+      // tie-break
+      const pha = phaseOrder[a.phase] || 9;
+      const phb = phaseOrder[b.phase] || 9;
+      if (pha !== phb) return pha - phb;
+      return String(a.title || "").localeCompare(String(b.title || ""));
+    };
+
+    const base = tasks.filter((t) => {
+      if (wantPhase !== "ALL" && t.phase !== wantPhase) return false;
+      if (wantStatus !== "ALL" && t.status !== wantStatus) return false;
+      if (wantResp !== "ALL" && String(t.responsible_id || "") !== String(wantResp || "")) return false;
+      if (hideDone && (t.status === "Concluída" || t.status === "Concluida" || !!t.done_at)) return false;
+      if (onlyLate && !isLate(t.due_date, t.status)) return false;
+      if (!q) return true;
+      const respName = profileById.get(t.responsible_id)?.name || "";
+      return (
+        String(t.title || "").toLowerCase().includes(q) ||
+        String(t.notes || "").toLowerCase().includes(q) ||
+        String(respName).toLowerCase().includes(q)
+      );
+    });
+
+    const map = { "PA-PRE": [], "DURANTE": [], "POS": [] };
+    for (const t of base.sort(sortFn)) {
+      if (map[t.phase]) map[t.phase].push(t);
+    }
+    return map;
+  }, [tasks, taskUi, profileById]);
+
   const checklistSummary = useMemo(() => {
     const total = tasks.length;
-    const done = tasks.filter((t) => t.status === "Concluída").length;
+    // Robustez: bases podem usar "Concluida" (sem acento) e/ou preencher done_at.
+    const done = tasks.filter((t) => t.status === "Concluída" || t.status === "Concluida" || !!t.done_at).length;
     const late = tasks.filter((t) => isLate(t.due_date, t.status)).length;
     return { total, done, late };
   }, [tasks]);
+
+  const filteredScheduleByDay = useMemo(() => {
+    const items = scheduleItems || [];
+    const q = (scheduleUi.q || "").trim().toLowerCase();
+    const wantDay = scheduleUi.day || "ALL";
+    const wantType = scheduleUi.type || "ALL";
+
+    const norm = items.filter((it) => {
+      const dayKey = String(it.day_label || it.day_date || "Sem dia");
+      if (wantDay !== "ALL" && dayKey !== wantDay) return false;
+      if (wantType !== "ALL" && String(it.activity_type || "") !== wantType) return false;
+      if (!q) return true;
+      return (
+        String(it.topics || "").toLowerCase().includes(q) ||
+        String(it.staff_notes || "").toLowerCase().includes(q) ||
+        String(it.responsible || "").toLowerCase().includes(q) ||
+        String(it.activity_type || "").toLowerCase().includes(q) ||
+        String(it.day_label || "").toLowerCase().includes(q)
+      );
+    });
+
+    const byDay = new Map();
+    for (const it of norm) {
+      const key = String(it.day_label || it.day_date || "Sem dia");
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(it);
+    }
+
+    const dayKeys = Array.from(byDay.keys());
+    dayKeys.sort((a, b) => {
+      // tenta ordenar por data (day_date), senão por label
+      const aDate = (byDay.get(a) || []).find((x) => !!x.day_date)?.day_date || null;
+      const bDate = (byDay.get(b) || []).find((x) => !!x.day_date)?.day_date || null;
+      const ta = aDate ? new Date(aDate + "T00:00:00").getTime() : Number.POSITIVE_INFINITY;
+      const tb = bDate ? new Date(bDate + "T00:00:00").getTime() : Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
+      return a.localeCompare(b);
+    });
+
+    const result = dayKeys.map((k) => {
+      const list = (byDay.get(k) || []).slice();
+      list.sort((a, b) => {
+        const sa = a.start_time || "";
+        const sb = b.start_time || "";
+        if (sa !== sb) return sa.localeCompare(sb);
+        const oa = Number(a.sort_order ?? 0);
+        const ob = Number(b.sort_order ?? 0);
+        if (oa !== ob) return oa - ob;
+        return String(a.topics || "").localeCompare(String(b.topics || ""));
+      });
+      const date = list.find((x) => !!x.day_date)?.day_date || "";
+      return { key: k, date, items: list };
+    });
+    return result;
+  }, [scheduleItems, scheduleUi]);
 
   // Templates (tarefas predefinidas) — loader guiado com preview e confirmação
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -1684,47 +1816,161 @@ function normalizeTemplatesForClone(items) {
               Dica: use "Dia (label)" para separar por DIA 1, DIA 2, etc. A "Ordem" ajuda na ordenação quando não houver horário.
             </div>
 
-            <div className="tableWrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Dia</th>
-                    <th>Data</th>
-                    <th>Início</th>
-                    <th>Término</th>
-                    <th>Tempo</th>
-                    <th>Tipo</th>
-                    <th>Temas</th>
-                    <th>Responsável</th>
-                    <th>Link</th>
-                    <th>Orientações</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(scheduleItems || []).map((it) => (
-                    <tr key={it.id}>
-                      <td>{it.day_label || "—"}</td>
-                      <td>{it.day_date || "—"}</td>
-                      <td>{it.start_time || "—"}</td>
-                      <td>{it.end_time || "—"}</td>
-                      <td>{typeof it.duration_minutes === "number" ? `${it.duration_minutes}m` : "—"}</td>
-                      <td>{it.activity_type || "—"}</td>
-                      <td className="cellWrap">{it.topics || "—"}</td>
-                      <td>{it.responsible || "—"}</td>
-                      <td className="cellWrap">{it.link ? <a href={it.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
-                      <td className="cellWrap">{it.staff_notes || "—"}</td>
-                      <td>
-                        <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {(scheduleItems || []).length === 0 ? (
-                    <tr><td colSpan={11} className="small" style={{ color: "var(--muted)" }}>Sem itens cadastrados.</td></tr>
-                  ) : null}
-                </tbody>
-              </table>
+            {/* Toolbar (filtros + visões) */}
+            <div className="toolbar" style={{ marginBottom: 12 }}>
+              <div className="toolbarLeft">
+                <input
+                  className="input"
+                  placeholder="Buscar por tema, tipo, responsável ou orientação..."
+                  value={scheduleUi.q}
+                  onChange={(e) => setScheduleUi((p) => ({ ...p, q: e.target.value }))}
+                  style={{ minWidth: 260 }}
+                />
+                <select className="input" value={scheduleUi.day} onChange={(e) => setScheduleUi((p) => ({ ...p, day: e.target.value }))}>
+                  <option value="ALL">Todos os dias</option>
+                  {Array.from(new Set((scheduleItems || []).map((it) => String(it.day_label || it.day_date || "Sem dia"))))
+                    .filter((v) => !!v)
+                    .map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                </select>
+                <select className="input" value={scheduleUi.type} onChange={(e) => setScheduleUi((p) => ({ ...p, type: e.target.value }))}>
+                  <option value="ALL">Todos os tipos</option>
+                  {Array.from(new Set((scheduleItems || []).map((it) => String(it.activity_type || ""))))
+                    .filter((v) => !!v)
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="toolbarRight">
+                <button
+                  type="button"
+                  className={scheduleUi.view === "cards" ? "btn primary" : "btn"}
+                  onClick={() => setScheduleUi((p) => ({ ...p, view: "cards" }))}
+                  title="Visualização compacta (recomendada)"
+                >
+                  Compacto
+                </button>
+                <button
+                  type="button"
+                  className={scheduleUi.view === "table" ? "btn primary" : "btn"}
+                  onClick={() => setScheduleUi((p) => ({ ...p, view: "table" }))}
+                  title="Visualização em tabela (mais detalhada)"
+                >
+                  Tabela
+                </button>
+              </div>
             </div>
+
+            {scheduleUi.view === "table" ? (
+              <div className="tableWrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Dia</th>
+                      <th>Data</th>
+                      <th>Horário</th>
+                      <th>Tipo</th>
+                      <th>Temas</th>
+                      <th>Responsável</th>
+                      <th>Link</th>
+                      <th>Orientações</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredScheduleByDay.flatMap((g) => g.items).map((it) => (
+                      <tr key={it.id}>
+                        <td>{it.day_label || "—"}</td>
+                        <td>{it.day_date || "—"}</td>
+                        <td>
+                          {it.start_time || "—"}
+                          {it.end_time ? `–${it.end_time}` : ""}
+                          {typeof it.duration_minutes === "number" ? ` • ${it.duration_minutes}m` : ""}
+                        </td>
+                        <td>{it.activity_type || "—"}</td>
+                        <td className="cellWrap">{it.topics || "—"}</td>
+                        <td>{it.responsible || "—"}</td>
+                        <td className="cellWrap">{it.link ? <a href={it.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
+                        <td className="cellWrap">{it.staff_notes || "—"}</td>
+                        <td>
+                          <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredScheduleByDay.length === 0 ? (
+                      <tr><td colSpan={9} className="small" style={{ color: "var(--muted)" }}>Sem itens para os filtros atuais.</td></tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {filteredScheduleByDay.map((g) => {
+                  const isOpen = scheduleUi.open?.[g.key] ?? true;
+                  return (
+                    <div key={g.key} className="card">
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                        <div>
+                          <div className="h2" style={{ margin: 0 }}>{g.key}</div>
+                          {g.date ? <div className="small muted" style={{ marginTop: 4 }}>{g.date}</div> : null}
+                        </div>
+                        <div className="row" style={{ gap: 8 }}>
+                          <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>{g.items.length} itens</span>
+                          <button type="button" className="btn" onClick={() => setScheduleUi((p) => ({ ...p, open: { ...(p.open || {}), [g.key]: !(p.open?.[g.key] ?? true) } }))}>
+                            {isOpen ? "Recolher" : "Expandir"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {!isOpen ? null : (
+                        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                          {g.items.map((it) => (
+                            <div key={it.id} className="compactItem">
+                              <div className="compactMain">
+                                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{it.topics || "(Sem tema)"}</div>
+                                    <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+                                      <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                                        {it.start_time || "—"}{it.end_time ? `–${it.end_time}` : ""}{typeof it.duration_minutes === "number" ? ` • ${it.duration_minutes}m` : ""}
+                                      </span>
+                                      {it.activity_type ? <span className="badge" style={{ background: "var(--info-soft)", border: "1px solid var(--border)" }}>{it.activity_type}</span> : null}
+                                      {it.responsible ? <span className="small muted">Resp.: {it.responsible}</span> : null}
+                                      {it.link ? <a className="small" href={it.link} target="_blank" rel="noreferrer">Abrir link</a> : null}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {it.staff_notes ? (
+                                  <details style={{ marginTop: 10 }}>
+                                    <summary className="small" style={{ cursor: "pointer" }}>Orientações</summary>
+                                    <div className="small" style={{ marginTop: 6 }}>{it.staff_notes}</div>
+                                  </details>
+                                ) : null}
+                              </div>
+
+                              <div className="compactActions">
+                                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                  <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {filteredScheduleByDay.length === 0 ? (
+                  <div className="small" style={{ color: "var(--muted)" }}>Sem itens para os filtros atuais.</div>
+                ) : null}
+              </div>
+            )}
           </>
         ) : null}
 
@@ -2237,6 +2483,86 @@ function normalizeTemplatesForClone(items) {
               </div>
             </div>
 
+            {/* Barra de filtros (reduz ruído visual e melhora uso no mobile) */}
+            <div className="toolbar" style={{ marginBottom: 12 }}>
+              <div className="toolbarLeft">
+                <input
+                  className="input"
+                  placeholder="Buscar por tarefa, responsável ou observação..."
+                  value={taskUi.q}
+                  onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
+                  style={{ minWidth: 260 }}
+                />
+                <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
+                  <option value="ALL">Todas as fases</option>
+                  {PHASES.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+                <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))}>
+                  <option value="ALL">Todos os status</option>
+                  {TASK_STATUSES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))}>
+                  <option value="ALL">Todos os responsáveis</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="toolbarRight">
+                <button
+                  type="button"
+                  className={taskUi.onlyLate ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
+                  title="Mostrar apenas tarefas atrasadas"
+                >
+                  Atrasadas
+                </button>
+                <button
+                  type="button"
+                  className={taskUi.hideDone ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
+                  title="Ocultar tarefas concluídas"
+                >
+                  Ocultar concluídas
+                </button>
+                <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))}>
+                  <option value="due">Ordenar: prazo</option>
+                  <option value="title">Ordenar: título</option>
+                  <option value="status">Ordenar: status</option>
+                  <option value="responsible">Ordenar: responsável</option>
+                </select>
+                <button
+                  type="button"
+                  className={taskUi.view === "cards" ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
+                  title="Visualização compacta (recomendada)"
+                >
+                  Compacto
+                </button>
+                <button
+                  type="button"
+                  className={taskUi.view === "table" ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
+                  title="Visualização em tabela (mais detalhada)"
+                >
+                  Tabela
+                </button>
+                <button
+                  type="button"
+                  className={taskUi.view === "kanban" ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
+                  title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
+                >
+                  Kanban
+                </button>
+              </div>
+            </div>
+
             {templatesOpen ? (
               <div className="overlay" role="dialog" aria-modal="true">
                 <div className="dialog" style={{ maxWidth: 980 }}>
@@ -2456,161 +2782,293 @@ function normalizeTemplatesForClone(items) {
               </div>
             ) : null}
 
-            {PHASES.map((ph) => {
-              const list = tasksByPhase[ph.key] || [];
+            {taskUi.view === "kanban" ? (
+              <div className="kanbanBoard" style={{ marginTop: 10 }}>
+                {PHASES.map((ph) => {
+                  const list = filteredTasksByPhase[ph.key] || [];
+                  return (
+                    <div key={ph.key} className="kanbanCol">
+                      <div className="kanbanColHeader">
+                        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                          <div className="h2" style={{ margin: 0 }}>{ph.label}</div>
+                          <span className="badge">{list.length}</span>
+                        </div>
+                        <div className="small muted" style={{ marginTop: 4 }}>Arraste visual (simples) por fase.</div>
+                      </div>
+
+                      <div className="kanbanColBody">
+                        {tasksLoading ? (
+                          <div className="small muted">Carregando...</div>
+                        ) : list.length === 0 ? (
+                          <div className="small muted">Nenhuma tarefa para os filtros atuais.</div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {list.map((t) => {
+                              const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
+                              const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
+                              const s = deadlineStatus(t);
+                              return (
+                                <div key={t.id} className="kanbanCard">
+                                  <div className="row" style={{ justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
+                                      <div className="small muted" style={{ marginTop: 6 }}>
+                                        {prof ? prof.name : "Sem responsável"}
+                                        {t.due_date ? ` • Prazo: ${t.due_date}` : " • Sem prazo"}
+                                      </div>
+                                    </div>
+                                    <span className={`badge ${s.kind}`}>{s.label}</span>
+                                  </div>
+
+                                  <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                    {canEdit ? (
+                                      <button type="button" className="btn sm" onClick={() => onQuickUpdateTask(t, { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0, 10) })}>
+                                        Concluir
+                                      </button>
+                                    ) : null}
+                                    <button type="button" className="btn sm" onClick={() => setEditModal({ open: true, kind: "task", item: t })}>
+                                      Editar
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              PHASES.map((ph) => {
+              const list = filteredTasksByPhase[ph.key] || [];
+              const isOpen = taskUi.open?.[ph.key] ?? true;
+              const done = (tasksByPhase[ph.key] || []).filter((t) => t.status === "Concluída" || t.status === "Concluida" || !!t.done_at).length;
+              const late = (tasksByPhase[ph.key] || []).filter((t) => isLate(t.due_date, t.status)).length;
+              const total = (tasksByPhase[ph.key] || []).length;
+
               return (
                 <div key={ph.key} className="card" style={{ marginBottom: 12 }}>
-                  <div className="h2">{ph.label}</div>
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <div>
+                      <div className="h2" style={{ margin: 0 }}>{ph.label}</div>
+                      <div className="small muted" style={{ marginTop: 4 }}>
+                        Total: <b>{total}</b> • Concluídas: <b>{done}</b> • Atrasadas: <b>{late}</b>
+                      </div>
+                    </div>
 
-                  {tasksLoading ? (
-                    <div className="small">Carregando...</div>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setTaskUi((p) => ({ ...p, open: { ...(p.open || {}), [ph.key]: !(p.open?.[ph.key] ?? true) } }))}
+                    >
+                      {isOpen ? "Recolher" : "Expandir"}
+                    </button>
+                  </div>
+
+                  {!isOpen ? null : tasksLoading ? (
+                    <div className="small" style={{ marginTop: 10 }}>Carregando...</div>
                   ) : list.length === 0 ? (
-                    <div className="small">Nenhuma tarefa nesta fase.</div>
+                    <div className="small" style={{ marginTop: 10 }}>Nenhuma tarefa para os filtros atuais.</div>
+                  ) : taskUi.view === "table" ? (
+                    <div className="tableWrap" style={{ marginTop: 10 }}>
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Tarefa</th>
+                            <th>Responsável</th>
+                            <th>Prazo</th>
+                            <th>Status</th>
+                            <th>Situação</th>
+                            <th>Obs.</th>
+                            <th>Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.map((t) => {
+                            const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
+                            const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
+                            const s = deadlineStatus(t);
+                            return (
+                              <tr key={t.id}>
+                                <td>
+                                  <div style={{ minWidth: 260 }}>
+                                    <div style={{ fontWeight: 600 }}>{t.title}</div>
+                                    {t.status === "Concluída" && t.done_at ? (
+                                      <div className="small muted">Realizada em {t.done_at}</div>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td>
+                                  {full ? (
+                                    <select className="input" value={t.responsible_id || ""} onChange={(e) => onQuickUpdateTask(t, { responsible_id: e.target.value || null })}>
+                                      <option value="">-</option>
+                                      {profiles.map((p) => (
+                                        <option key={p.id} value={p.id}>{p.name} ({roleLabel(p.role)})</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span>{prof ? `${prof.name} (${roleLabel(prof.role)})` : "-"}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {canEdit ? (
+                                    <input className="input" type="date" value={t.due_date || ""} onChange={(e) => onQuickUpdateTask(t, { due_date: e.target.value || null })} />
+                                  ) : (
+                                    <span>{t.due_date || "-"}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {canEdit ? (
+                                    <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t, { status: e.target.value })}>
+                                      {TASK_STATUSES.map((st) => (
+                                        <option key={st} value={st}>{st}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span>{t.status}</span>
+                                  )}
+                                </td>
+                                <td><span className={`badge ${s.kind}`}>{s.label}</span></td>
+                                <td>
+                                  {canEdit ? (
+                                    <input className="input" value={t.notes || ""} onChange={(e) => onQuickUpdateTask(t, { notes: e.target.value })} placeholder="Observações" />
+                                  ) : (
+                                    <span className="small">{t.notes || "—"}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                    {canEdit ? (
+                                      <>
+                                        <label className="btn" style={{ cursor: "pointer" }}>
+                                          Upload
+                                          <input
+                                            type="file"
+                                            style={{ display: "none" }}
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0] || null;
+                                              e.target.value = "";
+                                              if (file) onUploadEvidence(t, file);
+                                            }}
+                                          />
+                                        </label>
+                                        <button type="button" className="btn" onClick={() => onQuickUpdateTask(t, { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0, 10) })}>
+                                          Concluir
+                                        </button>
+                                      </>
+                                    ) : null}
+                                    {full ? (
+                                      <button type="button" className="btn danger" onClick={() => onDeleteTask(t.id)}>Excluir</button>
+                                    ) : null}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Tarefa</th>
-                          <th>Responsável</th>
-                          <th>Prazo</th>
-                          <th>Status</th>
-                          <th>Status prazo</th>
-                          <th>Data realizada</th>
-                          <th>Observações</th>
-                          <th>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {list.map((t) => {
-                          const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
-                          const late = isLate(t.due_date, t.status);
-                          const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
-
-                          return (
-                            <tr key={t.id}>
-
-                              {/* Tarefa */}
-                              <td>
-                                <div style={{ minWidth: 260 }}>
-                                  <div style={{ fontWeight: 600 }}>{t.title}</div>
-                                  <div className="small muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : t.phase === "POS" ? "PÓS" : t.phase}</div>
+                    <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                      {list.map((t) => {
+                        const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
+                        const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
+                        const s = deadlineStatus(t);
+                        return (
+                          <div key={t.id} className="compactItem">
+                            <div className="compactMain">
+                              <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
+                                  <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+                                    <span className={`badge ${s.kind}`}>{s.label}</span>
+                                    {t.status === "Concluída" && t.done_at ? <span className="small muted">Realizada: {t.done_at}</span> : null}
+                                  </div>
                                 </div>
-                              </td>
+                                <div>
+                                  {canEdit ? (
+                                    <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t, { status: e.target.value })}>
+                                      {TASK_STATUSES.map((st) => (
+                                        <option key={st} value={st}>{st}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span className="badge" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>{t.status}</span>
+                                  )}
+                                </div>
+                              </div>
 
-                              {/* Responsável */}
-                              <td>
-                                {full ? (
-                                  <select className="input" value={t.responsible_id || ""} onChange={(e) => onQuickUpdateTask(t, { responsible_id: e.target.value || null })}>
-                                    <option value="">-</option>
-                                    {profiles.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name} ({roleLabel(p.role)})
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span>{prof ? `${prof.name} (${roleLabel(prof.role)})` : "-"}</span>
-                                )}
-                              </td>
+                              <div className="grid2" style={{ marginTop: 10 }}>
+                                <div>
+                                  <div className="small muted" style={{ marginBottom: 6 }}>Responsável</div>
+                                  {full ? (
+                                    <select className="input" value={t.responsible_id || ""} onChange={(e) => onQuickUpdateTask(t, { responsible_id: e.target.value || null })}>
+                                      <option value="">-</option>
+                                      {profiles.map((p) => (
+                                        <option key={p.id} value={p.id}>{p.name} ({roleLabel(p.role)})</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <div className="small">{prof ? `${prof.name} (${roleLabel(prof.role)})` : "-"}</div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="small muted" style={{ marginBottom: 6 }}>Prazo</div>
+                                  {canEdit ? (
+                                    <input className="input" type="date" value={t.due_date || ""} onChange={(e) => onQuickUpdateTask(t, { due_date: e.target.value || null })} />
+                                  ) : (
+                                    <div className="small">{t.due_date || "-"}</div>
+                                  )}
+                                </div>
+                              </div>
 
-                              {/* Prazo */}
-                              <td>
-                                {canEdit ? (
-                                  <input
-                                    className="input"
-                                    type="date"
-                                    value={t.due_date || ""}
-                                    onChange={(e) => onQuickUpdateTask(t, { due_date: e.target.value || null })}
-                                  />
-                                ) : (
-                                  <span>{t.due_date || "-"}</span>
-                                )}
-                              </td>
-
-                              {/* Status */}
-                              <td>
-                                {canEdit ? (
-                                  <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t, { status: e.target.value })}>
-                                    {TASK_STATUSES.map((s) => (
-                                      <option key={s} value={s}>
-                                        {s}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span>{t.status}</span>
-                                )}
-                              </td>
-
-                              {/* Status prazo */}
-                              <td>
-                                {(() => {
-                                  const s = deadlineStatus(t);
-                                  return <span className={`badge ${s.kind}`}>{s.label}</span>;
-                                })()}
-                              </td>
-
-                              {/* Data realizada */}
-                              <td>
-                                <span className="small">{t.done_at || "—"}</span>
-                              </td>
-
-                              {/* Observações */}
-                              <td>
+                              <div style={{ marginTop: 10 }}>
+                                <div className="small muted" style={{ marginBottom: 6 }}>Observações</div>
                                 {canEdit ? (
                                   <input className="input" value={t.notes || ""} onChange={(e) => onQuickUpdateTask(t, { notes: e.target.value })} placeholder="Observações" />
                                 ) : (
-                                  <span className="small">{t.notes || "—"}</span>
+                                  <div className="small">{t.notes || "—"}</div>
                                 )}
-                              </td>
+                              </div>
+                            </div>
 
-                              {/* Ações */}
-                              <td>
-                                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                  {canEdit ? (
-                                    <>
-                                      <label className="btn" style={{ cursor: "pointer" }}>
-                                        Upload
-                                        <input
-                                          type="file"
-                                          style={{ display: "none" }}
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0] || null;
-                                            e.target.value = "";
-                                            if (file) onUploadEvidence(t, file);
-                                          }}
-                                        />
-                                      </label>
-                                      <button
-                                        type="button"
-                                        className="btn"
-                                        onClick={() =>
-                                          onQuickUpdateTask(t, {
-                                            status: "Concluída",
-                                            done_at: t.done_at || new Date().toISOString().slice(0, 10),
-                                          })
-                                        }
-                                      >
-                                        Concluir
-                                      </button>
-                                    </>
-                                  ) : null}
-                                  {full ? (
-                                    <button type="button" className="btn danger" onClick={() => onDeleteTask(t.id)}>
-                                      Excluir
+                            <div className="compactActions">
+                              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                {canEdit ? (
+                                  <>
+                                    <label className="btn" style={{ cursor: "pointer" }}>
+                                      Upload
+                                      <input
+                                        type="file"
+                                        style={{ display: "none" }}
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0] || null;
+                                          e.target.value = "";
+                                          if (file) onUploadEvidence(t, file);
+                                        }}
+                                      />
+                                    </label>
+                                    <button type="button" className="btn" onClick={() => onQuickUpdateTask(t, { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0, 10) })}>
+                                      Concluir
                                     </button>
-                                  ) : null}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                  </>
+                                ) : null}
+                                {full ? (
+                                  <button type="button" className="btn danger" onClick={() => onDeleteTask(t.id)}>Excluir</button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               );
-            })}
+              })
+            )}
           </>
         ) : null}
 

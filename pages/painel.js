@@ -26,6 +26,8 @@ export default function PainelPage() {
   const [tasks, setTasks] = useState([]);
 
   const [query, setQuery] = useState("");
+  // A tela foi redesenhada para operar por blocos (Atrasadas, Vencem hoje, Próximos 7 dias, Todas).
+  // Mantemos o filtro "Somente atrasadas" como atalho, mas o comportamento principal é por agrupamento.
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [phase, setPhase] = useState("all");
   const [status, setStatus] = useState("Pendentes");
@@ -137,10 +139,57 @@ export default function PainelPage() {
   const counts = useMemo(() => {
     const today = iso(new Date());
     const total = tasks.length;
-    const done = tasks.filter((t) => t.status === "Concluída").length;
+    // Robustez: bases podem usar "Concluida" (sem acento) ou preencher done_at.
+    const done = tasks.filter((t) => t.status === "Concluída" || t.status === "Concluida" || !!t.done_at).length;
     const overdue = tasks.filter((t) => t.due_date && t.status !== "Concluída" && t.due_date < today).length;
     return { total, done, overdue };
   }, [tasks]);
+
+  const grouped = useMemo(() => {
+    const today = iso(new Date());
+    const t7 = new Date(today + "T00:00:00");
+    t7.setDate(t7.getDate() + 7);
+    const plus7 = iso(t7);
+
+    const pending = (tasks || []).filter((t) => !(t.status === "Concluída" || t.status === "Concluida" || !!t.done_at));
+    const overdue = pending.filter((t) => t.due_date && t.due_date < today);
+    const dueToday = pending.filter((t) => t.due_date && t.due_date === today);
+    const next7 = pending.filter((t) => t.due_date && t.due_date > today && t.due_date <= plus7);
+
+    return {
+      overdue,
+      dueToday,
+      next7,
+      all: tasks || [],
+      plus7
+    };
+  }, [tasks]);
+
+  function TaskRow({ t }) {
+    const late = t.due_date && !(t.status === "Concluída" || t.status === "Concluida" || !!t.done_at) && daysLate(t.due_date) > 0;
+    return (
+      <tr key={t.id}>
+        <td>
+          <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 800 }}>
+            {t.immersions?.immersion_name || "-"}
+          </a>
+          <div className="small muted">{t.immersions?.status || "-"}</div>
+        </td>
+        <td>{t.title}</td>
+        <td><span className="badge muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : (t.phase || "-")}</span></td>
+        <td>
+          <span className={(t.status === "Concluída" || t.status === "Concluida" || !!t.done_at) ? "badge success" : "badge muted"}>
+            {(t.status === "Concluida" ? "Concluída" : t.status) || "-"}
+          </span>
+        </td>
+        <td>{late ? <span className="badge danger">{daysLate(t.due_date)} dia(s)</span> : <span className="badge muted">-</span>}</td>
+        <td>{t.due_date || "-"}</td>
+        <td>
+          <button className="btn sm" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
+        </td>
+      </tr>
+    );
+  }
 
   if (authLoading) return null;
   if (!user) return null;
@@ -212,45 +261,129 @@ export default function PainelPage() {
           ) : null}
 
           {!loading && tasks.length > 0 ? (
-            <div className="tableWrap" style={{ marginTop: 12 }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Imersão</th>
-                    <th>Tarefa</th>
-                    <th>Fase</th>
-                    <th>Status</th>
-                    <th>Atraso</th>
-                    <th>Prazo</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((t) => {
-                    const late = t.due_date && t.status !== "Concluída" && daysLate(t.due_date) > 0;
-                    return (
-                      <tr key={t.id}>
-                        <td>
-                          <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 800 }}>
-                            {t.immersions?.immersion_name || "-"}
-                          </a>
-                          <div className="small muted">{t.immersions?.status || "-"}</div>
-                        </td>
-                        <td>{t.title}</td>
-                        <td><span className="badge muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : (t.phase || "-")}</span></td>
-                        <td>
-                          <span className={t.status === "Concluída" ? "badge success" : "badge muted"}>{t.status || "-"}</span>
-                        </td>
-                        <td>{late ? <span className="badge danger">{daysLate(t.due_date)} dia(s)</span> : <span className="badge muted">-</span>}</td>
-                        <td>{t.due_date || "-"}</td>
-                        <td>
-                          <button className="btn sm" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
-                        </td>
+            <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+              {/* BLOCO 1: Atrasadas */}
+              <div className="card" style={{ margin: 0 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="h2" style={{ margin: 0 }}>Atrasadas</div>
+                    <div className="small muted" style={{ marginTop: 4 }}>Ação imediata para destravar execução.</div>
+                  </div>
+                  <span className="badge danger">{grouped.overdue.length}</span>
+                </div>
+                {grouped.overdue.length === 0 ? <div className="small muted" style={{ marginTop: 10 }}>Nenhuma tarefa atrasada.</div> : (
+                  <div className="tableWrap" style={{ marginTop: 10 }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Imersão</th>
+                          <th>Tarefa</th>
+                          <th>Fase</th>
+                          <th>Status</th>
+                          <th>Atraso</th>
+                          <th>Prazo</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grouped.overdue.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} />)}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* BLOCO 2: Vencem hoje */}
+              <div className="card" style={{ margin: 0 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="h2" style={{ margin: 0 }}>Vencem hoje</div>
+                    <div className="small muted" style={{ marginTop: 4 }}>Priorize entregas com prazo do dia.</div>
+                  </div>
+                  <span className="badge">{grouped.dueToday.length}</span>
+                </div>
+                {grouped.dueToday.length === 0 ? <div className="small muted" style={{ marginTop: 10 }}>Nenhuma tarefa vencendo hoje.</div> : (
+                  <div className="tableWrap" style={{ marginTop: 10 }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Imersão</th>
+                          <th>Tarefa</th>
+                          <th>Fase</th>
+                          <th>Status</th>
+                          <th>Atraso</th>
+                          <th>Prazo</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grouped.dueToday.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} />)}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* BLOCO 3: Próximos 7 dias */}
+              <div className="card" style={{ margin: 0 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="h2" style={{ margin: 0 }}>Próximos 7 dias</div>
+                    <div className="small muted" style={{ marginTop: 4 }}>Foco no que vence até {grouped.plus7}.</div>
+                  </div>
+                  <span className="badge">{grouped.next7.length}</span>
+                </div>
+                {grouped.next7.length === 0 ? <div className="small muted" style={{ marginTop: 10 }}>Nenhuma tarefa vencendo nos próximos 7 dias.</div> : (
+                  <div className="tableWrap" style={{ marginTop: 10 }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Imersão</th>
+                          <th>Tarefa</th>
+                          <th>Fase</th>
+                          <th>Status</th>
+                          <th>Atraso</th>
+                          <th>Prazo</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grouped.next7.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} />)}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* BLOCO 4: Todas */}
+              <div className="card" style={{ margin: 0 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="h2" style={{ margin: 0 }}>Todas</div>
+                    <div className="small muted" style={{ marginTop: 4 }}>Visão completa, respeitando filtros acima.</div>
+                  </div>
+                  <span className="badge muted">{grouped.all.length}</span>
+                </div>
+                <div className="tableWrap" style={{ marginTop: 10 }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Imersão</th>
+                        <th>Tarefa</th>
+                        <th>Fase</th>
+                        <th>Status</th>
+                        <th>Atraso</th>
+                        <th>Prazo</th>
+                        <th>Ações</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {grouped.all.slice(0, 120).map((t) => <TaskRow key={t.id} t={t} />)}
+                    </tbody>
+                  </table>
+                </div>
+                {grouped.all.length > 120 ? <div className="small muted" style={{ marginTop: 8 }}>Mostrando 120 de {grouped.all.length}. Refine os filtros para reduzir a lista.</div> : null}
+              </div>
             </div>
           ) : null}
         </div>
