@@ -4,7 +4,7 @@ import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import { getDashboardStats } from "../lib/dashboard";
 import { supabase } from "../lib/supabaseClient";
-import { sortTasksByPriority, syncOverdueTasksGlobal } from "../lib/tasks";
+import { sortTasksByPriority, syncOverdueTasksGlobal, isTaskDone } from "../lib/tasks";
 
 export default function DashboardPage() {
   const router = useRouter();

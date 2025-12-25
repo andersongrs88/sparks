@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import BottomSheet from "../../components/BottomSheet";
 import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
 import { supabase } from "../../lib/supabaseClient";
@@ -222,6 +223,9 @@ export default function ImmersionDetailEditPage() {
     view: "cards", // cards | table
     open: { "PA-PRE": true, DURANTE: true, POS: true },
   });
+
+  const [showTaskFilters, setShowTaskFilters] = useState(false);
+  const [showScheduleFilters, setShowScheduleFilters] = useState(false);
 
   const [scheduleUi, setScheduleUi] = useState({
     q: "",
@@ -1826,6 +1830,14 @@ function normalizeTemplatesForClone(items) {
                   onChange={(e) => setScheduleUi((p) => ({ ...p, q: e.target.value }))}
                   style={{ minWidth: 260 }}
                 />
+                <div className="onlyMobile">
+                  <button className="btn sm" onClick={() => setShowTaskFilters(true)}>Filtros</button>
+                </div>
+                <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <div className="onlyMobile">
+                  <button className="btn sm" onClick={() => setShowScheduleFilters(true)}>Filtros</button>
+                </div>
+                <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <select className="input" value={scheduleUi.day} onChange={(e) => setScheduleUi((p) => ({ ...p, day: e.target.value }))}>
                   <option value="ALL">Todos os dias</option>
                   {Array.from(new Set((scheduleItems || []).map((it) => String(it.day_label || it.day_date || "Sem dia"))))
@@ -1864,6 +1876,96 @@ function normalizeTemplatesForClone(items) {
                 </button>
               </div>
             </div>
+
+            <BottomSheet
+              open={showTaskFilters}
+              title="Filtros do checklist"
+              onClose={() => setShowTaskFilters(false)}
+              footer={
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <button className="btn ghost" onClick={() => setTaskUi((p) => ({ ...p, phase: "ALL", status: "ALL", responsible: "ALL", onlyLate: false, hideDone: false, sort: "due" }))}>Limpar</button>
+                  <button className="btn" onClick={() => setShowTaskFilters(false)}>Aplicar</button>
+                </div>
+              }
+            >
+              <div className="grid2" style={{ gap: 12 }}>
+                <div>
+                  <div className="label">Fase</div>
+                  <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
+                    <option value="ALL">Todas</option>
+                    <option value="PA-PRE">PA-PRÉ</option>
+                    <option value="DURANTE">DURANTE</option>
+                    <option value="POS">PÓS</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="label">Status</div>
+                  <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))}>
+                    <option value="ALL">Todos</option>
+                    <option value="PENDING">Pendentes</option>
+                    <option value="DONE">Concluídas</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="label">Responsável</div>
+                  <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))}>
+                    <option value="ALL">Todos</option>
+                    {(profiles || []).map((p) => (
+                      <option key={p.id} value={p.id}>{p.name || p.email}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+                  <label className="small" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <input type="checkbox" checked={taskUi.onlyLate} onChange={(e) => setTaskUi((p) => ({ ...p, onlyLate: e.target.checked }))} />
+                    Somente atrasadas
+                  </label>
+                  <label className="small" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <input type="checkbox" checked={taskUi.hideDone} onChange={(e) => setTaskUi((p) => ({ ...p, hideDone: e.target.checked }))} />
+                    Ocultar concluídas
+                  </label>
+                </div>
+              </div>
+            </BottomSheet>
+
+
+            <BottomSheet
+              open={showScheduleFilters}
+              title="Filtros do cronograma"
+              onClose={() => setShowScheduleFilters(false)}
+              footer={
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <button className="btn ghost" onClick={() => setScheduleUi((p) => ({ ...p, day: "ALL", type: "ALL" }))}>Limpar</button>
+                  <button className="btn" onClick={() => setShowScheduleFilters(false)}>Aplicar</button>
+                </div>
+              }
+            >
+              <div className="grid2" style={{ gap: 12 }}>
+                <div>
+                  <div className="label">Dia</div>
+                  <select className="input" value={scheduleUi.day} onChange={(e) => setScheduleUi((p) => ({ ...p, day: e.target.value }))}>
+                    <option value="ALL">Todos os dias</option>
+                    {Array.from(new Set((scheduleItems || []).map((it) => String(it.day_label || it.day_date || "Sem dia"))))
+                      .filter((v) => !!v)
+                      .map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="label">Tipo</div>
+                  <select className="input" value={scheduleUi.type} onChange={(e) => setScheduleUi((p) => ({ ...p, type: e.target.value }))}>
+                    <option value="ALL">Todos</option>
+                    {Array.from(new Set((scheduleItems || []).map((it) => String(it.type || "Sem tipo"))))
+                      .filter((v) => !!v)
+                      .map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            </BottomSheet>
+
 
             {scheduleUi.view === "table" ? (
               <div className="tableWrap">

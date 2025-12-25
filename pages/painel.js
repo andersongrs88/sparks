@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
+import BottomSheet from "../components/BottomSheet";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
-import { syncOverdueTasksGlobal } from "../lib/tasks";
+import { syncOverdueTasksGlobal, bulkUpdateTasks, isTaskDone, normalizeTaskStatus } from "../lib/tasks";
 
 function iso(d) {
   return d.toISOString().slice(0, 10);
@@ -15,6 +16,19 @@ function daysLate(due) {
   const t = new Date(iso(today) + "T00:00:00");
   const d = new Date(due + "T00:00:00");
   return Math.floor((t.getTime() - d.getTime()) / (24 * 3600 * 1000));
+
+function isTodayISO(dateISO) {
+  if (!dateISO) return false;
+  const today = new Date();
+  return dateISO === iso(today);
+}
+function withinNextDays(dateISO, days) {
+  if (!dateISO) return false;
+  const today = new Date(iso(new Date()) + "T00:00:00");
+  const d = new Date(dateISO + "T00:00:00");
+  const diff = Math.floor((d.getTime() - today.getTime()) / (24 * 3600 * 1000));
+  return diff >= 0 && diff <= days;
+}
 }
 
 export default function PainelPage() {
@@ -33,6 +47,55 @@ export default function PainelPage() {
   const [status, setStatus] = useState("Pendentes");
   const [immersionId, setImmersionId] = useState("all");
   const [immersionOptions, setImmersionOptions] = useState([]);
+
+  const [showFilters, setShowFilters] = useState(false);
+
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+
+  async function load() {
+    try {
+      setError("");
+      setLoading(true);
+      // Sincroniza tarefas atrasadas (protege bases antigas)
+      await syncOverdueTasksGlobal();
+
+      let q = supabase
+        .from("immersion_tasks")
+        .select("id, immersion_id, title, phase, status, due_date, responsible_id, notes, updated_at, done_at, created_at, immersions:immersions(id, immersion_name)")
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .limit(1200);
+
+      if (immersionId !== "all") q = q.eq("immersion_id", immersionId);
+      if (phase !== "all") q = q.eq("phase", phase);
+
+      // Status: pendentes vs concluídas usando helper robusto
+      if (status === "Concluídas") {
+        q = q.or("status.ilike.%conclu%,done_at.not.is.null");
+      } else {
+        q = q.or("status.is.null,status.not.ilike.%conclu%,done_at.is.null");
+      }
+
+      if (query?.trim()) {
+        const term = query.trim();
+        q = q.or(`title.ilike.%${term}%,immersions.immersion_name.ilike.%${term}%`);
+      }
+
+      const { data, error: e } = await q;
+      if (e) throw e;
+
+      const rows = (data || []).map((t) => ({
+        ...t,
+        immersion_name: t?.immersions?.immersion_name || t?.immersion_name || "—",
+      }));
+
+      setTasks(rows || []);
+    } catch (e) {
+      setError(e?.message || "Erro ao carregar tarefas.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -140,8 +203,8 @@ export default function PainelPage() {
     const today = iso(new Date());
     const total = tasks.length;
     // Robustez: bases podem usar "Concluida" (sem acento) ou preencher done_at.
-    const done = tasks.filter((t) => t.status === "Concluída" || t.status === "Concluida" || !!t.done_at).length;
-    const overdue = tasks.filter((t) => t.due_date && t.status !== "Concluída" && t.due_date < today).length;
+    const done = tasks.filter((t) => isTaskDone(t)).length;
+    const overdue = tasks.filter((t) => t.due_date && !isTaskDone(t) && t.due_date < today).length;
     return { total, done, overdue };
   }, [tasks]);
 
@@ -165,31 +228,60 @@ export default function PainelPage() {
     };
   }, [tasks]);
 
-  function TaskRow({ t }) {
-    const late = t.due_date && !(t.status === "Concluída" || t.status === "Concluida" || !!t.done_at) && daysLate(t.due_date) > 0;
+  function TaskRow({ t, selectedIds, setSelectedIds }) {
+    const done = isTaskDone(t);
+    const due = t?.due_date || null;
+
+    const lateDays = (!done && due) ? daysLate(due) : 0;
+    const isLate = lateDays > 0;
+
+    const slaLabel = isLate ? `Atrasada ${lateDays}d` : (isTodayISO(due) ? "Vence hoje" : (withinNextDays(due, 7) ? "Em 7 dias" : ""));
+    const slaBadge = isLate ? "badge danger" : (isTodayISO(due) ? "badge warn" : (withinNextDays(due, 7) ? "badge info" : "badge muted"));
+
+    const checked = selectedIds?.has(t.id);
+
     return (
       <tr key={t.id}>
+        <td style={{ width: 36 }}>
+          <input
+            type="checkbox"
+            checked={!!checked}
+            onChange={(e) => {
+              const c = e.target.checked;
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (c) next.add(t.id);
+                else next.delete(t.id);
+                return next;
+              });
+            }}
+            aria-label="Selecionar tarefa"
+          />
+        </td>
         <td>
           <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 800 }}>
-            {t.immersions?.immersion_name || "-"}
+            {t.immersions?.immersion_name || t.immersion_name || "-"}
           </a>
           <div className="small muted">{t.immersions?.status || "-"}</div>
         </td>
         <td>{t.title}</td>
         <td><span className="badge muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : (t.phase || "-")}</span></td>
         <td>
-          <span className={(t.status === "Concluída" || t.status === "Concluida" || !!t.done_at) ? "badge success" : "badge muted"}>
-            {(t.status === "Concluida" ? "Concluída" : t.status) || "-"}
+          <span className={done ? "badge success" : "badge muted"}>
+            {done ? "Concluída" : ((t.status === "Concluida" ? "Concluída" : t.status) || "Pendente")}
           </span>
         </td>
-        <td>{late ? <span className="badge danger">{daysLate(t.due_date)} dia(s)</span> : <span className="badge muted">-</span>}</td>
-        <td>{t.due_date || "-"}</td>
+        <td>{slaLabel ? <span className={slaBadge}>{slaLabel}</span> : <span className="small muted">—</span>}</td>
+        <td>{due ? new Date(due + "T00:00:00").toLocaleDateString("pt-BR") : <span className="small muted">—</span>}</td>
         <td>
-          <button className="btn sm" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn sm" onClick={() => router.push(`/imersoes/${t.immersion_id}`)}>Abrir</button>
+          </div>
         </td>
       </tr>
     );
   }
+
 
   if (authLoading) return null;
   if (!user) return null;
@@ -219,7 +311,12 @@ export default function PainelPage() {
               onChange={(e) => setQuery(e.target.value)}
             />
 
-            <div className="toolbarGroup">
+            <div className="onlyMobile">
+              <button className="btn sm" onClick={() => setShowFilters(true)}>Filtros</button>
+            </div>
+
+            <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <div className="toolbarGroup">
               <span className="toolbarLabel">Imersão</span>
               <select className="input sm" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
                 <option value="all">Todas</option>
@@ -253,7 +350,52 @@ export default function PainelPage() {
             </label>
           </div>
 
-          {error ? <p style={{ color: "var(--danger)" }}>{error}</p> : null}
+          
+          <BottomSheet
+            open={showFilters}
+            title="Filtros"
+            onClose={() => setShowFilters(false)}
+            footer={
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button className="btn ghost" onClick={() => { setQuery(""); setPhase("all"); setStatus("Pendentes"); setImmersionId("all"); setOnlyOverdue(false); }}>Limpar</button>
+                <button className="btn" onClick={() => setShowFilters(false)}>Aplicar</button>
+              </div>
+            }
+          >
+            <div className="grid2" style={{ gap: 12 }}>
+              <div>
+                <div className="label">Imersão</div>
+                <select className="input" value={immersionId} onChange={(e) => setImmersionId(e.target.value)}>
+                  <option value="all">Todas</option>
+                  {(immersionOptions || []).map((i) => (
+                    <option key={i.id} value={i.id}>{i.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div className="label">Fase</div>
+                <select className="input" value={phase} onChange={(e) => setPhase(e.target.value)}>
+                  <option value="all">Todas</option>
+                  <option value="PA-PRE">PA-PRÉ</option>
+                  <option value="DURANTE">DURANTE</option>
+                  <option value="POS">PÓS</option>
+                </select>
+              </div>
+              <div>
+                <div className="label">Status</div>
+                <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <option value="Pendentes">Pendentes</option>
+                  <option value="Concluídas">Concluídas</option>
+                </select>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 24 }}>
+                <input id="onlyOverdue" type="checkbox" checked={onlyOverdue} onChange={(e) => setOnlyOverdue(e.target.checked)} />
+                <label htmlFor="onlyOverdue" className="small">Somente atrasadas</label>
+              </div>
+            </div>
+          </BottomSheet>
+
+{error ? <p style={{ color: "var(--danger)" }}>{error}</p> : null}
           {loading ? <p>Carregando...</p> : null}
 
           {!loading && tasks.length === 0 ? (
@@ -261,6 +403,30 @@ export default function PainelPage() {
           ) : null}
 
           {!loading && tasks.length > 0 ? (
+
+            {selectedIds.size > 0 ? (
+              <div className="card" style={{ margin: 0 }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="h2" style={{ margin: 0 }}>Ações em lote</div>
+                    <div className="small muted" style={{ marginTop: 4 }}>{selectedIds.size} selecionada(s)</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button className="btn sm ghost" onClick={() => setSelectedIds(new Set())}>Limpar seleção</button>
+                    <button className="btn sm" onClick={async () => {
+                      try {
+                        setLoading(true);
+                        await bulkUpdateTasks(Array.from(selectedIds), { status: "Concluída", done_at: new Date().toISOString() });
+                        // refresh
+                        await load();
+                        setSelectedIds(new Set());
+                      } catch (e) { setError(e?.message || "Erro ao concluir em lote"); }
+                      finally { setLoading(false); }
+                    }}>Concluir</button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
               {/* BLOCO 1: Atrasadas */}
               <div className="card" style={{ margin: 0 }}>
@@ -276,6 +442,7 @@ export default function PainelPage() {
                     <table className="table">
                       <thead>
                         <tr>
+                          <th style={{ width: 36 }}></th>
                           <th>Imersão</th>
                           <th>Tarefa</th>
                           <th>Fase</th>
@@ -286,7 +453,7 @@ export default function PainelPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {grouped.overdue.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} />)}
+                        {grouped.overdue.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
                       </tbody>
                     </table>
                   </div>
@@ -307,6 +474,7 @@ export default function PainelPage() {
                     <table className="table">
                       <thead>
                         <tr>
+                          <th style={{ width: 36 }}></th>
                           <th>Imersão</th>
                           <th>Tarefa</th>
                           <th>Fase</th>
@@ -317,7 +485,7 @@ export default function PainelPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {grouped.dueToday.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} />)}
+                        {grouped.dueToday.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
                       </tbody>
                     </table>
                   </div>
@@ -338,6 +506,7 @@ export default function PainelPage() {
                     <table className="table">
                       <thead>
                         <tr>
+                          <th style={{ width: 36 }}></th>
                           <th>Imersão</th>
                           <th>Tarefa</th>
                           <th>Fase</th>
@@ -348,7 +517,7 @@ export default function PainelPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {grouped.next7.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} />)}
+                        {grouped.next7.slice(0, 60).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
                       </tbody>
                     </table>
                   </div>
@@ -368,8 +537,9 @@ export default function PainelPage() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Imersão</th>
-                        <th>Tarefa</th>
+                        <th style={{ width: 36 }}></th>
+                          <th>Imersão</th>
+                          <th>Tarefa</th>
                         <th>Fase</th>
                         <th>Status</th>
                         <th>Atraso</th>
@@ -378,7 +548,7 @@ export default function PainelPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {grouped.all.slice(0, 120).map((t) => <TaskRow key={t.id} t={t} />)}
+                      {grouped.all.slice(0, 120).map((t) => <TaskRow key={t.id} t={t} selectedIds={selectedIds} setSelectedIds={setSelectedIds} />)}
                     </tbody>
                   </table>
                 </div>

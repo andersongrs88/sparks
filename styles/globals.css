@@ -797,3 +797,31 @@ a:hover { text-decoration: underline; }
   }
   .tabBtn { scroll-snap-align: start; white-space: nowrap; }
 }
+
+
+/* Mobile Bottom Sheet */
+.bsOverlay { position: fixed; inset: 0; z-index: 1000; display: grid; align-items: end; }
+.bsBackdrop { position: absolute; inset: 0; background: rgba(2,6,23,0.55); }
+.bsSheet {
+  position: relative;
+  width: 100%;
+  max-height: 85vh;
+  background: var(--card);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: 0 -20px 50px rgba(0,0,0,0.22);
+  overflow: hidden;
+}
+.bsHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.bsTitle { font-weight: 850; color: var(--text); }
+.bsBody { padding: 12px 14px; overflow: auto; max-height: calc(85vh - 56px - 62px); }
+.bsFooter { padding: 12px 14px; border-top: 1px solid var(--line); background: rgba(255,255,255,0.02); }
+
+/* Helpers */
+.onlyMobile { display: none; }
+.onlyDesktop { display: block; }
+@media (max-width: 720px) {
+  .onlyMobile { display: block; }
+  .onlyDesktop { display: none; }
+}
