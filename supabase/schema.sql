@@ -438,3 +438,44 @@ begin
       (t_id, 'POS', 'tecnica', 'Consolidar aprendizados e materiais finais (PPTs / links)', 'end', 2, 50);
   end if;
 end $$;
+
+
+
+-- =========================================================
+-- Palestrantes (cadastro central)
+-- =========================================================
+create table if not exists public.speakers (
+  id uuid primary key default gen_random_uuid(),
+  full_name text not null,
+  email text,
+  is_internal boolean not null default true,
+  vignette_name text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.speakers enable row level security;
+
+-- Acesso total: pode gerenciar palestrantes
+create policy "speakers_select" on public.speakers
+for select using (auth.role() = 'authenticated');
+
+create policy "speakers_write_full_access" on public.speakers
+for all using (public.is_full_access())
+with check (public.is_full_access());
+
+-- =========================================================
+-- PDCA: papéis que podem editar somente PDCA
+-- =========================================================
+create or replace function public.can_edit_pdca()
+returns boolean
+language sql
+stable
+as $$
+  select public.is_full_access()
+    or exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid()
+        and p.is_active = true
+        and p.role in ('eventos','producao','mentoria','outros')
+    );
+$$;

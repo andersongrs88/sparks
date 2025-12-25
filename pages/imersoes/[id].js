@@ -159,7 +159,9 @@ function isLate(dueDateStr, status) {
 
 export default function ImmersionDetailEditPage() {
   const router = useRouter();
-  const { loading: authLoading, user, isFullAccess, role, profile } = useAuth();
+  const { loading: authLoading, user, isFullAccess, canEditPdca, role, profile } = useAuth();
+  const canEditAll = isFullAccess;
+  const canEditCurrentTab = (t) => (t === "pdca" ? canEditPdca : canEditAll);
   const { id } = router.query;
 
   const full = isFullAccess;
@@ -397,6 +399,7 @@ export default function ImmersionDetailEditPage() {
   }, [tab, id]);
 
   function set(field, value) {
+    if (!canEditCurrentTab(tab)) return;
     setForm((p) => ({ ...p, [field]: value }));
   }
 
@@ -555,8 +558,8 @@ export default function ImmersionDetailEditPage() {
     e.preventDefault();
     if (!form) return;
 
-    if (!full) {
-      setError("Sem permissão para editar esta imersão.");
+    if (!canEditCurrentTab(tab)) {
+      setError(tab === "pdca" ? "Sem permissão para editar o PDCA." : "Sem permissão para editar esta imersão.");
       return;
     }
 

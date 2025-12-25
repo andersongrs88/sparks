@@ -5,15 +5,14 @@ import { useAuth } from "../../context/AuthContext";
 import { listProfiles } from "../../lib/profiles";
 
 const ROLES_LABEL = {
-  admin: "Admin",
-  consultor_educacao: "Consultor de Educação",
-  designer: "Designer",
-  eventos: "Eventos (visualização)",
-  tecnica: "Técnica (visualização)",
-  relacionamento: "Relacionamento (visualização)",
-  producao: "Produção (visualização)",
-  mentoria: "Mentoria (visualização)",
-  viewer: "Visualização"
+  admin: "Administrador",
+  consultor_educacao: "Consultor (Educação)",
+  designer: "Designer Instrucional",
+  eventos: "Eventos (edita PDCA)",
+  producao: "Produção (edita PDCA)",
+  mentoria: "Mentoria (edita PDCA)",
+  outros: "Outros (edita PDCA)",
+  viewer: "Somente visualização"
 };
 
 export default function UsuariosListPage() {

@@ -44,7 +44,7 @@ function ThemeToggle() {
   );
 }
 
-export default function Layout({ title, children }) {
+export default function Layout({ title, children, hideNav = false }) {
   const { loading, profile, isFullAccess } = useAuth();
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -62,8 +62,9 @@ export default function Layout({ title, children }) {
         <title>{documentTitle}</title>
         <meta name="application-name" content={SYSTEM_FULL_NAME} />
       </Head>
+      {!hideNav ? (
 
-      <aside className={mobileOpen ? "sidebar open" : "sidebar"}>
+        <aside className={mobileOpen ? "sidebar open" : "sidebar"}>
         <div className="sidebarHeader">
           <div>
             <div className="brand">Sparks</div>
@@ -76,7 +77,7 @@ export default function Layout({ title, children }) {
 
         <div className="sidebarMeta">
           <div className="small">{loading ? "Carregando..." : roleLabel(role)}</div>
-          <div className="small muted">Acesso livre (MVP)</div>
+          <div className="small muted">{profile?.email || user?.email || ""}</div>
         </div>
 
         <nav className="nav" aria-label="Navegação principal">
@@ -84,10 +85,20 @@ export default function Layout({ title, children }) {
           <NavItem href="/imersoes" label="Imersões" icon="📅" />
           <NavItem href="/painel" label="Plano de Ação" icon="✅" />
           <NavItem href="/relatorios" label="Relatórios" icon="📊" />
-          {isFullAccess ? <NavItem href="/templates" label="Templates" icon="🧩" /> : null}
+          {isFullAccess ? <NavItem href="/configuracoes/templates" label="Templates" icon="🧩" /> : null}
+          {isFullAccess ? <NavItem href="/palestrantes" label="Palestrantes" icon="🎤" /> : null}
           {isFullAccess ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
         </nav>
+
+        {!hideNav && user?.id && user.id !== "noauth" ? (
+          <div style={{ padding: 12 }}>
+            <button className="btn" type="button" onClick={() => signOut()} style={{ width: "100%" }}>
+              Sair
+            </button>
+          </div>
+        ) : null}
       </aside>
+      ) : null}
 
       <div className="main">
         <header className="header">
