@@ -1,9 +1,13 @@
 import Link from "next/link";
+import Head from "next/head";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { roleLabel } from "../lib/permissions";
 import NotificationsBell from "./NotificationsBell";
+
+const SYSTEM_FULL_NAME = "Sparks — Sistema Estratégico de Planejamento e Gestão do Conhecimento";
+const DEVELOPED_BY = "Desenvolvido pela Wizze Tecnologia Inteligente";
 
 function NavItem({ href, label, icon }) {
   const router = useRouter();
@@ -45,13 +49,26 @@ export default function Layout({ title, children }) {
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const pageTitle = useMemo(() => title || "Sistema de Imersões", [title]);
+  const pageTitle = useMemo(() => title || "Sparks", [title]);
+  const documentTitle = useMemo(() => {
+    // Discreto: mantém o nome completo do sistema no título do navegador,
+    // sem poluir a UI de cada tela.
+    return `${pageTitle} | ${SYSTEM_FULL_NAME}`;
+  }, [pageTitle]);
 
   return (
     <div className="shell">
+      <Head>
+        <title>{documentTitle}</title>
+        <meta name="application-name" content={SYSTEM_FULL_NAME} />
+      </Head>
+
       <aside className={mobileOpen ? "sidebar open" : "sidebar"}>
         <div className="sidebarHeader">
-          <div className="brand">Sparks</div>
+          <div>
+            <div className="brand">Sparks</div>
+            <div className="brandSub muted" aria-label={SYSTEM_FULL_NAME}>{SYSTEM_FULL_NAME}</div>
+          </div>
           <button type="button" className="btn icon mobileOnly" onClick={() => setMobileOpen(false)} aria-label="Fechar menu">
             ✕
           </button>
@@ -92,6 +109,12 @@ export default function Layout({ title, children }) {
         </header>
 
         <main className="content">{children}</main>
+
+        <footer className="footer" role="contentinfo">
+          <div className="footerInner">
+            <div className="small muted">{DEVELOPED_BY}</div>
+          </div>
+        </footer>
       </div>
 
       {mobileOpen ? <div className="backdrop" onClick={() => setMobileOpen(false)} aria-hidden="true" /> : null}

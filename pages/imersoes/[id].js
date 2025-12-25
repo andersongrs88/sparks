@@ -163,7 +163,7 @@ export default function ImmersionDetailEditPage() {
 
   const full = isFullAccess;
 
-  const [tab, setTab] = useState("essencial");
+  const [tab, setTab] = useState("informacoes");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -237,24 +237,18 @@ export default function ImmersionDetailEditPage() {
   const [editDraft, setEditDraft] = useState({});
 
   const tabs = useMemo(
-    () => [
-      { key: "essencial", label: "Essencial" },
-      { key: "operacao", label: "Operação" },
-      { key: "time", label: "Time de Educação" },
-      { key: "cronograma", label: "Cronograma" },
-      { key: "checklist", label: "Checklist" },
-      { key: "materiais", label: "Materiais" },
-      { key: "ferramentas", label: "Ferramentas" },
-      { key: "custos", label: "Custos" },
-      { key: "videos", label: "Vídeos" },
-      { key: "pdca", label: "PDCA" },
-      { key: "informacoes", label: "Informações" },
-      { key: "narrativa", label: "Narrativa" },
-      { key: "trainer", label: "Trainer" },
-      { key: "terceiros", label: "Terceiros" },
-    ],
-    []
-  );
+  () => [
+    { key: "informacoes", label: "Informações" },
+    { key: "narrativa", label: "Narrativa" },
+    { key: "ferramentas", label: "Ferramentas" },
+    { key: "materiais", label: "Materiais" },
+    { key: "videos", label: "Vídeos" },
+    { key: "pdca", label: "PDCA" },
+    { key: "custos", label: "Custos" },
+    { key: "trainer", label: "Trainer/Palestrante" },
+  ],
+  []
+);
 
   // Protege a rota (MVP)
   useEffect(() => {
@@ -1412,54 +1406,268 @@ function normalizeTemplatesForClone(items) {
         
         {form && tab === "informacoes" ? (
           <>
-            <div className="h2">Informações da imersão</div>
+            <Section
+              title="Informações"
+              description="Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer)."
+              right={
+                full ? (
+                  <button type="button" className="btn" onClick={openApplyTemplatesFlow}>
+                    Carregar automaticamente
+                  </button>
+                ) : null
+              }
+            >
+              <div className="grid2">
+                <Field label="Nome da imersão">
+                  <input
+                    className="input"
+                    value={form.immersion_name || ""}
+                    onChange={(e) => set("immersion_name", e.target.value)}
+                    placeholder="Ex.: Imersão Gestão MKT Digital"
+                  />
+                </Field>
 
-            <div className="grid2">
-              <Field label="Formato">
-                <input className="input" value={form.format || ""} onChange={(e) => set("format", e.target.value)} placeholder="Ex.: Presencial / Híbrido / Online" />
-              </Field>
+                <Field label="Formato" hint="Obrigatório">
+                  <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+                    <option value="">Selecione</option>
+                    {IMMERSION_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
 
-              <Field label="Time de educação responsável">
-                <input className="input" value={form.education_team || ""} onChange={(e) => set("education_team", e.target.value)} />
-              </Field>
+              <Section
+                title="Templates do tipo"
+                description="Ao aplicar, o sistema pode pré-carregar tarefas, cronograma, materiais, ferramentas e vídeos para este tipo."
+              >
+                <div className="grid2">
+                  <Field label="Templates do tipo">
+                    <select
+                      className="input"
+                      value={applyTplForm.immersion_type || form.type || ""}
+                      onChange={(e) => setApplyTplForm((p) => ({ ...p, immersion_type: e.target.value }))}
+                    >
+                      <option value="">Selecione</option>
+                      {IMMERSION_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
 
-              <Field label="Mentores presentes">
-                <input className="input" value={form.mentors || ""} onChange={(e) => set("mentors", e.target.value)} placeholder="Nomes ou papéis" />
-              </Field>
+                  <Field label="Carregar automaticamente">
+                    <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                      {[
+                        ["tasks", "Tarefas"],
+                        ["schedule", "Cronograma"],
+                        ["materials", "Materiais"],
+                        ["tools", "Ferramentas"],
+                        ["videos", "Vídeos"],
+                      ].map(([key, label]) => (
+                        <label key={key} className="chip" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!applyTplForm.include?.[key]}
+                            onChange={(e) =>
+                              setApplyTplForm((p) => ({ ...p, include: { ...(p.include || {}), [key]: e.target.checked } }))
+                            }
+                          />
+                          <span className="small">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="small muted" style={{ marginTop: 8 }}>
+                      Clique em <b>Carregar automaticamente</b> (no topo desta aba) para aplicar os templates na imersão atual.
+                    </div>
+                  </Field>
+                </div>
+              </Section>
 
-              <Field label="Necessita staff específico?">
-                <label className="row" style={{ gap: 10 }}>
-                  <input type="checkbox" checked={!!form.staff_needed} onChange={(e) => set("staff_needed", e.target.checked)} />
-                  <span className="small">Sim</span>
+              <Section title="Informações básicas">
+                <div className="grid2">
+                  <Field label="Sala" hint="Obrigatório">
+                    <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
+                      {ROOMS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Status">
+                    <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
+                      <option value="Planejamento">Planejamento</option>
+                      <option value="Em execução">Em execução</option>
+                      <option value="Cancelada">Cancelada</option>
+                      <option value="Concluída">Concluída</option>
+                    </select>
+                    <div className="small muted" style={{ marginTop: 6 }}>
+                      Para concluir, prefira o botão <b>Concluir imersão</b> no topo (governança de pendências).
+                    </div>
+                  </Field>
+                </div>
+
+                <div className="grid2">
+                  <Field label="Data inicial" hint="Obrigatório">
+                    <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
+                  </Field>
+
+                  <Field label="Data final" hint="Obrigatório">
+                    <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
+                <div className="grid2">
+                  <Field label="Consultor (Educação)" hint="Obrigatório">
+                    <select
+                      className="input"
+                      value={form.educational_consultant || ""}
+                      onChange={(e) => set("educational_consultant", e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name ? `${p.name} (${p.email})` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Designer instrucional" hint="Obrigatório">
+                    <select
+                      className="input"
+                      value={form.instructional_designer || ""}
+                      onChange={(e) => set("instructional_designer", e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name ? `${p.name} (${p.email})` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Mentores presentes">
+                <Field label="Mentores presentes">
+                  <input className="input" value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} placeholder="Ex.: Nome 1, Nome 2" />
+                </Field>
+              </Section>
+
+              <Section title="Links e documentos">
+                <div className="grid2">
+                  <Field label="Ordem de Serviço (link)">
+                    <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="URL" />
+                  </Field>
+                  <Field label="Ficha Técnica (link)">
+                    <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="URL" />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Recursos e staff">
+                <Field label="Precisa de staff específico?">
+                  <div className="row">
+                    <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
+                      Sim
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${!form.need_specific_staff ? "primary" : ""}`}
+                      onClick={() => {
+                        set("need_specific_staff", false);
+                        set("staff_justification", "");
+                      }}
+                    >
+                      Não
+                    </button>
+                  </div>
+                </Field>
+
+                <Field label="Justificativa" hint={staffEnabled ? "Obrigatório quando staff específico = Sim." : "Habilita ao marcar Sim."}>
+                  <textarea
+                    className="input"
+                    rows={3}
+                    disabled={!staffEnabled}
+                    value={form.staff_justification || ""}
+                    onChange={(e) => set("staff_justification", e.target.value)}
+                  />
+                </Field>
+
+                <Field label="Vai ter palestrante?">
+                  <div className="row">
+                    <button type="button" className={`btn ${speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", true)}>
+                      Sim
+                    </button>
+                    <button type="button" className={`btn ${!speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", false)}>
+                      Não
+                    </button>
+                  </div>
+
+                  <div className="small muted" style={{ marginTop: 8 }}>
+                    O cadastro e a gestão do trainer/palestrante ficam na aba <b>Trainer/Palestrante</b>.
+                  </div>
+                </Field>
+              </Section>
+
+              <Section title="Necessidade de terceiros">
+                <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <input type="checkbox" checked={!!form.need_third_parties} onChange={(e) => set("need_third_parties", e.target.checked)} />
+                  Necessidade de terceiros
                 </label>
-              </Field>
 
-              <Field label="Justificativa (staff)">
-                <textarea className="input" rows={3} value={form.staff_justification || ""} onChange={(e) => set("staff_justification", e.target.value)} />
-              </Field>
+                <div className="row" style={{ flexWrap: "wrap", gap: 18 }}>
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_speech_therapist}
+                      onChange={(e) => set("third_party_speech_therapist", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Fonoaudióloga
+                  </label>
 
-              <Field label="Ordem de Serviço (link)">
-                <input className="input" value={form.os_link || ""} onChange={(e) => set("os_link", e.target.value)} placeholder="https://..." />
-              </Field>
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_barber}
+                      onChange={(e) => set("third_party_barber", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Barbeiro
+                  </label>
 
-              <Field label="Ficha Técnica (link)">
-                <input className="input" value={form.tech_sheet_link || ""} onChange={(e) => set("tech_sheet_link", e.target.value)} placeholder="https://..." />
-              </Field>
-            </div>
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_hairdresser}
+                      onChange={(e) => set("third_party_hairdresser", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Cabeleireiro
+                  </label>
 
-            <div className="h2" style={{ marginTop: 18 }}>Narrativa e dinâmicas</div>
-
-            <Field label="Título / eixo de narrativa">
-              <input className="input" value={form.narrative_title || ""} onChange={(e) => set("narrative_title", e.target.value)} />
-            </Field>
-
-            <Field label="Informações para narrativa">
-              <textarea className="input" rows={5} value={form.narrative_text || ""} onChange={(e) => set("narrative_text", e.target.value)} />
-            </Field>
-
-            <Field label="Informações para dinâmicas">
-              <textarea className="input" rows={5} value={form.dynamics_text || ""} onChange={(e) => set("dynamics_text", e.target.value)} />
-            </Field>
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_makeup}
+                      onChange={(e) => set("third_party_makeup", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Maquiagem
+                  </label>
+                </div>
+              </Section>
+            </Section>
           </>
         ) : null}
 
