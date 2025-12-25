@@ -683,42 +683,6 @@ export default function ImmersionDetailEditPage() {
       setError("Sem permissão para clonar imersões.");
       return;
     }
-
-
-function openApplyTemplatesFlow() {
-  if (!full) return;
-  setApplyTplForm({
-    immersion_type: form?.type || "",
-    include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
-  });
-  setApplyTplFlow({ open: true, loading: false, error: "" });
-}
-
-async function confirmApplyTemplatesFlow() {
-  if (!full) {
-    setApplyTplFlow((p) => ({ ...p, error: "Sem permissão." }));
-    return;
-  }
-  setApplyTplFlow((p) => ({ ...p, loading: true, error: "" }));
-  try {
-    await applyTypeTemplates({
-      immersionId: id,
-      immersionType: applyTplForm.immersion_type || form?.type || null,
-      startDate: form?.start_date || null,
-      endDate: form?.end_date || null,
-      include: applyTplForm.include,
-    });
-    setApplyTplFlow({ open: false, loading: false, error: "" });
-    // recarregar módulos principais que podem ter sido alterados
-    await loadTasks(id);
-    await loadSchedule(id);
-    await loadMaterials(id);
-    await loadTools(id);
-    await loadVideos(id);
-  } catch (e) {
-    setApplyTplFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao aplicar templates." }));
-  }
-}
     setCloneForm({
       immersion_name: `${form.immersion_name || "Imersão"} (cópia)`,
       type: form.type || "",
@@ -736,7 +700,44 @@ async function confirmApplyTemplatesFlow() {
     setCloneFlow({ open: true, loading: false, error: "" });
   }
 
-  function normalizeTemplatesForClone(items) {
+  
+
+  function openApplyTemplatesFlow() {
+    if (!full) return;
+    setApplyTplForm({
+      immersion_type: form?.type || "",
+      include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
+    });
+    setApplyTplFlow({ open: true, loading: false, error: "" });
+  }
+
+  async function confirmApplyTemplatesFlow() {
+    if (!full) {
+      setApplyTplFlow((p) => ({ ...p, error: "Sem permissão." }));
+      return;
+    }
+    setApplyTplFlow((p) => ({ ...p, loading: true, error: "" }));
+    try {
+      await applyTypeTemplates({
+        immersionId: id,
+        immersionType: applyTplForm.immersion_type || form?.type || null,
+        startDate: form?.start_date || null,
+        endDate: form?.end_date || null,
+        include: applyTplForm.include,
+      });
+      setApplyTplFlow({ open: false, loading: false, error: "" });
+      // recarregar módulos principais que podem ter sido alterados
+      await loadTasks(id);
+      await loadSchedule(id);
+      await loadMaterials(id);
+      await loadTools(id);
+      await loadVideos(id);
+    } catch (e) {
+      setApplyTplFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao aplicar templates." }));
+    }
+  }
+
+function normalizeTemplatesForClone(items) {
     const phaseOk = new Set(["PA-PRE", "DURANTE", "POS"]);
     return (items || [])
       .map((t) => {
