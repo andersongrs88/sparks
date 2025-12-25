@@ -35,12 +35,38 @@ const PHASES = [
 
 const TASK_STATUSES = ["Programada", "Em andamento", "Atrasada", "Concluída"];
 
+const COST_CATEGORIES = [
+  "Hotel / Hospedagem",
+  "Alimentação",
+  "Transporte",
+  "Infra / AV",
+  "Materiais",
+  "Brindes",
+  "Terceiros",
+  "Outros",
+];
+
+const PDCA_CATEGORIES = [
+  "Planejar (P)",
+  "Executar (D)",
+  "Checar (C)",
+  "Agir (A)",
+  "Problema",
+  "Risco",
+  "Melhoria",
+  "Decisão",
+  "Outros",
+];
+
 function Field({ label, children, hint }) {
+  const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="labelRow">
         <label className="label">{label}</label>
-        {hint ? <span className="hint">{hint}</span> : null}
+        {hint ? (
+          <span className={`hint ${isReq ? "hintReq" : ""}`}>{isReq ? "(obrigatório)" : hint}</span>
+        ) : null}
       </div>
       {children}
     </div>
@@ -2255,13 +2281,18 @@ function normalizeTemplatesForClone(items) {
                           return (
                             <tr key={t.id}>
 
+                              {/* Tarefa */}
+                              <td>
+                                <div style={{ minWidth: 260 }}>
+                                  <div style={{ fontWeight: 600 }}>{t.title}</div>
+                                  <div className="small muted">{t.phase === "PA-PRE" ? "PA-PRÉ" : t.phase === "POS" ? "PÓS" : t.phase}</div>
+                                </div>
+                              </td>
+
+                              {/* Responsável */}
                               <td>
                                 {full ? (
-                                  <select
-                                    className="input"
-                                    value={t.responsible_id || ""}
-                                    onChange={(e) => onQuickUpdateTask(t, { responsible_id: e.target.value || null })}
-                                  >
+                                  <select className="input" value={t.responsible_id || ""} onChange={(e) => onQuickUpdateTask(t, { responsible_id: e.target.value || null })}>
                                     <option value="">-</option>
                                     {profiles.map((p) => (
                                       <option key={p.id} value={p.id}>
@@ -2274,6 +2305,21 @@ function normalizeTemplatesForClone(items) {
                                 )}
                               </td>
 
+                              {/* Prazo */}
+                              <td>
+                                {canEdit ? (
+                                  <input
+                                    className="input"
+                                    type="date"
+                                    value={t.due_date || ""}
+                                    onChange={(e) => onQuickUpdateTask(t, { due_date: e.target.value || null })}
+                                  />
+                                ) : (
+                                  <span>{t.due_date || "-"}</span>
+                                )}
+                              </td>
+
+                              {/* Status */}
                               <td>
                                 {canEdit ? (
                                   <select className="input" value={t.status} onChange={(e) => onQuickUpdateTask(t, { status: e.target.value })}>
@@ -2288,10 +2334,20 @@ function normalizeTemplatesForClone(items) {
                                 )}
                               </td>
 
+                              {/* Status prazo */}
                               <td>
-                                {(() => { const s = deadlineStatus(t); return <span className={`badge ${s.kind}`}>{s.label}</span>; })()}
+                                {(() => {
+                                  const s = deadlineStatus(t);
+                                  return <span className={`badge ${s.kind}`}>{s.label}</span>;
+                                })()}
                               </td>
 
+                              {/* Data realizada */}
+                              <td>
+                                <span className="small">{t.done_at || "—"}</span>
+                              </td>
+
+                              {/* Observações */}
                               <td>
                                 {canEdit ? (
                                   <input className="input" value={t.notes || ""} onChange={(e) => onQuickUpdateTask(t, { notes: e.target.value })} placeholder="Observações" />
@@ -2300,6 +2356,7 @@ function normalizeTemplatesForClone(items) {
                                 )}
                               </td>
 
+                              {/* Ações */}
                               <td>
                                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                                   {canEdit ? (
@@ -2316,7 +2373,16 @@ function normalizeTemplatesForClone(items) {
                                           }}
                                         />
                                       </label>
-                                      <button type="button" className="btn" onClick={() => onQuickUpdateTask(t, { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0,10) })}>
+                                      <button
+                                        type="button"
+                                        className="btn"
+                                        onClick={() =>
+                                          onQuickUpdateTask(t, {
+                                            status: "Concluída",
+                                            done_at: t.done_at || new Date().toISOString().slice(0, 10),
+                                          })
+                                        }
+                                      >
                                         Concluir
                                       </button>
                                     </>
@@ -2381,7 +2447,31 @@ function normalizeTemplatesForClone(items) {
               {editModal.type === "cost" ? (
                 <div className="grid2">
                   <Field label="Categoria">
-                    <input className="input" value={editDraft.category || ""} onChange={(e) => onDraft("category", e.target.value)} />
+                    <select
+                      className="input"
+                      value={COST_CATEGORIES.includes(editDraft.category) ? editDraft.category : "__other"}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__other") onDraft("category", "");
+                        else onDraft("category", v);
+                      }}
+                    >
+                      <option value="__other">Outra (personalizada)</option>
+                      {COST_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    {!COST_CATEGORIES.includes(editDraft.category) ? (
+                      <input
+                        className="input"
+                        style={{ marginTop: 8 }}
+                        placeholder="Digite a categoria"
+                        value={editDraft.category || ""}
+                        onChange={(e) => onDraft("category", e.target.value)}
+                      />
+                    ) : null}
                   </Field>
                   <Field label="Valor (R$)">
                     <input className="input" inputMode="decimal" value={editDraft.value ?? ""} onChange={(e) => onDraft("value", e.target.value)} />
@@ -2486,7 +2576,31 @@ function normalizeTemplatesForClone(items) {
               {editModal.type === "pdca" ? (
                 <div className="grid2">
                   <Field label="Classificação">
-                    <input className="input" value={editDraft.classification || ""} onChange={(e) => onDraft("classification", e.target.value)} />
+                    <select
+                      className="input"
+                      value={PDCA_CATEGORIES.includes(editDraft.classification) ? editDraft.classification : "__other"}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__other") onDraft("classification", "");
+                        else onDraft("classification", v);
+                      }}
+                    >
+                      <option value="__other">Outra (personalizada)</option>
+                      {PDCA_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    {!PDCA_CATEGORIES.includes(editDraft.classification) ? (
+                      <input
+                        className="input"
+                        style={{ marginTop: 8 }}
+                        placeholder="Digite a classificação"
+                        value={editDraft.classification || ""}
+                        onChange={(e) => onDraft("classification", e.target.value)}
+                      />
+                    ) : null}
                   </Field>
                   <Field label="Situação">
                     <input className="input" value={editDraft.situation || ""} onChange={(e) => onDraft("situation", e.target.value)} />

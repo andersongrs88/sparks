@@ -304,6 +304,12 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
 }
 
+/* Field labels used by page-level Field() helper */
+.labelRow { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.label { font-size: 12px; color: var(--muted); font-weight: 800; }
+.hint { font-size: 11px; color: var(--muted); }
+.hintReq { color: var(--danger); font-weight: 900; }
+
 .input {
   width: 100%;
   border: 1px solid var(--line);

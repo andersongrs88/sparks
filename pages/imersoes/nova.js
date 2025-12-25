@@ -12,11 +12,14 @@ const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 const IMMERSION_FORMATS = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
 
 function Field({ label, children, hint }) {
+  const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
   return (
     <div style={{ marginBottom: 10 }}>
       <div className="labelRow">
         <label className="label">{label}</label>
-        {hint ? <span className="hint">{hint}</span> : null}
+        {hint ? (
+          <span className={`hint ${isReq ? "hintReq" : ""}`}>{isReq ? "(obrigatório)" : hint}</span>
+        ) : null}
       </div>
       {children}
     </div>
