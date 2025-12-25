@@ -1833,11 +1833,7 @@ function normalizeTemplatesForClone(items) {
                 <div className="onlyMobile">
                   <button className="btn sm" onClick={() => setShowScheduleFilters(true)}>Filtros</button>
                 </div>
-                <div className="onlyMobile">
-                  <button type="button" className="btn sm" onClick={() => setShowScheduleFilters(true)}>Filtros</button>
-                </div>
-
-                <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+<div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <select className="input" value={scheduleUi.day} onChange={(e) => setScheduleUi((p) => ({ ...p, day: e.target.value }))}>
                     <option value="ALL">Todos os dias</option>
                     {Array.from(new Set((scheduleItems || []).map((it) => String(it.day_label || it.day_date || "Sem dia"))))
@@ -1856,6 +1852,7 @@ function normalizeTemplatesForClone(items) {
                       ))}
                   </select>
                 </div>
+              </div>
               <div className="toolbarRight">
                 <button
                   type="button"
