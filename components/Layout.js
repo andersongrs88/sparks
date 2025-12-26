@@ -3,7 +3,8 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { roleLabel } from "../lib/permissions";
+import { canSeeMenuItem, roleLabel } from "../lib/permissions";
+import { getNotificationSummary } from "../lib/notifications";
 // Notificações removidas por opção de produto (tela não utilizada).
 
 const SYSTEM_FULL_NAME = "Sparks by Educagrama, Sistema Inteligente de Planejamento e Gestão do Conhecimento";
@@ -50,8 +51,24 @@ export default function Layout({ title, children, hideNav = false }) {
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
 
   const pageTitle = useMemo(() => title || "Sparks", [title]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!user || user.id === "noauth") { setNotifCount(0); return; }
+        const res = await getNotificationSummary({ user, profile, isFullAccess });
+        if (!alive) return;
+        setNotifCount(Number(res?.total || 0));
+      } catch {
+        if (!alive) return;
+        setNotifCount(0);
+      }
+    })();
+    return () => { alive = false; };
+  }, [user?.id, profile?.role, isFullAccess]);
   const documentTitle = useMemo(() => {
     // Discreto: mantém o nome completo do sistema no título do navegador,
     // sem poluir a UI de cada tela.
@@ -83,13 +100,13 @@ export default function Layout({ title, children, hideNav = false }) {
         </div>
 
         <nav className="nav" aria-label="Navegação principal">
-          <NavItem href="/dashboard" label="Dashboard" icon="▦" />
-          <NavItem href="/imersoes" label="Imersões" icon="📅" />
-          <NavItem href="/painel" label="Plano de Ação" icon="✅" />
-          <NavItem href="/relatorios" label="Relatórios" icon="📊" />
-          {isFullAccess ? <NavItem href="/configuracoes/templates" label="Templates" icon="🧩" /> : null}
-          {isFullAccess ? <NavItem href="/palestrantes" label="Palestrantes" icon="🎤" /> : null}
-          {isFullAccess ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
+          {canSeeMenuItem(role, "dashboard") ? <NavItem href="/dashboard" label="Dashboard" icon="▦" /> : null}
+          {canSeeMenuItem(role, "imersoes") ? <NavItem href="/imersoes" label="Imersões" icon="📅" /> : null}
+          {canSeeMenuItem(role, "painel") ? <NavItem href="/painel" label="Plano de Ação" icon="✅" /> : null}
+          {canSeeMenuItem(role, "relatorios") ? <NavItem href="/relatorios" label="Relatórios" icon="📊" /> : null}
+          {canSeeMenuItem(role, "templates") ? <NavItem href="/configuracoes/templates" label="Templates" icon="🧩" /> : null}
+          {canSeeMenuItem(role, "palestrantes") ? <NavItem href="/palestrantes" label="Palestrantes" icon="🎤" /> : null}
+          {canSeeMenuItem(role, "usuarios") ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
         </nav>
 
         {!hideNav && user?.id && user.id !== "noauth" ? (
@@ -136,7 +153,24 @@ export default function Layout({ title, children, hideNav = false }) {
             </div>
           </div>
 
-          <div className="row" style={{ gap: 10 }}>
+          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+            <button
+              type="button"
+              className="btn icon"
+              onClick={async () => {
+                try {
+                  if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+                    await Notification.requestPermission();
+                  }
+                } catch {}
+                router.push("/notificacoes");
+              }}
+              aria-label="Abrir notificações"
+              title="Notificações"
+            >
+              🔔
+              {notifCount > 0 ? <span className="badge" aria-label={`${notifCount} notificações`}>{notifCount}</span> : null}
+            </button>
             <ThemeToggle />
           </div>
         </header>

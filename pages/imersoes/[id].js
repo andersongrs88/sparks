@@ -7,7 +7,7 @@ import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immers
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { canEditTask, roleLabel } from "../../lib/permissions";
+import { canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
@@ -263,19 +263,22 @@ export default function ImmersionDetailEditPage() {
   const [editModal, setEditModal] = useState({ type: "", open: false, item: null });
   const [editDraft, setEditDraft] = useState({});
 
-  const tabs = useMemo(
-  () => [
-    { key: "informacoes", label: "Informações" },
-    { key: "narrativa", label: "Narrativa" },
-    { key: "ferramentas", label: "Ferramentas" },
-    { key: "materiais", label: "Materiais" },
-    { key: "videos", label: "Vídeos" },
-    { key: "pdca", label: "PDCA" },
-    { key: "custos", label: "Custos" },
-    { key: "trainer", label: "Trainer/Palestrante" },
-  ],
-  []
-);
+  const tabs = useMemo(() => {
+    const base = [
+      { key: "informacoes", label: "Informações" },
+      { key: "narrativa", label: "Narrativa" },
+      { key: "ferramentas", label: "Ferramentas" },
+      { key: "materiais", label: "Materiais" },
+      { key: "videos", label: "Vídeos" },
+      { key: "pdca", label: "PDCA" },
+      { key: "trainer", label: "Trainer/Palestrante" },
+    ];
+    // Perfis limitados (Eventos/Produção) não visualizam Custos
+    if (!isLimitedImmersionRole(role)) {
+      base.splice(6, 0, { key: "custos", label: "Custos" });
+    }
+    return base;
+  }, [role]);
 
   // Protege a rota (MVP)
   useEffect(() => {
@@ -466,6 +469,7 @@ export default function ImmersionDetailEditPage() {
         const payload = {
           immersion_id: id,
           material: (editDraft.material || "").trim(),
+          material_type: editDraft.material_type || null,
           link: editDraft.link || null,
           quantity: editDraft.quantity === "" || editDraft.quantity === null || typeof editDraft.quantity === "undefined" ? null : Number(editDraft.quantity),
           specification: editDraft.specification || null,
@@ -3261,6 +3265,15 @@ function normalizeTemplatesForClone(items) {
                 <div className="grid2">
                   <Field label="Material">
                     <input className="input" value={editDraft.material || ""} onChange={(e) => onDraft("material", e.target.value)} />
+                  </Field>
+                  <Field label="Tipo">
+                    <select className="input" value={editDraft.material_type || ""} onChange={(e) => onDraft("material_type", e.target.value)}>
+                      <option value="">—</option>
+                      <option value="PPT">PPT</option>
+                      <option value="PDF">PDF</option>
+                      <option value="DOC">DOC</option>
+                      <option value="Outro">Outro</option>
+                    </select>
                   </Field>
                   <Field label="Link">
                     <input className="input" value={editDraft.link || ""} onChange={(e) => onDraft("link", e.target.value)} />

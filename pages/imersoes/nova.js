@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 import { applyTypeTemplates } from "../../lib/templates";
+import { listTemplates } from "../../lib/templates";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
@@ -33,6 +34,7 @@ export default function NovaImersaoPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [people, setPeople] = useState([]);
+  const [checklistTemplates, setChecklistTemplates] = useState([]);
 
   const [form, setForm] = useState({
     immersion_name: "",
@@ -44,6 +46,9 @@ export default function NovaImersaoPage() {
     status: "Planejamento",
     educational_consultant: "",
     instructional_designer: "",
+    production_responsible: "",
+    events_responsible: "",
+    checklist_template_id: "",
     mentors_present: "",
     need_specific_staff: false,
     staff_justification: "",
@@ -69,6 +74,14 @@ export default function NovaImersaoPage() {
       } catch {
         // silencioso: o cadastro ainda funciona sem a lista de pessoas
       }
+
+      try {
+        const tpl = await listTemplates();
+        const active = (tpl || []).filter((t) => t.is_active !== false);
+        if (mounted) setChecklistTemplates(active);
+      } catch {
+        // silencioso
+      }
     })();
     return () => { mounted = false; };
   }, []);
@@ -91,7 +104,16 @@ export default function NovaImersaoPage() {
       return;
     }
     if (!form.educational_consultant || !form.instructional_designer) {
-      setError("Defina os 2 responsáveis do time de educação: Consultor e Designer.");
+      setError("Defina os responsáveis do time de educação: Consultor e Designer.");
+      return;
+    }
+
+    if (!form.production_responsible) {
+      setError("Defina o responsável de Produção desta imersão.");
+      return;
+    }
+    if (!form.production_responsible) {
+      setError("Defina o responsável de Produção.");
       return;
     }
 
@@ -107,6 +129,9 @@ export default function NovaImersaoPage() {
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
+        production_responsible: form.production_responsible,
+        events_responsible: form.events_responsible || null,
+        checklist_template_id: form.checklist_template_id || null,
         mentors_present: form.mentors_present || null,
 
         need_specific_staff: !!form.need_specific_staff,
@@ -114,6 +139,24 @@ export default function NovaImersaoPage() {
         service_order_link: form.service_order_link || null,
         technical_sheet_link: form.technical_sheet_link || null
       });
+
+      // Aplica checklist-template (gera tarefas) — best-effort
+      if (form.checklist_template_id) {
+        try {
+          await fetch("/api/immersions/apply-checklist-template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              immersion_id: created.id,
+              template_id: form.checklist_template_id,
+              start_date: form.start_date,
+              end_date: form.end_date,
+            }),
+          });
+        } catch (_) {
+          // não bloqueia
+        }
+      }
 
 if (loadTypeTemplates) {
         try {
@@ -127,6 +170,22 @@ if (loadTypeTemplates) {
         } catch (e) {
           // best-effort: do not block creation if templates tables are missing
           console.warn("applyTypeTemplates failed", e);
+        }
+      }
+
+      // Checklist template (gera tarefas baseadas no checklist_template_items)
+      if (form.checklist_template_id) {
+        try {
+          await fetch("/api/immersions/apply-checklist-template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              immersion_id: created.id,
+              template_id: form.checklist_template_id,
+            }),
+          });
+        } catch (e) {
+          console.warn("apply-checklist-template failed", e);
         }
       }
 
@@ -253,6 +312,38 @@ if (loadTypeTemplates) {
                   </select>
                 </Field>
               </div>
+
+              <div className="grid2">
+                <Field label="Produção (responsável)" hint="Obrigatório">
+                  <select className="input" value={form.production_responsible} onChange={(e) => setForm((p) => ({ ...p, production_responsible: e.target.value }))}>
+                    <option value="">Selecione</option>
+                    {people.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name ? `${p.name} (${p.email})` : p.email}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Eventos (opcional)">
+                  <select className="input" value={form.events_responsible} onChange={(e) => setForm((p) => ({ ...p, events_responsible: e.target.value }))}>
+                    <option value="">—</option>
+                    {people.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name ? `${p.name} (${p.email})` : p.email}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Checklist template (opcional)" hint="Gera tarefas automaticamente">
+                <select className="input" value={form.checklist_template_id} onChange={(e) => setForm((p) => ({ ...p, checklist_template_id: e.target.value }))}>
+                  <option value="">—</option>
+                  {checklistTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </Field>
 
               <Field label="Mentores presentes">
                 <input className="input" value={form.mentors_present} onChange={(e) => setForm((p) => ({ ...p, mentors_present: e.target.value }))} placeholder="Ex.: Nome 1, Nome 2" />

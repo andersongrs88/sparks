@@ -29,7 +29,7 @@ function iso(d) {
 export default function RelatoriosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [data, setData] = useState({ overdueByImmersion: [], tasksByOwner: [], costByImmersion: [], riskImmersions: [], workload: [] });
+  const [data, setData] = useState({ overdueByImmersion: [], tasksByOwner: [], costByImmersion: [], riskImmersions: [], workload: [], productivity: [] });
 
   useEffect(() => {
     let mounted = true;
@@ -114,13 +114,27 @@ export default function RelatoriosPage() {
           // best-effort
         }
 
+        // 5) Produtividade (PPT/Vídeos/Ferramentas) - view opcional
+        let productivity = [];
+        try {
+          const { data: prod, error: eProd } = await supabase
+            .from("immersion_productivity")
+            .select("immersion_id, immersion_name, ppt_count, video_count, tool_count, material_count")
+            .order("immersion_name", { ascending: true })
+            .limit(5000);
+          if (!eProd) productivity = prod || [];
+        } catch {
+          // best-effort
+        }
+
         if (!mounted) return;
         setData({
           overdueByImmersion: Array.from(byImm.values()).sort((a, b) => b.overdue - a.overdue).slice(0, 30),
           tasksByOwner: Array.from(byOwner.values()).sort((a, b) => (b.open + b.done) - (a.open + a.done)).slice(0, 30),
           costByImmersion: Array.from(byCost.values()).sort((a, b) => b.total - a.total).slice(0, 30),
           riskImmersions,
-          workload
+          workload,
+          productivity
         });
       } catch (e) {
         if (!mounted) return;
@@ -133,7 +147,7 @@ export default function RelatoriosPage() {
   }, []);
 
   const hasAny = useMemo(
-    () => (data.overdueByImmersion.length + data.tasksByOwner.length + data.costByImmersion.length + data.riskImmersions.length + data.workload.length) > 0,
+    () => (data.overdueByImmersion.length + data.tasksByOwner.length + data.costByImmersion.length + data.riskImmersions.length + data.workload.length + (data.productivity?.length || 0)) > 0,
     [data]
   );
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { getProfileById } from "../lib/profiles";
+import { normalizeRole } from "../lib/permissions";
 
 /**
  * AuthContext
@@ -14,7 +15,7 @@ import { getProfileById } from "../lib/profiles";
  */
 const AuthContext = createContext(null);
 
-const FULL_ACCESS_ROLES = new Set(["admin", "consultor_educacao", "designer"]);
+const FULL_ACCESS_ROLES = new Set(["admin", "consultor", "consultor_educacao", "designer"]);
 const PDCA_EDIT_ROLES = new Set(["eventos", "producao", "mentoria", "outros"]);
 
 export function AuthProvider({ children }) {
@@ -115,9 +116,11 @@ export function AuthProvider({ children }) {
     };
   }, [refreshProfile]);
 
-  const role = profile?.role || "viewer";
-  const isFullAccess = FULL_ACCESS_ROLES.has(role) || (user?.id === "noauth");
-  const canEditPdca = isFullAccess || PDCA_EDIT_ROLES.has(role);
+  const role = normalizeRole(profile?.role || "viewer");
+  // Mantém compatibilidade com bases antigas.
+  const normRole = role === "consultor_educacao" ? "consultor" : role;
+  const isFullAccess = FULL_ACCESS_ROLES.has(normRole) || FULL_ACCESS_ROLES.has(role) || (user?.id === "noauth");
+  const canEditPdca = isFullAccess || PDCA_EDIT_ROLES.has(normRole) || PDCA_EDIT_ROLES.has(role);
 
   const value = useMemo(
     () => ({
