@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import { useRouter } from "next/router";
-import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
@@ -32,42 +32,72 @@ export default function LoginPage() {
   }
 
   return (
-    <Layout title="Acesso" hideNav>
-      <div className="card" style={{ maxWidth: 520, margin: "0 auto" }}>
-        <div className="h1">Acesso ao sistema</div>
-        <div className="small" style={{ marginTop: 6 }}>
-          Sparks — Sistema Estratégico de Planejamento e Gestão do Conhecimento
+    <>
+      <Head>
+        <title>Acesso | Sparks</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </Head>
+
+      {/* Wrapper full-screen centralizado (desktop e mobile) */}
+      <div className="min-h-screen w-full flex items-center justify-center p-6">
+        {/* Mantém largura consistente no desktop */}
+        <div className="w-full max-w-md">
+          <div className="card">
+            <div className="h1">Acesso ao sistema</div>
+            <div className="small" style={{ marginTop: 6 }}>
+              Sparks — Sistema Estratégico de Planejamento e Gestão do Conhecimento
+            </div>
+
+            {!hasAuthEnabled ? (
+              <div className="alert warn" style={{ marginTop: 12 }}>
+                Supabase Auth não está configurado (variáveis NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).
+                Configure na Vercel para habilitar login.
+              </div>
+            ) : null}
+
+            <form onSubmit={onSubmit} style={{ marginTop: 14 }}>
+              <div className="field">
+                <div className="label">E-mail</div>
+                <input
+                  className="input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                />
+              </div>
+
+              <div className="field">
+                <div className="label">Senha</div>
+                <input
+                  className="input"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {error ? (
+                <div className="alert danger" style={{ marginTop: 10 }}>
+                  {error}
+                </div>
+              ) : null}
+
+              <button
+                className="btn primary"
+                disabled={busy || !hasAuthEnabled}
+                style={{ width: "100%", marginTop: 12 }}
+              >
+                {busy ? "Entrando..." : "Entrar"}
+              </button>
+
+              <div className="small" style={{ marginTop: 12 }}>
+                Dica: usuários são criados no Supabase (Authentication → Users). Depois ajuste o papel em /usuarios.
+              </div>
+            </form>
+          </div>
         </div>
-
-        {!hasAuthEnabled ? (
-          <div className="alert warn" style={{ marginTop: 12 }}>
-            Supabase Auth não está configurado (variáveis NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).
-            Configure na Vercel para habilitar login.
-          </div>
-        ) : null}
-
-        <form onSubmit={onSubmit} style={{ marginTop: 14 }}>
-          <div className="field">
-            <div className="label">E-mail</div>
-            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" />
-          </div>
-
-          <div className="field">
-            <div className="label">Senha</div>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-          </div>
-
-          {error ? <div className="alert danger" style={{ marginTop: 10 }}>{error}</div> : null}
-
-          <button className="btn primary" disabled={busy || !hasAuthEnabled} style={{ width: "100%", marginTop: 12 }}>
-            {busy ? "Entrando..." : "Entrar"}
-          </button>
-
-          <div className="small" style={{ marginTop: 12 }}>
-            Dica: usuários são criados no Supabase (Authentication → Users). Depois ajuste o papel em /usuarios.
-          </div>
-        </form>
       </div>
-    </Layout>
+    </>
   );
 }
