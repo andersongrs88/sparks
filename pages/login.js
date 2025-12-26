@@ -138,9 +138,8 @@ export default function LoginPage() {
       <style jsx>{`
         .page {
           min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          display: grid;
+          place-items: center;
           padding: 28px 16px;
           background: radial-gradient(1200px 600px at 30% 0%, rgba(90, 140, 255, 0.12), transparent 60%),
             radial-gradient(900px 500px at 90% 20%, rgba(34, 197, 94, 0.10), transparent 55%),
