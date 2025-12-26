@@ -45,7 +45,7 @@ function ThemeToggle() {
 }
 
 export default function Layout({ title, children, hideNav = false }) {
-  const { loading, profile, isFullAccess } = useAuth();
+  const { loading, profile, isFullAccess, user, signOut } = useAuth();
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
 
