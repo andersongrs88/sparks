@@ -205,26 +205,30 @@ export default function PalestranteDetailPage() {
           <div className="h1">{speaker?.full_name || "Palestrante"}</div>
           <div className="small muted">Gerencie dados do palestrante e Rider do evento.</div>
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn" type="button" onClick={() => router.push("/palestrantes")} disabled={busy}>
-            Voltar
-          </button>
-          <button className="btn danger" type="button" onClick={onDeleteSpeaker} disabled={busy}>
-            Excluir
-          </button>
+        <div className="stack" style={{ gap: 10, alignItems: "flex-end" }}>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button className="btn" type="button" onClick={() => router.push("/palestrantes")} disabled={busy}>
+              Voltar
+            </button>
+            <button className="btn danger" type="button" onClick={onDeleteSpeaker} disabled={busy}>
+              Excluir
+            </button>
+          </div>
+
+          <div className="row" style={{ gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button className={`btn ${tab === "dados" ? "primary" : ""}`} type="button" onClick={() => setTab("dados")}>
+              Dados
+            </button>
+            <button className={`btn ${tab === "rider" ? "primary" : ""}`} type="button" onClick={() => setTab("rider")}>
+              Rider
+            </button>
+          </div>
         </div>
       </div>
 
       {error ? <div className="alert danger">{error}</div> : null}
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <button className={`btn ${tab === "dados" ? "primary" : ""}`} type="button" onClick={() => setTab("dados")}>
-          Dados
-        </button>
-        <button className={`btn ${tab === "rider" ? "primary" : ""}`} type="button" onClick={() => setTab("rider")}>
-          Rider
-        </button>
-      </div>
+
 
       {tab === "dados" ? (
         <div className="card">

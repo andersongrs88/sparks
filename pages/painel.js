@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
 import BottomSheet from "../components/BottomSheet";
@@ -62,6 +62,7 @@ export default function PainelPage() {
   const [immersionOptions, setImmersionOptions] = useState([]);
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const overdueSyncDone = useRef(false);
   const selectedCount = selectedIds.size;
 
   const [showFilters, setShowFilters] = useState(false);
@@ -123,10 +124,14 @@ export default function PainelPage() {
       setError("");
       setLoading(true);
 
-      // Governança: tenta manter atrasadas sinalizadas (best-effort)
-      try {
-        await syncOverdueTasksGlobal();
-      } catch {}
+      // Governança: manter atrasadas sinalizadas (best-effort)
+      // Evita rodar em toda mudança de filtro para não degradar performance.
+      if (!overdueSyncDone.current) {
+        try {
+          await syncOverdueTasksGlobal();
+        } catch {}
+        overdueSyncDone.current = true;
+      }
 
       // Select compatível com bases antigas
       const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";

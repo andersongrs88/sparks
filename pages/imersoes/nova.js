@@ -4,8 +4,9 @@ import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
-import { applyTypeTemplates } from "../../lib/templates";
+import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
+import { listSpeakers } from "../../lib/speakers";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
@@ -35,6 +36,8 @@ export default function NovaImersaoPage() {
   const [error, setError] = useState("");
   const [people, setPeople] = useState([]);
   const [checklistTemplates, setChecklistTemplates] = useState([]);
+  const [immersionOptions, setImmersionOptions] = useState([]);
+  const [speakers, setSpeakers] = useState([]);
 
   const [form, setForm] = useState({
     immersion_name: "",
@@ -48,6 +51,10 @@ export default function NovaImersaoPage() {
     instructional_designer: "",
     production_responsible: "",
     events_responsible: "",
+
+    // Palestrantes
+    trainer_speaker_id: "",
+    speaker_ids: [""],
     checklist_template_id: "",
     mentors_present: "",
     need_specific_staff: false,
@@ -56,8 +63,8 @@ export default function NovaImersaoPage() {
     technical_sheet_link: ""
   });
 
-  const [loadTypeTemplates, setLoadTypeTemplates] = useState(true);
-  const [templateModules, setTemplateModules] = useState({ tasks: true, schedule: true, materials: true, tools: true, videos: true });
+  // Clonar imersão inteira (substitui o bloco "Templates do tipo")
+  const [cloneSourceId, setCloneSourceId] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -76,11 +83,32 @@ export default function NovaImersaoPage() {
       }
 
       try {
+        const sp = await listSpeakers();
+        if (mounted) setSpeakers(sp || []);
+      } catch {
+        // opcional
+      }
+
+      try {
         const tpl = await listTemplates();
         const active = (tpl || []).filter((t) => t.is_active !== false);
         if (mounted) setChecklistTemplates(active);
       } catch {
         // silencioso
+      }
+
+      // Opções para clonagem
+      try {
+        const { data, error: e } = await supabase
+          .from("immersions")
+          .select("id, immersion_name, start_date")
+          .order("start_date", { ascending: false })
+          .limit(300);
+        if (!e && mounted) {
+          setImmersionOptions((data || []).map((r) => ({ id: r.id, name: r.immersion_name, start_date: r.start_date })));
+        }
+      } catch {
+        // best-effort
       }
     })();
     return () => { mounted = false; };
@@ -119,6 +147,44 @@ export default function NovaImersaoPage() {
 
     setSaving(true);
     try {
+      // Clonar imersão inteira (copia tarefas, cronograma, materiais, ferramentas, vídeos, PDCA e custos)
+      if (cloneSourceId) {
+        const r = await fetch("/api/immersions/clone-full", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_id: cloneSourceId,
+            overrides: {
+              immersion_name: form.immersion_name.trim(),
+              type: form.type,
+              start_date: form.start_date,
+              end_date: form.end_date,
+              room_location: form.room_location,
+              status: form.status,
+              educational_consultant: form.educational_consultant,
+              instructional_designer: form.instructional_designer,
+              production_responsible: form.production_responsible,
+              events_responsible: form.events_responsible || null,
+            trainer_speaker_id: form.trainer_speaker_id || null,
+            speaker_ids: (form.speaker_ids || []).filter(Boolean),
+              checklist_template_id: form.checklist_template_id || null,
+              mentors_present: form.mentors_present || null,
+              need_specific_staff: !!form.need_specific_staff,
+              staff_justification: form.need_specific_staff ? (form.staff_justification || null) : null,
+              service_order_link: form.service_order_link || null,
+              technical_sheet_link: form.technical_sheet_link || null,
+            }
+          })
+        });
+        if (!r.ok) {
+          const msg = await r.text();
+          throw new Error(msg || "Falha ao clonar imersão.");
+        }
+        const out = await r.json();
+        router.push(`/imersoes/${out?.id}`);
+        return;
+      }
+
       const created = await createImmersion({
         immersion_name: form.immersion_name.trim(),
         type: form.type,
@@ -131,6 +197,8 @@ export default function NovaImersaoPage() {
         instructional_designer: form.instructional_designer,
         production_responsible: form.production_responsible,
         events_responsible: form.events_responsible || null,
+        trainer_speaker_id: form.trainer_speaker_id || null,
+        speaker_ids: (form.speaker_ids || []).filter(Boolean),
         checklist_template_id: form.checklist_template_id || null,
         mentors_present: form.mentors_present || null,
 
@@ -140,40 +208,7 @@ export default function NovaImersaoPage() {
         technical_sheet_link: form.technical_sheet_link || null
       });
 
-      // Aplica checklist-template (gera tarefas) — best-effort
-      if (form.checklist_template_id) {
-        try {
-          await fetch("/api/immersions/apply-checklist-template", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              immersion_id: created.id,
-              template_id: form.checklist_template_id,
-              start_date: form.start_date,
-              end_date: form.end_date,
-            }),
-          });
-        } catch (_) {
-          // não bloqueia
-        }
-      }
-
-if (loadTypeTemplates) {
-        try {
-          await applyTypeTemplates({
-            immersionId: created.id,
-            immersionType: form.type,
-            startDate: form.start_date,
-            endDate: form.end_date,
-            include: templateModules
-          });
-        } catch (e) {
-          // best-effort: do not block creation if templates tables are missing
-          console.warn("applyTypeTemplates failed", e);
-        }
-      }
-
-      // Checklist template (gera tarefas baseadas no checklist_template_items)
+      // Checklist template (gera tarefas baseadas no checklist_template_items) — best-effort
       if (form.checklist_template_id) {
         try {
           await fetch("/api/immersions/apply-checklist-template", {
@@ -228,33 +263,16 @@ if (loadTypeTemplates) {
                 </Field>
               </div>
               <div className="card" style={{ padding: 12, marginTop: 8, background: "var(--bg2)", border: "1px solid var(--border)" }}>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div className="small" style={{ fontWeight: 700 }}>Templates do tipo</div>
-                    <div className="small muted">Ao criar, o sistema pode pré-carregar tarefas, cronograma, materiais, ferramentas e vídeos para este tipo.</div>
-                  </div>
-                  <label className="row" style={{ gap: 8, alignItems: "center" }}>
-                    <input type="checkbox" checked={loadTypeTemplates} onChange={(e) => setLoadTypeTemplates(e.target.checked)} />
-                    <span className="small">Carregar automaticamente</span>
-                  </label>
+                <div className="small" style={{ fontWeight: 800, marginBottom: 6 }}>Clonar imersão (opcional)</div>
+                <div className="small muted" style={{ marginBottom: 10 }}>
+                  Se você escolher uma imersão base, o sistema copia a estrutura completa (tarefas, cronograma, materiais, ferramentas, vídeos, PDCA e custos) e ajusta os prazos pela nova data inicial.
                 </div>
-
-                {loadTypeTemplates ? (
-                  <div className="row" style={{ gap: 14, flexWrap: "wrap", marginTop: 10 }}>
-                    {(["tasks","schedule","materials","tools","videos"]).map((k) => (
-                      <label key={k} className="row" style={{ gap: 8, alignItems: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={!!templateModules[k]}
-                          onChange={(e) => setTemplateModules((p) => ({ ...p, [k]: e.target.checked }))}
-                        />
-                        <span className="small">
-                          {k === "tasks" ? "Tarefas" : k === "schedule" ? "Cronograma" : k === "materials" ? "Materiais" : k === "tools" ? "Ferramentas" : "Vídeos"}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
+                <select className="input" value={cloneSourceId} onChange={(e) => setCloneSourceId(e.target.value)}>
+                  <option value="">Não clonar</option>
+                  {immersionOptions.map((it) => (
+                    <option key={it.id} value={it.id}>{it.name}{it.start_date ? ` — ${it.start_date}` : ""}</option>
+                  ))}
+                </select>
               </div>
 
 
@@ -348,6 +366,78 @@ if (loadTypeTemplates) {
               <Field label="Mentores presentes">
                 <input className="input" value={form.mentors_present} onChange={(e) => setForm((p) => ({ ...p, mentors_present: e.target.value }))} placeholder="Ex.: Nome 1, Nome 2" />
               </Field>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Palestrantes</div>
+            <div className="sectionBody">
+              <div className="grid2">
+                <Field label="Nome do Trainer" hint="Opcional">
+                  <select
+                    className="input"
+                    value={form.trainer_speaker_id}
+                    onChange={(e) => setForm((p) => ({ ...p, trainer_speaker_id: e.target.value }))}
+                  >
+                    <option value="">—</option>
+                    {speakers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.full_name || s.email}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Vai ter palestrante?" hint="Opcional">
+                  <div className="stack" style={{ gap: 10 }}>
+                    {(form.speaker_ids || []).map((sid, idx) => (
+                      <div key={idx} className="row" style={{ gap: 10 }}>
+                        <select
+                          className="input"
+                          value={sid}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setForm((p) => {
+                              const next = [...(p.speaker_ids || [])];
+                              next[idx] = v;
+                              return { ...p, speaker_ids: next };
+                            });
+                          }}
+                        >
+                          <option value="">Selecione</option>
+                          {speakers.map((s) => (
+                            <option key={s.id} value={s.id}>{s.full_name || s.email}</option>
+                          ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            setForm((p) => {
+                              const next = [...(p.speaker_ids || [])];
+                              next.splice(idx, 1);
+                              return { ...p, speaker_ids: next.length ? next : [""] };
+                            });
+                          }}
+                          disabled={(form.speaker_ids || []).length === 1}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+
+                    <div className="row" style={{ gap: 10 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => setForm((p) => ({ ...p, speaker_ids: [...(p.speaker_ids || []), ""] }))}
+                      >
+                        + Adicionar palestrante
+                      </button>
+                      <div className="small muted">Você pode vincular múltiplos palestrantes nesta imersão.</div>
+                    </div>
+                  </div>
+                </Field>
+              </div>
             </div>
           </div>
 

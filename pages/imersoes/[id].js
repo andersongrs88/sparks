@@ -812,148 +812,34 @@ function normalizeTemplatesForClone(items) {
       if (!cloneForm.start_date || !cloneForm.end_date) throw new Error("Informe data inicial e final.");
       if (new Date(cloneForm.end_date) < new Date(cloneForm.start_date)) throw new Error("A data final não pode ser anterior à inicial.");
 
-      const created = await supabase
-        .from("immersions")
-        .insert([
-          {
+      const r = await fetch("/api/immersions/clone-full", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_id: form.id,
+          overrides: {
             immersion_name: cloneForm.immersion_name.trim(),
             type: cloneForm.type,
             start_date: cloneForm.start_date,
             end_date: cloneForm.end_date,
             room_location: cloneForm.room_location,
             status: "Planejamento",
-
-            // Responsáveis copiados da imersão origem
             educational_consultant: form.educational_consultant || null,
             instructional_designer: form.instructional_designer || null,
+            production_responsible: form.production_responsible || null,
+            events_responsible: form.events_responsible || null,
           },
-        ])
-        .select("*")
-        .single();
+        }),
+      });
 
-      if (created.error) throw created.error;
-      const newImmersion = created.data;
-
-      if (cloneForm.include_templates) {
-        // Carrega templates se ainda não estiverem na memória
-        if (!templatesData || templatesData.length === 0) {
-          try {
-            await fetchTemplates();
-          } catch {
-            // se falhar, segue sem templates
-          }
-        }
-
-        const norm = normalizeTemplatesForClone(templatesData || []);
-        const phaseEnabled = cloneForm.phases || { "PA-PRE": true, DURANTE: true, POS: true };
-        const chosen = norm.filter((t) => !!phaseEnabled[t.phase]);
-
-        if (chosen.length > 0) {
-          const rows = chosen.map((t) => ({
-            immersion_id: newImmersion.id,
-            title: t.title,
-            phase: t.phase,
-            status: t.status,
-            created_by: user?.id || null,
-          }));
-          await createTasks(rows);
-        }
+      if (!r.ok) {
+        const msg = await r.text();
+        throw new Error(msg || "Falha ao clonar imersão.");
       }
-
-      // Copiar cronograma (itens de agenda)
-      if (cloneForm.include_schedule) {
-        try {
-          const src = await listScheduleItems(form.id);
-          const rows = (src || []).map((it) => ({
-            immersion_id: newImmersion.id,
-            day_label: it.day_label ?? null,
-            day_date: it.day_date ?? null,
-            sort_order: it.sort_order ?? null,
-            start_time: it.start_time ?? null,
-            end_time: it.end_time ?? null,
-            duration_minutes: typeof it.duration_minutes === "number" ? it.duration_minutes : (it.duration_minutes ?? null),
-            activity_type: it.activity_type ?? null,
-            topics: it.topics ?? null,
-            responsible: it.responsible ?? null,
-            link: it.link ?? null,
-            staff_notes: it.staff_notes ?? null,
-          }));
-
-          if (rows.length > 0) {
-            const { error: schErr } = await supabase.from("immersion_schedule_items").insert(rows);
-            if (schErr) throw schErr;
-          }
-        } catch (e) {
-          throw new Error(e?.message || "Falha ao copiar cronograma.");
-        }
-      }
-
-      // Copiar materiais
-      if (cloneForm.include_materials) {
-        try {
-          const src = await listMaterials(form.id);
-          const rows = (src || []).map((m) => ({
-            immersion_id: newImmersion.id,
-            material: m.material ?? null,
-            link: m.link ?? null,
-            quantity: m.quantity ?? null,
-            specification: m.specification ?? null,
-            reference: m.reference ?? null,
-          }));
-
-          if (rows.length > 0) {
-            const { error: matErr } = await supabase.from("immersion_materials").insert(rows);
-            if (matErr) throw matErr;
-          }
-        } catch (e) {
-          throw new Error(e?.message || "Falha ao copiar materiais.");
-        }
-      }
-
-      // Copiar ferramentas
-      if (cloneForm.include_tools) {
-        try {
-          const src = await listTools(form.id);
-          const rows = (src || []).map((t) => ({
-            immersion_id: newImmersion.id,
-            name: t.name ?? null,
-            link: t.link ?? null,
-            print_guidance: t.print_guidance ?? null,
-            print_quantity: t.print_quantity ?? null,
-          }));
-
-          if (rows.length > 0) {
-            const { error: toolErr } = await supabase.from("immersion_tools").insert(rows);
-            if (toolErr) throw toolErr;
-          }
-        } catch (e) {
-          throw new Error(e?.message || "Falha ao copiar ferramentas.");
-        }
-      }
-
-      // Copiar vídeos
-      if (cloneForm.include_videos) {
-        try {
-          const src = await listVideos(form.id);
-          const rows = (src || []).map((v) => ({
-            immersion_id: newImmersion.id,
-            title: v.title ?? null,
-            when_to_use: v.when_to_use ?? null,
-            link: v.link ?? null,
-            area: v.area ?? null,
-          }));
-
-          if (rows.length > 0) {
-            const { error: vidErr } = await supabase.from("immersion_videos").insert(rows);
-            if (vidErr) throw vidErr;
-          }
-        } catch (e) {
-          throw new Error(e?.message || "Falha ao copiar vídeos.");
-        }
-      }
+      const out = await r.json();
 
       setCloneFlow({ open: false, loading: false, error: "" });
-      router.push(`/imersoes/${newImmersion.id}`);
+      router.push(`/imersoes/${out?.id}`);
     } catch (e) {
       setCloneFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao clonar." }));
     }
@@ -1467,9 +1353,6 @@ function normalizeTemplatesForClone(items) {
                 </button>
               )}
 
-              <button type="button" className="btn" onClick={openApplyTemplatesFlow} disabled={!full} title="Aplicar templates por tipo nesta imersão (sem duplicar itens)">
-                Aplicar templates
-              </button>
 
               {form?.status !== "Concluída" ? (
                 <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full}>
@@ -3479,76 +3362,6 @@ function normalizeTemplatesForClone(items) {
       ) : null}
 
       
-      {applyTplFlow?.open ? (
-        <div className="overlay" role="dialog" aria-modal="true">
-          <div className="dialog" style={{ maxWidth: 860 }}>
-            <div className="dialogHeader">
-              <div>
-                <div className="h2" style={{ margin: 0 }}>Aplicar templates por tipo</div>
-                <div className="small muted" style={{ marginTop: 2 }}>
-                  Aplica itens do tipo selecionado nesta imersão. Não duplica itens que já existem.
-                </div>
-              </div>
-              <div className="row" style={{ gap: 10 }}>
-                <button type="button" className="btn" onClick={() => setApplyTplFlow({ open: false, loading: false, error: "" })} disabled={applyTplFlow.loading}>
-                  Cancelar
-                </button>
-                <button type="button" className="btn primary" onClick={confirmApplyTemplatesFlow} disabled={applyTplFlow.loading}>
-                  {applyTplFlow.loading ? "Aplicando..." : "Aplicar"}
-                </button>
-              </div>
-            </div>
-
-            <div className="dialogBody">
-              {applyTplFlow.error ? (
-                <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{applyTplFlow.error}</div>
-              ) : null}
-
-              <div className="grid2">
-                <Field label="Tipo de template">
-                  <select className="input" value={applyTplForm.immersion_type} onChange={(e) => setApplyTplForm((p) => ({ ...p, immersion_type: e.target.value }))}>
-                    <option value="">Usar tipo atual ({form?.type || "-"})</option>
-                    {IMMERSION_TYPES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="O que aplicar">
-                  <div className="stack" style={{ gap: 10 }}>
-                    {Object.entries({
-                      tasks: "Tarefas",
-                      schedule: "Cronograma",
-                      materials: "Materiais",
-                      tools: "Ferramentas",
-                      videos: "Vídeos",
-                    }).map(([key, label]) => (
-                      <label key={key} className="row" style={{ gap: 10, alignItems: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={!!applyTplForm.include?.[key]}
-                          onChange={(e) =>
-                            setApplyTplForm((p) => ({
-                              ...p,
-                              include: { ...p.include, [key]: e.target.checked },
-                            }))
-                          }
-                        />
-                        <span className="small">{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-              </div>
-
-              <div className="small muted" style={{ marginTop: 10 }}>
-                Dica: publique os templates que devem ser aplicados em massa e mantenha rascunhos para evolução sem impactar o padrão atual.
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
 {cloneFlow?.open ? (
         <div className="overlay" role="dialog" aria-modal="true">
           <div className="dialog" style={{ maxWidth: 920 }}>

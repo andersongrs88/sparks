@@ -26,6 +26,16 @@ function iso(d) {
   return d.toISOString().slice(0, 10);
 }
 
+function isMissingRelationError(err, rel) {
+  const msg = (err?.message || "").toString();
+  // Supabase pode retornar tanto erro do PostgREST (schema cache) quanto do Postgres.
+  return (
+    msg.includes(`Could not find the table 'public.${rel}'`) ||
+    msg.includes(`relation \"public.${rel}\" does not exist`) ||
+    msg.includes(`${rel}`) && msg.toLowerCase().includes("schema cache")
+  );
+}
+
 export default function RelatoriosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,11 +100,17 @@ export default function RelatoriosPage() {
         }
 
         // 3) Custos por imersão (total)
-        const { data: costRows, error: e3 } = await supabase
+        let costRows = [];
+        const { data: cData, error: e3 } = await supabase
           .from("immersion_costs")
           .select("immersion_id, value, immersions(immersion_name)")
           .limit(10000);
-        if (e3) throw e3;
+        if (e3) {
+          // Bases antigas podem não ter a tabela de custos ainda.
+          if (!isMissingRelationError(e3, "immersion_costs")) throw e3;
+        } else {
+          costRows = cData || [];
+        }
         const byCost = new Map();
         for (const c of costRows || []) {
           const key = c.immersion_id;
