@@ -45,7 +45,7 @@ function ThemeToggle() {
 }
 
 export default function Layout({ title, children, hideNav = false }) {
-  const { loading, profile, isFullAccess, user, signOut } = useAuth();
+  const { loading, profile, isFullAccess, user, signOutFast } = useAuth();
   const router = useRouter();
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -101,12 +101,15 @@ export default function Layout({ title, children, hideNav = false }) {
                 if (signingOut) return;
                 setSigningOut(true);
                 try {
-                  await signOut();
+                  // UX: navega imediatamente (não aguarda signOut)
+                  try { setMobileOpen(false); } catch {}
+                  try { router.replace("/login"); } catch {}
+
+                  // Limpa estado e tokens de forma síncrona
+                  signOutFast();
                 } catch {
                   // best-effort: mesmo com erro, força redirecionamento
                 } finally {
-                  try { setMobileOpen(false); } catch {}
-                  try { await router.replace("/login"); } catch {}
                   setSigningOut(false);
                 }
               }}

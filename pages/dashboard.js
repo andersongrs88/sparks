@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
-import { getDashboardStats } from "../lib/dashboard";
 import { supabase } from "../lib/supabaseClient";
-import { sortTasksByPriority, syncOverdueTasksGlobal, isTaskDone } from "../lib/tasks";
+import { sortTasksByPriority } from "../lib/tasks";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -32,11 +31,21 @@ export default function DashboardPage() {
       try {
         setError("");
         setLoading(true);
-        // Governança: sincroniza atrasos (best-effort)
-        try { await syncOverdueTasksGlobal(); } catch {}
-        const data = await getDashboardStats();
+
+        const r = await fetch("/api/dashboard/stats", { method: "GET" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error || "Falha ao carregar dados.");
+
         if (!mounted) return;
-        setPayload(data);
+        // Normaliza para o shape esperado pela UI atual
+        setPayload({
+          stats: j?.stats || null,
+          upcoming: j?.upcoming || [],
+          overdue: j?.overdue || [],
+          riskImmersions: j?.riskImmersions || [],
+          workload: j?.workload || []
+        });
+        setImmersionOptions(j?.immersionOptions || []);
       } catch (e) {
         if (!mounted) return;
         setError(e?.message || "Falha ao carregar dados.");
@@ -51,34 +60,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (authLoading || !user) return;
     let mounted = true;
-    (async () => {
-      try {
-        const { data, error: err } = await supabase
-          .from("immersions")
-          .select("id, immersion_name, start_date")
-          .order("start_date", { ascending: false })
-          .limit(300);
-        if (err) throw err;
-        if (!mounted) return;
-        setImmersionOptions(data ?? []);
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [authLoading, user]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    let mounted = true;
 
     async function loadMy() {
       try {
         setMyError("");
         setMyLoading(true);
-
-        // Best-effort: mantém status "Atrasada" atualizado.
-        try { await syncOverdueTasksGlobal(); } catch {}
 
         // Keep the select list aligned with the actual database schema.
         // Some deployments may not have an evidence_link column, so we avoid selecting it here.

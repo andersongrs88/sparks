@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { getProfileById } from "../lib/profiles";
 
@@ -22,17 +22,48 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
 
-  const refreshProfile = useCallback(async (u) => {
+  // Cache em memória para evitar re-fetch do profile a cada navegação/re-render.
+  // Mantém o app rápido em mobile e evita chamadas redundantes.
+  const profileCacheRef = useRef({ userId: null, value: null, ts: 0 });
+  const inflightRef = useRef(null);
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+
+  const refreshProfile = useCallback(async (u, { force = false } = {}) => {
     if (!u?.id) {
       setProfile(null);
       return;
     }
+
+    // Cache hit
+    const cached = profileCacheRef.current;
+    const now = Date.now();
+    if (!force && cached?.userId === u.id && cached?.value && (now - (cached.ts || 0) < CACHE_TTL_MS)) {
+      setProfile(cached.value);
+      return;
+    }
+
+    // Evita múltiplos fetches concorrentes do mesmo profile.
+    if (inflightRef.current) {
+      try {
+        const p = await inflightRef.current;
+        setProfile(p || null);
+      } catch {
+        setProfile(null);
+      }
+      return;
+    }
+
     try {
-      const p = await getProfileById(u.id);
+      inflightRef.current = getProfileById(u.id);
+      const p = await inflightRef.current;
+      profileCacheRef.current = { userId: u.id, value: p || null, ts: Date.now() };
       setProfile(p || null);
     } catch (e) {
       // Se não houver profile ainda, não quebrar a UI.
       setProfile(null);
+      profileCacheRef.current = { userId: u.id, value: null, ts: Date.now() };
+    } finally {
+      inflightRef.current = null;
     }
   }, []);
 
@@ -58,13 +89,16 @@ export function AuthProvider({ children }) {
         const { data } = await supabase.auth.getSession();
         const sessionUser = data?.session?.user || null;
         setUser(sessionUser);
-        await refreshProfile(sessionUser);
+        // Não bloqueia o primeiro paint do app em mobile.
+        // Carrega profile em background e atualiza contexto quando chegar.
+        refreshProfile(sessionUser).catch(() => {});
 
         // Listener
         const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
           const u = session?.user || null;
           setUser(u);
-          await refreshProfile(u);
+          // Não aguarda (evita atrasos e race conditions em mobile/webview)
+          refreshProfile(u, { force: true }).catch(() => {});
         });
         unsub = sub?.subscription || null;
       } finally {
@@ -126,8 +160,33 @@ export function AuthProvider({ children }) {
           }
         }
       }
+      ,
+      // Logout instantâneo (UX): limpa estado e navega imediatamente.
+      // Depois faz signOut best-effort.
+      signOutFast() {
+        if (!supabase) return;
+
+        // 1) Reset local imediato
+        setUser(null);
+        setProfile(null);
+        profileCacheRef.current = { userId: null, value: null, ts: 0 };
+
+        // 2) Limpeza defensiva
+        if (typeof window !== "undefined") {
+          try {
+            const keys = Object.keys(window.localStorage || {});
+            for (const k of keys) {
+              if (k.startsWith("sb-") && k.endsWith("-auth-token")) window.localStorage.removeItem(k);
+              if (k === "supabase.auth.token") window.localStorage.removeItem(k);
+            }
+          } catch {}
+        }
+
+        // 3) Sign-out assíncrono (não bloqueia UX)
+        supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      }
     }),
-    [loading, user, profile, role, isFullAccess, canEditPdca]
+    [loading, user, profile, role, isFullAccess, canEditPdca, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
