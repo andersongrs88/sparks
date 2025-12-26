@@ -14,9 +14,29 @@ function daysBetween(a, b) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
+function normalizeStatus(v) {
+  // Robust normalizer: trim, lowercase and remove accents (works in Node 18+).
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
 function isTaskDone(t) {
-  const s = String(t?.status || "");
-  return s === "Concluída" || s === "Concluida" || !!t?.done_at;
+  const s = normalizeStatus(t?.status);
+  // Accept multiple status conventions (legacy + modern)
+  return (
+    s === "concluida" ||
+    s === "concluido" ||
+    s === "finalizada" ||
+    s === "finalizado" ||
+    s === "done" ||
+    s === "completed" ||
+    s === "complete" ||
+    s === "closed" ||
+    !!t?.done_at
+  );
 }
 
 export default async function handler(req, res) {

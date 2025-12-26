@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
-import { deleteProfile, getProfile, updateProfile } from "../../lib/profiles";
+import { deleteProfile, getProfile, setUserPassword, updateProfile } from "../../lib/profiles";
 
 const ROLES = [
   { key: "admin", label: "Admin" },
@@ -43,6 +43,8 @@ export default function EditarUsuarioPage() {
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [pwdBusy, setPwdBusy] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -91,7 +93,7 @@ export default function EditarUsuarioPage() {
       await updateProfile(form.id, {
         name: form.name.trim(),
         email: (form.email || "").trim() || null,
-        role: form.role || "BASICO",
+        role: form.role || "viewer",
         is_active: !!form.is_active
       });
 
@@ -100,6 +102,26 @@ export default function EditarUsuarioPage() {
       setError(e2?.message || "Falha ao salvar.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onChangePassword() {
+    if (!form) return;
+    setError("");
+    const pwd = String(newPassword || "");
+    if (pwd.length < 8) {
+      setError("A nova senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+    try {
+      setPwdBusy(true);
+      await setUserPassword(form.id, pwd);
+      setNewPassword("");
+      alert("Senha atualizada.");
+    } catch (e) {
+      setError(e?.message || "Falha ao atualizar senha.");
+    } finally {
+      setPwdBusy(false);
     }
   }
 
@@ -143,13 +165,36 @@ export default function EditarUsuarioPage() {
             </Field>
 
             <Field label="Tipo">
-              <select className="input" value={form.role || "BASICO"} onChange={(e) => set("role", e.target.value)}>
+              <select className="input" value={form.role || "viewer"} onChange={(e) => set("role", e.target.value)}>
                 {ROLES.map((r) => (
                   <option key={r.key} value={r.key}>
                     {r.label}
                   </option>
                 ))}
               </select>
+            </Field>
+
+            <Field
+              label="Senha"
+              hint="Opcional: defina uma nova senha para o usuário (mínimo 8 caracteres)."
+            >
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  className="input"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Nova senha"
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={onChangePassword}
+                  disabled={pwdBusy || saving || removing}
+                >
+                  {pwdBusy ? "Atualizando..." : "Atualizar senha"}
+                </button>
+              </div>
             </Field>
 
             <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
