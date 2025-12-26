@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import { listSpeakers, createSpeaker, updateSpeaker, deleteSpeaker } from "../lib/speakers";
 
 export default function PalestrantesPage() {
+  const router = useRouter();
   const { isFullAccess } = useAuth();
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -157,6 +159,9 @@ export default function PalestrantesPage() {
                       <td className="muted">{it.vignette_name || "-"}</td>
                       <td>
                         <div style={{ display: "flex", gap: 8 }}>
+                          <button className="btn" type="button" onClick={() => router.push(`/palestrantes/${it.id}`)} disabled={busy}>
+                            Abrir
+                          </button>
                           <button className="btn" type="button" onClick={() => onToggleInternal(it.id, !it.is_internal)} disabled={busy}>
                             Alternar
                           </button>

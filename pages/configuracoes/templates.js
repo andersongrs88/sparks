@@ -6,8 +6,10 @@ import {
   listTemplates,
   listTemplateItems,
   createTemplate,
+  updateTemplate,
   deleteTemplate,
   createTemplateItem,
+  updateTemplateItem,
   deleteTemplateItem
 } from "../../lib/templates";
 
@@ -46,6 +48,10 @@ export default function ChecklistTemplatesPage() {
     offset_days: -7,
     sort_order: 10
   });
+
+  const [tplEdit, setTplEdit] = useState(null); // {name, description, is_active}
+  const [itemEditId, setItemEditId] = useState("");
+  const [itemEdit, setItemEdit] = useState(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -97,6 +103,20 @@ export default function ChecklistTemplatesPage() {
     () => (templates || []).find((t) => t.id === activeId) || null,
     [templates, activeId]
   );
+
+  useEffect(() => {
+    if (activeTemplate) {
+      setTplEdit({
+        name: activeTemplate.name || "",
+        description: activeTemplate.description || "",
+        is_active: activeTemplate.is_active !== false
+      });
+    } else {
+      setTplEdit(null);
+    }
+    setItemEditId("");
+    setItemEdit(null);
+  }, [activeTemplate?.id]);
 
   async function onCreateTemplate(e) {
     e.preventDefault();
@@ -168,7 +188,7 @@ export default function ChecklistTemplatesPage() {
     <Layout title="Configurações • Templates de checklist">
       {error ? <div className="error">{error}</div> : null}
 
-      <div className="grid" style={{ gridTemplateColumns: "1fr 2fr" }}>
+      <div className="grid2">
         <div className="card">
           <div className="h2">Templates</div>
           {loading ? <div className="small">Carregando…</div> : null}
@@ -188,8 +208,58 @@ export default function ChecklistTemplatesPage() {
 
           {activeTemplate ? (
             <div style={{ marginTop: 12 }}>
-              <div className="small">{activeTemplate.description || "(sem descrição)"}</div>
-              <div style={{ marginTop: 10 }}>
+              <div className="small muted">Editar template selecionado</div>
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                <div>
+                  <div className="small">Nome</div>
+                  <input
+                    className="input"
+                    value={tplEdit?.name || ""}
+                    onChange={(e) => setTplEdit((p) => ({ ...(p || {}), name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <div className="small">Descrição</div>
+                  <input
+                    className="input"
+                    value={tplEdit?.description || ""}
+                    onChange={(e) => setTplEdit((p) => ({ ...(p || {}), description: e.target.value }))}
+                  />
+                </div>
+                <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={tplEdit?.is_active !== false}
+                    onChange={(e) => setTplEdit((p) => ({ ...(p || {}), is_active: e.target.checked }))}
+                  />
+                  <span className="small">Ativo</span>
+                </label>
+              </div>
+
+              <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  className="btn primary"
+                  type="button"
+                  onClick={async () => {
+                    setError("");
+                    try {
+                      await updateTemplate(activeTemplate.id, {
+                        name: tplEdit?.name,
+                        description: tplEdit?.description,
+                        is_active: tplEdit?.is_active,
+                      });
+                      await loadTemplatesAndSelectFirst();
+                      setActiveId(activeTemplate.id);
+                    } catch (e) {
+                      setError(e?.message || "Falha ao salvar template.");
+                    }
+                  }}
+                >
+                  Salvar
+                </button>
+                <button className="btn" type="button" onClick={() => setTplEdit({ name: activeTemplate.name || "", description: activeTemplate.description || "", is_active: activeTemplate.is_active !== false })}>
+                  Desfazer
+                </button>
                 <button className="btn danger" type="button" onClick={() => onDeleteTemplate(activeTemplate)}>
                   Excluir template
                 </button>
@@ -235,19 +305,95 @@ export default function ChecklistTemplatesPage() {
                   <div style={{ display: "grid", gap: 8 }}>
                     {items.map((it) => (
                       <div key={it.id} className="card" style={{ padding: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                          <div>
-                            <div className="h2" style={{ marginBottom: 4 }}>
-                              {it.title}
+                        {itemEditId === it.id ? (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <div className="row wrap" style={{ gap: 10 }}>
+                              <div className="col">
+                                <div className="small">Fase</div>
+                                <select className="input" value={itemEdit?.phase || ""} onChange={(e) => setItemEdit((p) => ({ ...(p || {}), phase: e.target.value }))}>
+                                  {PHASES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                                </select>
+                              </div>
+                              <div className="col">
+                                <div className="small">Área</div>
+                                <select className="input" value={itemEdit?.area || ""} onChange={(e) => setItemEdit((p) => ({ ...(p || {}), area: e.target.value }))}>
+                                  {AREAS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+                                </select>
+                              </div>
+                              <div className="col">
+                                <div className="small">Base</div>
+                                <select className="input" value={itemEdit?.due_basis || "start"} onChange={(e) => setItemEdit((p) => ({ ...(p || {}), due_basis: e.target.value }))}>
+                                  <option value="start">Início</option>
+                                  <option value="end">Fim</option>
+                                </select>
+                              </div>
                             </div>
-                            <div className="small">
-                              Fase: {it.phase} • Área: {it.area || "-"} • Base: {it.due_basis} • Offset: {it.offset_days} dia(s)
+
+                            <div>
+                              <div className="small">Título</div>
+                              <input className="input" value={itemEdit?.title || ""} onChange={(e) => setItemEdit((p) => ({ ...(p || {}), title: e.target.value }))} />
+                            </div>
+
+                            <div className="row wrap" style={{ gap: 10 }}>
+                              <div className="col">
+                                <div className="small">Offset (dias)</div>
+                                <input className="input" type="number" value={itemEdit?.offset_days ?? 0} onChange={(e) => setItemEdit((p) => ({ ...(p || {}), offset_days: e.target.value }))} />
+                              </div>
+                              <div className="col">
+                                <div className="small">Ordem</div>
+                                <input className="input" type="number" value={itemEdit?.sort_order ?? 0} onChange={(e) => setItemEdit((p) => ({ ...(p || {}), sort_order: e.target.value }))} />
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                              <button
+                                className="btn primary"
+                                type="button"
+                                onClick={async () => {
+                                  setError("");
+                                  try {
+                                    await updateTemplateItem(it.id, {
+                                      phase: itemEdit?.phase,
+                                      area: itemEdit?.area,
+                                      due_basis: itemEdit?.due_basis,
+                                      title: itemEdit?.title,
+                                      offset_days: Number(itemEdit?.offset_days ?? 0),
+                                      sort_order: Number(itemEdit?.sort_order ?? 0),
+                                    });
+                                    setItemEditId("");
+                                    setItemEdit(null);
+                                    await loadItems(activeId);
+                                  } catch (e) {
+                                    setError(e?.message || "Falha ao salvar item.");
+                                  }
+                                }}
+                              >
+                                Salvar
+                              </button>
+                              <button className="btn" type="button" onClick={() => { setItemEditId(""); setItemEdit(null); }}>
+                                Cancelar
+                              </button>
+                              <button className="btn danger" type="button" onClick={() => onDeleteItem(it)}>
+                                Excluir
+                              </button>
                             </div>
                           </div>
-                          <button className="btn danger" type="button" onClick={() => onDeleteItem(it)}>
-                            Excluir
-                          </button>
-                        </div>
+                        ) : (
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                            <div>
+                              <div className="h2" style={{ marginBottom: 4 }}>{it.title}</div>
+                              <div className="small">Fase: {it.phase} • Área: {it.area || "-"} • Base: {it.due_basis} • Offset: {it.offset_days} dia(s)</div>
+                            </div>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button className="btn" type="button" onClick={() => { setItemEditId(it.id); setItemEdit({ ...it }); }}>
+                                Editar
+                              </button>
+                              <button className="btn danger" type="button" onClick={() => onDeleteItem(it)}>
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

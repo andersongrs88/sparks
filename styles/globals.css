@@ -742,6 +742,15 @@ a:hover { text-decoration: underline; }
   .kpiCard { scroll-snap-align: start; }
 }
 
+/* Mobile-first KPI: avoid horizontal scroll on small phones (better tap targets + readability) */
+@media (max-width: 560px) {
+  .kpiGrid {
+    grid-template-columns: 1fr;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+}
+
 /* Lists */
 .list { display: grid; gap: 8px; }
 .listItem {

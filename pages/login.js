@@ -70,7 +70,7 @@ export default function LoginPage() {
   return (
     <>
       <Head>
-        <title>Acesso | Sparks by Educagrama</title>
+        <title>Acesso | Sparks</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
@@ -82,9 +82,9 @@ export default function LoginPage() {
               <div className="brand">
                 <div className="mark" />
                 <div className="brandText">
-                  <div className="brandTitle"></div>
+                  <div className="brandTitle">Sparks</div>
                   <div className="brandSub">
-                    Sistema Inteligente de Planejamento e Gestão do Conhecimento
+                    Sistema Estratégico de Planejamento e Gestão do Conhecimento
                   </div>
                 </div>
               </div>
@@ -110,7 +110,7 @@ export default function LoginPage() {
 
               <div className="panelFoot">
                 <div className="tinyMuted">
-                  Dica: Cadê seu analista Senhor(a)?.
+                  Dica: crie usuários no Supabase (Authentication → Users) e ajuste o papel em /usuarios.
                 </div>
               </div>
             </div>
@@ -235,7 +235,9 @@ export default function LoginPage() {
               </form>
             )}
 
-<div className="footer" style={{ textAlign: "center" }}> ® Desenvolvido pela Wizze Tecnologia Inteligente </div>
+            <div className="footer">
+              Desenvolvido pela Wizze Tecnologia Inteligente
+            </div>
           </main>
         </div>
       </div>
