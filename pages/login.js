@@ -70,7 +70,7 @@ export default function LoginPage() {
   return (
     <>
       <Head>
-        <title>Acesso | Sparks</title>
+        <title>Acesso | Sparks by Educagrama</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
@@ -82,7 +82,7 @@ export default function LoginPage() {
               <div className="brand">
                 <div className="mark" />
                 <div className="brandText">
-                  <div className="brandTitle">Sparks by Educagrama</div>
+                  <div className="brandTitle"></div>
                   <div className="brandSub">
                     Sistema Inteligente de Planejamento e Gestão do Conhecimento
                   </div>
