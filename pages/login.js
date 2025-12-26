@@ -82,9 +82,9 @@ export default function LoginPage() {
               <div className="brand">
                 <div className="mark" />
                 <div className="brandText">
-                  <div className="brandTitle">Sparks</div>
+                  <div className="brandTitle">Sparks by Educagrama</div>
                   <div className="brandSub">
-                    by Educagrama - Sistema Inteligente de Planejamento e Gestão do Conhecimento
+                    Sistema Inteligente de Planejamento e Gestão do Conhecimento
                   </div>
                 </div>
               </div>
@@ -235,7 +235,7 @@ export default function LoginPage() {
               </form>
             )}
 
-<div className="footer" style={{ textAlign: "center" }}> Sparks by Educagrama ® Desenvolvido pela Wizze Tecnologia Inteligente </div>
+<div className="footer" style={{ textAlign: "center" }}> ® Desenvolvido pela Wizze Tecnologia Inteligente </div>
           </main>
         </div>
       </div>
