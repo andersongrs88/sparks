@@ -147,10 +147,11 @@ export default function LoginPage() {
             #f6f8fc;
         }
 
-        .shell {
-          width: 100%;
-          max-width: 520px;
-        }
+.shell {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
 
         .brand {
           margin-bottom: 14px;
