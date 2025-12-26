@@ -374,12 +374,32 @@ a:hover { text-decoration: underline; }
   gap: 12px;
 }
 
+/* Mobile: evita overflow no topo (título + botões) */
+@media (max-width: 720px) {
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .topbar > * {
+    width: 100%;
+  }
+  .topbar button {
+    width: 100%;
+  }
+}
+
 .toolbar {
   margin-top: 12px;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .toolbar > * {
+    flex: 1 1 100%;
+  }
 }
 
 /* Toolbar layout helpers (used in Imersões > Checklist/Cronograma) */
@@ -638,6 +658,26 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--line);
 }
 
+@media (max-width: 720px) {
+  .sectionHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sectionHeader .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .sectionHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sectionHeader .row {
+    flex-wrap: wrap;
+  }
+}
+
 /* Tabs (Imersão) */
 .tabRow {
   display: flex;
@@ -731,6 +771,23 @@ a:hover { text-decoration: underline; }
 .listItemMeta { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .listItemAside { display: flex; align-items: center; gap: 10px; }
 .chev { font-size: 18px; opacity: 0.8; }
+
+/* Mobile: permite leitura sem cortar textos e evita overflow horizontal */
+@media (max-width: 560px) {
+  .listItem {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .listItemAside {
+    justify-content: space-between;
+  }
+  .listItemTitle,
+  .listItemMeta {
+    white-space: normal;
+  }
+}
+
+
 
 /* Mini cards (upcoming immersions) */
 .cardsList { display: grid; gap: 10px; }

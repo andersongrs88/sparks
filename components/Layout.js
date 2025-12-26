@@ -46,8 +46,10 @@ function ThemeToggle() {
 
 export default function Layout({ title, children, hideNav = false }) {
   const { loading, profile, isFullAccess, user, signOut } = useAuth();
+  const router = useRouter();
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const pageTitle = useMemo(() => title || "Sparks", [title]);
   const documentTitle = useMemo(() => {
@@ -92,8 +94,27 @@ export default function Layout({ title, children, hideNav = false }) {
 
         {!hideNav && user?.id && user.id !== "noauth" ? (
           <div style={{ padding: 12 }}>
-            <button className="btn" type="button" onClick={() => signOut()} style={{ width: "100%" }}>
-              Sair
+            <button
+              className="btn"
+              type="button"
+              onClick={async () => {
+                if (signingOut) return;
+                setSigningOut(true);
+                try {
+                  await signOut();
+                } catch {
+                  // best-effort: mesmo com erro, força redirecionamento
+                } finally {
+                  try { setMobileOpen(false); } catch {}
+                  try { await router.replace("/login"); } catch {}
+                  setSigningOut(false);
+                }
+              }}
+              style={{ width: "100%" }}
+              aria-busy={signingOut}
+              disabled={signingOut}
+            >
+              {signingOut ? "Saindo..." : "Sair"}
             </button>
           </div>
         ) : null}

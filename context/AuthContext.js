@@ -102,8 +102,29 @@ export function AuthProvider({ children }) {
       },
       async signOut() {
         if (!supabase) return;
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
+
+        // 1) Supabase sign-out (best-effort)
+        // Em alguns navegadores móveis/webviews, storage pode falhar; então fazemos limpeza extra.
+        try {
+          // Supabase JS v2 aceita { scope: 'local' | 'global' | 'others' }
+          const { error } = await supabase.auth.signOut({ scope: "local" });
+          if (error) throw error;
+        } finally {
+          // 2) Força reset do estado local (evita UI ficar "logada" após falhas de storage)
+          setUser(null);
+          setProfile(null);
+
+          // 3) Limpeza defensiva do storage (evita sessão "grudar" em alguns devices)
+          if (typeof window !== "undefined") {
+            try {
+              const keys = Object.keys(window.localStorage || {});
+              for (const k of keys) {
+                if (k.startsWith("sb-") && k.endsWith("-auth-token")) window.localStorage.removeItem(k);
+                if (k === "supabase.auth.token") window.localStorage.removeItem(k);
+              }
+            } catch {}
+          }
+        }
       }
     }),
     [loading, user, profile, role, isFullAccess, canEditPdca]
