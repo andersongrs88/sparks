@@ -117,6 +117,20 @@ NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 ```
 
+### (Opcional) Criar usuários pela tela do app
+
+Se você quiser criar usuários diretamente pela UI (**Usuários → Novo usuário**), adicione também no Vercel:
+
+```
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+O sistema expõe um endpoint server-side (`/api/admin/create-user`) que:
+
+- valida o usuário logado via `Authorization: Bearer <access_token>`
+- permite criação apenas para `role=admin`
+- cria o usuário no Supabase Auth e faz upsert em `public.profiles`
+
 ### 3. Deploy
 - Deploy automático via GitHub → Vercel
 
