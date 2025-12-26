@@ -235,9 +235,7 @@ export default function LoginPage() {
               </form>
             )}
 
-            <div className="footer">
-              Desenvolvido pela Wizze Tecnologia Inteligente
-            </div>
+<div className="footer" style={{ textAlign: "center" }}> Sparks by Educagrama ® Desenvolvido pela Wizze Tecnologia Inteligente </div>
           </main>
         </div>
       </div>
