@@ -45,7 +45,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const { data, error } = await admin
       .from("speaker_riders")
-      .select("speaker_id, travel, hotel, catering, technical, notes, updated_at, created_at")
+      .select("speaker_id, rider, updated_at, created_at")
       .eq("speaker_id", id)
       .maybeSingle();
     if (error) return json(res, 400, { error: error.message });
@@ -53,16 +53,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "PUT") {
-    const { travel, hotel, catering, technical, notes } = req.body || {};
-    const payload = {
-      speaker_id: id,
-      travel: travel !== undefined ? String(travel || "").trim() || null : null,
-      hotel: hotel !== undefined ? String(hotel || "").trim() || null : null,
-      catering: catering !== undefined ? String(catering || "").trim() || null : null,
-      technical: technical !== undefined ? String(technical || "").trim() || null : null,
-      notes: notes !== undefined ? String(notes || "").trim() || null : null,
-      updated_at: new Date().toISOString(),
-    };
+    // Recebe um objeto "rider" estruturado (JSON) e persiste em jsonb.
+    const rider = (req.body && typeof req.body === "object") ? req.body : {};
+    const payload = { speaker_id: id, rider, updated_at: new Date().toISOString() };
 
     // Upsert by PK (speaker_id)
     const { error } = await admin.from("speaker_riders").upsert(payload, { onConflict: "speaker_id" });
