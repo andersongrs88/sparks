@@ -84,8 +84,8 @@
   --color-surface-1: #0f172a;
   --color-surface-2: #0b1326;
 
-  --color-border-default: rgba(255,255,255,0.14);
-  --color-border-muted: rgba(255,255,255,0.18);
+  --color-border-default: rgba(255,255,255,0.10);
+  --color-border-muted: rgba(255,255,255,0.14);
 
   --color-text-primary: #e5e7eb;
   --color-text-secondary: #9ca3af;
@@ -614,19 +614,8 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 12px;
-  background: rgba(255,255,255,0.04);
-  color: var(--text);
+  opacity: 0.9;
 }
-
-/* Variante para metadados (menos ênfase) */
-.pill.soft {
-  background: rgba(255,255,255,0.02);
-  color: var(--muted);
-  border-color: var(--color-border-muted);
-}
-
-:root[data-theme="light"] .pill { background: #ffffff; }
-:root[data-theme="light"] .pill.soft { background: rgba(2,6,23,0.04); }
 
 /* Toolbars / topbars */
 .topbar {
@@ -1042,20 +1031,9 @@ a:hover { text-decoration: underline; }
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--color-surface-2);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  background: rgba(255,255,255,0.02);
 }
-.planTask:hover {
-  background: rgba(96,165,250,0.08);
-  border-color: rgba(96,165,250,0.25);
-}
-.planTask:focus-within {
-  border-color: rgba(96,165,250,0.40);
-  box-shadow: 0 0 0 3px rgba(96,165,250,0.16);
-}
-
-:root[data-theme="light"] .planTask { background: #ffffff; }
-:root[data-theme="light"] .planTask:hover { background: rgba(37,99,235,0.06); border-color: rgba(37,99,235,0.20); }
+:root[data-theme="light"] .planTask { background: rgba(2,6,23,0.02); }
 
 .planTaskSelect { display: flex; align-items: flex-start; justify-content: center; padding-top: 2px; }
 

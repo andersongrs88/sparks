@@ -215,8 +215,8 @@ export default function NovaImersaoPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              immersionId: created.id,
-              templateId: form.checklist_template_id,
+              immersion_id: created.id,
+              template_id: form.checklist_template_id,
             }),
           });
         } catch (e) {
