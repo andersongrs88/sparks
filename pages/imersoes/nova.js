@@ -144,12 +144,10 @@ export default function NovaImersaoPage() {
       return;
     }
 
-    if (!form.production_responsible) {
-      setError("Defina o responsável de Produção desta imersão.");
-      return;
-    }
-    if (!form.production_responsible) {
-      setError("Defina o responsável de Produção.");
+    // Produção é opcional (conforme regra atual do produto)
+
+    if (!form.checklist_template_id) {
+      setError("Selecione um Checklist template (obrigatório).");
       return;
     }
 
@@ -171,11 +169,11 @@ export default function NovaImersaoPage() {
               status: form.status,
               educational_consultant: form.educational_consultant,
               instructional_designer: form.instructional_designer,
-              production_responsible: form.production_responsible,
+              production_responsible: form.production_responsible || null,
               events_responsible: form.events_responsible || null,
-            trainer_speaker_id: form.trainer_speaker_id || null,
-            speaker_ids: (form.speaker_ids || []).filter(Boolean),
-              checklist_template_id: form.checklist_template_id || null,
+              trainer_speaker_id: form.trainer_speaker_id || null,
+              speaker_ids: Array.from(new Set((form.speaker_ids || []).filter(Boolean))),
+              checklist_template_id: form.checklist_template_id,
               mentors_present: form.mentors_present || null,
               need_specific_staff: !!form.need_specific_staff,
               staff_justification: form.need_specific_staff ? (form.staff_justification || null) : null,
@@ -203,11 +201,11 @@ export default function NovaImersaoPage() {
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
-        production_responsible: form.production_responsible,
+        production_responsible: form.production_responsible || null,
         events_responsible: form.events_responsible || null,
         trainer_speaker_id: form.trainer_speaker_id || null,
-        speaker_ids: (form.speaker_ids || []).filter(Boolean),
-        checklist_template_id: form.checklist_template_id || null,
+        speaker_ids: Array.from(new Set((form.speaker_ids || []).filter(Boolean))),
+        checklist_template_id: form.checklist_template_id,
         mentors_present: form.mentors_present || null,
 
         need_specific_staff: !!form.need_specific_staff,
@@ -351,9 +349,9 @@ export default function NovaImersaoPage() {
               </div>
 
               <div className="grid2">
-                <Field label="Produção (responsável)" hint="Obrigatório">
+                <Field label="Produção (responsável)">
                   <select className="input" value={form.production_responsible} onChange={(e) => setForm((p) => ({ ...p, production_responsible: e.target.value }))}>
-                    <option value="">Selecione</option>
+                    <option value="">—</option>
                     {people.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
@@ -373,9 +371,14 @@ export default function NovaImersaoPage() {
                 </Field>
               </div>
 
-              <Field label="Checklist template (opcional)" hint="Gera tarefas automaticamente">
-                <select className="input" value={form.checklist_template_id} onChange={(e) => setForm((p) => ({ ...p, checklist_template_id: e.target.value }))}>
-                  <option value="">—</option>
+              <Field label="Checklist template" hint="Obrigatório">
+                <select
+                  className="input"
+                  value={form.checklist_template_id}
+                  onChange={(e) => setForm((p) => ({ ...p, checklist_template_id: e.target.value }))}
+                  required
+                >
+                  <option value="">Selecione</option>
                   {checklistTemplates.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -422,9 +425,17 @@ export default function NovaImersaoPage() {
                           }}
                         >
                           <option value="">Selecione</option>
-                          {speakers.map((s) => (
-                            <option key={s.id} value={s.id}>{s.full_name || s.email}</option>
-                          ))}
+                          {speakers.map((s) => {
+                            const selectedElsewhere = new Set((form.speaker_ids || []).filter(Boolean));
+                            // Permite manter o próprio valor selecionado; bloqueia duplicidade em outros slots
+                            if (sid) selectedElsewhere.delete(sid);
+                            const isDup = selectedElsewhere.has(s.id);
+                            return (
+                              <option key={s.id} value={s.id} disabled={isDup}>
+                                {s.full_name || s.email}{isDup ? " (já selecionado)" : ""}
+                              </option>
+                            );
+                          })}
                         </select>
 
                         <button
