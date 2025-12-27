@@ -15,7 +15,7 @@ import { listTools, createTool, updateTool, deleteTool } from "../../lib/tools";
 import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from "../../lib/materials";
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
-import { applyTypeTemplates } from "../../lib/templates";
+import { listSpeakers } from "../../lib/speakers";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
@@ -199,15 +199,9 @@ export default function ImmersionDetailEditPage() {
     phases: { "PA-PRE": true, DURANTE: true, POS: true },
   });
 
-
-  // Aplicar templates por tipo (em imersões existentes)
-  const [applyTplFlow, setApplyTplFlow] = useState({ open: false, loading: false, error: "" });
-  const [applyTplForm, setApplyTplForm] = useState({
-    immersion_type: "",
-    include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
-  });
   // Checklist
   const [profiles, setProfiles] = useState([]);
+  const [speakers, setSpeakers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
@@ -340,6 +334,22 @@ export default function ImmersionDetailEditPage() {
       mounted = false;
     };
   }, [isFullAccess]);
+
+  // Carrega palestrantes (para Trainer e lista de palestrantes na aba Informações)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const sp = await listSpeakers();
+        if (mounted) setSpeakers(sp || []);
+      } catch {
+        if (mounted) setSpeakers([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function loadTasks(immersionId) {
     setTaskError("");
@@ -628,6 +638,13 @@ export default function ImmersionDetailEditPage() {
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
 
+        production_responsible: form.production_responsible || null,
+        events_responsible: form.events_responsible || null,
+
+        // Palestrantes
+        trainer_speaker_id: form.trainer_speaker_id || null,
+        speaker_ids: Array.isArray(form.speaker_ids) ? form.speaker_ids.filter(Boolean) : [],
+
         service_order_link: form.service_order_link,
         technical_sheet_link: form.technical_sheet_link,
 
@@ -657,7 +674,7 @@ export default function ImmersionDetailEditPage() {
         third_party_hairdresser: form.third_party_hairdresser,
         third_party_makeup: form.third_party_makeup,
 
-        will_have_speaker: form.will_have_speaker
+        // Removido: will_have_speaker (toggle legado). A gestão agora é via speaker_ids.
       });
 
       alert("Alterações salvas.");
@@ -750,43 +767,6 @@ export default function ImmersionDetailEditPage() {
       phases: { "PA-PRE": true, DURANTE: true, POS: true },
     });
     setCloneFlow({ open: true, loading: false, error: "" });
-  }
-
-  
-
-  function openApplyTemplatesFlow() {
-    if (!full) return;
-    setApplyTplForm({
-      immersion_type: form?.type || "",
-      include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
-    });
-    setApplyTplFlow({ open: true, loading: false, error: "" });
-  }
-
-  async function confirmApplyTemplatesFlow() {
-    if (!full) {
-      setApplyTplFlow((p) => ({ ...p, error: "Sem permissão." }));
-      return;
-    }
-    setApplyTplFlow((p) => ({ ...p, loading: true, error: "" }));
-    try {
-      await applyTypeTemplates({
-        immersionId: id,
-        immersionType: applyTplForm.immersion_type || form?.type || null,
-        startDate: form?.start_date || null,
-        endDate: form?.end_date || null,
-        include: applyTplForm.include,
-      });
-      setApplyTplFlow({ open: false, loading: false, error: "" });
-      // recarregar módulos principais que podem ter sido alterados
-      await loadTasks(id);
-      await loadSchedule(id);
-      await loadMaterials(id);
-      await loadTools(id);
-      await loadVideos(id);
-    } catch (e) {
-      setApplyTplFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao aplicar templates." }));
-    }
   }
 
 function normalizeTemplatesForClone(items) {
@@ -1306,7 +1286,6 @@ function normalizeTemplatesForClone(items) {
   }
 
   const staffEnabled = form?.need_specific_staff === true;
-  const speakerEnabled = form?.will_have_speaker === true;
 
   const d = daysUntil(form?.start_date);
   const signal = getCountdownSignal(d);
@@ -1529,6 +1508,112 @@ function normalizeTemplatesForClone(items) {
                     </select>
                   </Field>
                 </div>
+
+                <div className="grid2">
+                  <Field label="Produção (responsável)" hint="Obrigatório">
+                    <select
+                      className="input"
+                      value={form.production_responsible || ""}
+                      onChange={(e) => set("production_responsible", e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name ? `${p.name} (${p.email})` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Eventos (opcional)">
+                    <select
+                      className="input"
+                      value={form.events_responsible || ""}
+                      onChange={(e) => set("events_responsible", e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name ? `${p.name} (${p.email})` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
+                <div className="grid2">
+                  <Field label="Nome do Trainer">
+                    <select className="input" value={form.trainer_speaker_id || ""} onChange={(e) => set("trainer_speaker_id", e.target.value)}>
+                      <option value="">—</option>
+                      {speakers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name || s.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Vai ter palestrante?">
+                    <div className="stack" style={{ gap: 10 }}>
+                      {((form.speaker_ids && Array.isArray(form.speaker_ids) ? form.speaker_ids : [""]) || [""]).map((sid, idx) => (
+                        <div key={idx} className="row" style={{ gap: 10 }}>
+                          <select
+                            className="input"
+                            value={sid || ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setForm((p) => {
+                                const next = Array.isArray(p.speaker_ids) ? [...p.speaker_ids] : [""];
+                                next[idx] = v;
+                                return { ...p, speaker_ids: next };
+                              });
+                            }}
+                          >
+                            <option value="">Selecione</option>
+                            {speakers.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.full_name || s.email}
+                              </option>
+                            ))}
+                          </select>
+
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => {
+                              setForm((p) => {
+                                const next = Array.isArray(p.speaker_ids) ? [...p.speaker_ids] : [];
+                                next.splice(idx, 1);
+                                return { ...p, speaker_ids: next.length ? next : [""] };
+                              });
+                            }}
+                            disabled={Array.isArray(form.speaker_ids) ? form.speaker_ids.length === 1 : true}
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      ))}
+
+                      <div className="row" style={{ gap: 10 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            setForm((p) => ({
+                              ...p,
+                              speaker_ids: [...(Array.isArray(p.speaker_ids) ? p.speaker_ids : [""]), ""],
+                            }));
+                          }}
+                        >
+                          + Adicionar palestrante
+                        </button>
+                        <div className="small muted">Opcional. Deixe vazio se não houver.</div>
+                      </div>
+                    </div>
+                  </Field>
+                </div>
               </Section>
 
               <Section title="Mentores presentes">
@@ -1577,20 +1662,7 @@ function normalizeTemplatesForClone(items) {
                   />
                 </Field>
 
-                <Field label="Vai ter palestrante?">
-                  <div className="row">
-                    <button type="button" className={`btn ${speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", true)}>
-                      Sim
-                    </button>
-                    <button type="button" className={`btn ${!speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", false)}>
-                      Não
-                    </button>
-                  </div>
-
-                  <div className="small muted" style={{ marginTop: 8 }}>
-                    O cadastro e a gestão do trainer/palestrante ficam na aba <b>Trainer/Palestrante</b>.
-                  </div>
-                </Field>
+                {/* Removido: "Vai ter palestrante?" (toggle). A gestão agora é por lista vinculada em "Palestrantes". */}
               </Section>
 
               <Section title="Necessidade de terceiros">
@@ -2182,27 +2254,10 @@ function normalizeTemplatesForClone(items) {
                 />
               </Field>
 
-              <Field label="Vai ter palestrante?">
-                <div className="row">
-                  <button type="button" className={`btn ${speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", true)}>
-                    Sim
-                  </button>
-                  <button type="button" className={`btn ${!speakerEnabled ? "primary" : ""}`} onClick={() => set("will_have_speaker", false)}>
-                    Não
-                  </button>
+              <Field label="Palestrantes">
+                <div className="small muted">
+                  A gestão de Trainer e palestrantes foi centralizada na seção <b>Palestrantes</b> (na aba Informações), com lista e suporte a múltiplos palestrantes.
                 </div>
-
-                {speakerEnabled ? (
-                  <div className="card" style={{ marginTop: 10 }}>
-                    <div className="h2">Cadastro de palestrante (em desenvolvimento)</div>
-                    <div className="small" style={{ marginBottom: 10 }}>
-                      No futuro, aqui vamos cadastrar o palestrante e vincular nesta imersão.
-                    </div>
-                    <button type="button" className="btn" onClick={() => alert("Em desenvolvimento: cadastro de palestrante.")}>
-                      Cadastrar palestrante (futuro)
-                    </button>
-                  </div>
-                ) : null}
               </Field>
             </Section>
           </>
