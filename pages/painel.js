@@ -326,6 +326,18 @@ export default function PainelPage() {
 
   async function saveActiveTask() {
     if (!activeTask?.id) return;
+
+    // Snapshot para "Desfazer" (drawer edits)
+    const prev = {
+      id: activeTask.id,
+      phase: activeTask.phase ?? null,
+      responsible_id: activeTask.responsible_id ?? null,
+      due_date: activeTask.due_date ?? null,
+      status: activeTask.status ?? null,
+      done_at: activeTask.done_at ?? null,
+      notes: activeTask.notes ?? null,
+    };
+
     try {
       setTaskSaving(true);
 
@@ -338,15 +350,50 @@ export default function PainelPage() {
         notes: editNotes || null,
       };
 
+      // Regra: status concluída => done_at preenchido; caso contrário, null
       const concluded = String(editStatus || "").toLowerCase().includes("conclu");
       patch.done_at = concluded ? (activeTask.done_at || new Date().toISOString()) : null;
 
       const { error: e } = await supabase.from("immersion_tasks").update(patch).eq("id", activeTask.id);
       if (e) throw e;
 
-      notify("Tarefa atualizada.", "success");
+      // UI local (sem esperar reload)
+      setActiveTask((t) => (t ? { ...t, ...patch } : t));
+      setTasks((prevTasks) => (prevTasks || []).map((t) => (t.id === prev.id ? { ...t, ...patch } : t)));
+
+      notify("Tarefa atualizada.", "success", {
+        label: "Desfazer",
+        onClick: async () => {
+          try {
+            const { error: err } = await supabase
+              .from("immersion_tasks")
+              .update({
+                phase: prev.phase,
+                responsible_id: prev.responsible_id,
+                due_date: prev.due_date,
+                status: prev.status,
+                done_at: prev.done_at,
+                notes: prev.notes,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", prev.id);
+            if (err) throw err;
+
+            // Reverte UI
+            setActiveTask((t) => (t ? { ...t, ...prev } : t));
+            setTasks((prevTasks) => (prevTasks || []).map((t) => (t.id === prev.id ? { ...t, ...prev } : t)));
+
+            notify("Alteração desfeita.", "success");
+          } catch (e2) {
+            notify(e2?.message || "Falha ao desfazer.", "danger");
+          } finally {
+            await loadTasks();
+          }
+        },
+      });
+
+      // Revalida (garante consistência com filtros)
       await loadTasks();
-      setActiveTask((prev) => (prev ? { ...prev, ...patch } : prev));
     } catch (e) {
       notify(e?.message || "Falha ao salvar.", "danger");
     } finally {
@@ -730,7 +777,7 @@ export default function PainelPage() {
     <div className="bulkBar" role="region" aria-label="Ações em lote">
       <div className="bulkBarInner">
         <div className="row wrap" style={{ gap: 10, alignItems: "center" }}>
-          <span className="badge">{selectedCount} selecionada(s)</span>
+          <span className="badge">{selectedCount}</span>
           <button className="btn" type="button" onClick={clearSelection} disabled={bulkBusy}>
             Limpar seleção
           </button>
