@@ -153,16 +153,16 @@ export default function DashboardPage() {
 
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
-            <button className="kpi" type="button" onClick={() => goPainel({})} title="Abrir Painel">
+            <button className="kpi" type="button" onClick={() => router.push("/imersoes")} title="Abrir Imersões">
               <div className="kpiLabel">Imersões</div>
               <div className="kpiValue">{stats.totalImmersions}</div>
-              <div className="kpiMeta">Cadastradas</div>
+              <div className="kpiMeta">Acessar lista</div>
             </button>
 
             <button className="kpi" type="button" onClick={() => goPainel({})} title="Abrir Painel">
               <div className="kpiLabel">Tarefas</div>
               <div className="kpiValue">{stats.totalTasks}</div>
-              <div className="kpiMeta">Total</div>
+              <div className="kpiMeta">Abrir execução</div>
             </button>
 
             <button className="kpi kpiAlert" type="button" onClick={() => goPainel({ view: "overdue" })} title="Ver atrasadas no Painel">
@@ -175,6 +175,19 @@ export default function DashboardPage() {
               <div className="kpiLabel">Concluídas</div>
               <div className="kpiValue">{stats.doneTasks}</div>
               <div className="kpiMeta">Entregas</div>
+            </button>
+
+            {/* KPIs pessoais (quando disponíveis) */}
+            <button className="kpi kpiMuted" type="button" onClick={() => goPainel({ view: "minhas" })} title="Abrir minhas tarefas">
+              <div className="kpiLabel">Minhas</div>
+              <div className="kpiValue">{stats.myOpen}</div>
+              <div className="kpiMeta">Em aberto</div>
+            </button>
+
+            <button className="kpi kpiWarn" type="button" onClick={() => goPainel({ view: "overdue", mine: "1" })} title="Abrir minhas atrasadas">
+              <div className="kpiLabel">Minhas atrasadas</div>
+              <div className="kpiValue">{stats.myOverdue}</div>
+              <div className="kpiMeta">Ação imediata</div>
             </button>
           </section>
         ) : null}
@@ -436,7 +449,7 @@ export default function DashboardPage() {
 
         .kpiGridCompact {
           display:grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(6, minmax(0, 1fr));
           gap: 12px;
           margin-top: 10px;
         }
@@ -459,6 +472,8 @@ export default function DashboardPage() {
 
         .kpiAlert { background: rgba(255, 77, 77, 0.08); border-color: rgba(255, 77, 77, 0.22); }
         .kpiOk { background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.22); }
+        .kpiMuted { background: rgba(255, 255, 255, 0.03); }
+        .kpiWarn { background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.22); }
 
         .dashGrid {
           display:grid;
