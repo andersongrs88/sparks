@@ -87,8 +87,13 @@ export default function RelatoriosPage() {
         }
 
         // 2) Tarefas por dono
-        const { data: profiles, error: e2 } = await supabase.from("profiles").select("id, name").limit(5000);
-        if (e2) throw e2;
+        let profiles = [];
+        try {
+          const r2 = await supabase.from("profiles").select("id, name").limit(5000);
+          if (!r2?.error) profiles = r2.data || [];
+        } catch {
+          // best-effort: em bases com RLS restritiva, seguimos sem nomes
+        }
         const profMap = new Map((profiles || []).map((p) => [p.id, p.name]));
         const byOwner = new Map();
         for (const t of taskRows || []) {
@@ -101,15 +106,21 @@ export default function RelatoriosPage() {
 
         // 3) Custos por imersão (total)
         let costRows = [];
-        const { data: cData, error: e3 } = await supabase
-          .from("immersion_costs")
-          .select("immersion_id, value, immersions(immersion_name)")
-          .limit(10000);
-        if (e3) {
-          // Bases antigas podem não ter a tabela de custos ainda.
-          if (!isMissingRelationError(e3, "immersion_costs")) throw e3;
-        } else {
-          costRows = cData || [];
+        try {
+          const { data: cData, error: e3 } = await supabase
+            .from("immersion_costs")
+            .select("immersion_id, value, immersions(immersion_name)")
+            .limit(10000);
+          if (e3) {
+            // Bases antigas podem não ter a tabela de custos ainda.
+            if (!isMissingRelationError(e3, "immersion_costs")) {
+              // RLS/permissa?o: segue sem custos
+            }
+          } else {
+            costRows = cData || [];
+          }
+        } catch {
+          // best-effort
         }
         const byCost = new Map();
         for (const c of costRows || []) {

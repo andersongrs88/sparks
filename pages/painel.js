@@ -341,31 +341,36 @@ export default function PainelPage() {
 
   function TaskRow({ t }) {
     const sla = slaForTask(t);
+    const dueLabel = t.due_date ? `Prazo: ${t.due_date}` : "Sem prazo";
+    const ownerLabel = t.responsible_id ? (profileLabelById.get(t.responsible_id) || t.responsible_id) : "Sem responsável";
+    const phaseLabel = t.phase ? `Fase: ${t.phase}` : "Sem fase";
+    const immLabel = t.immersion_name ? `Imersão: ${t.immersion_name}` : "Imersão";
     return (
-      <div className="listItem" style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 10, alignItems: "center" }}>
-        <input
-          aria-label="Selecionar tarefa"
-          type="checkbox"
-          checked={selectedIds.has(t.id)}
-          onChange={() => toggleSelected(t.id)}
-        />
+      <div className="planTask" role="listitem">
+        <div className="planTaskSelect">
+          <input
+            aria-label="Selecionar tarefa"
+            type="checkbox"
+            checked={selectedIds.has(t.id)}
+            onChange={() => toggleSelected(t.id)}
+          />
+        </div>
 
         <button
           type="button"
-          className="listItemMain"
-          style={{ textAlign: "left", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
+          className="planTaskMain"
           onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
         >
-          <div className="listItemTitle">{t.title}</div>
-          <div className="listItemMeta">
-            {t.immersion_name ? `Imersão: ${t.immersion_name} • ` : ""}
-            {t.phase ? `Fase: ${t.phase} • ` : "Sem fase • "}
-            {t.responsible_id ? `Responsável: ${profileLabelById.get(t.responsible_id) || t.responsible_id}` : "Sem responsável"}
-            {t.due_date ? ` • Prazo: ${t.due_date}` : " • Sem prazo"}
+          <div className="planTaskTitle">{t.title}</div>
+          <div className="planTaskMeta" aria-label="Detalhes da tarefa">
+            <span className="pill soft">{immLabel}</span>
+            <span className="pill soft">{phaseLabel}</span>
+            <span className="pill soft">{ownerLabel}</span>
+            <span className={t.due_date ? "pill" : "pill soft"}>{dueLabel}</span>
           </div>
         </button>
 
-        <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+        <div className="planTaskAside">
           <span className={sla.className}>{sla.label}</span>
           <span className={isTaskDone(t) ? "badge success" : "badge muted"}>{isTaskDone(t) ? "Concluída" : "Aberta"}</span>
         </div>

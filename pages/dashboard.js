@@ -13,6 +13,8 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [payload, setPayload] = useState({ stats: null, upcoming: [], overdue: [] });
 
+  const [showKpis, setShowKpis] = useState(true);
+
   const [myTasks, setMyTasks] = useState([]);
   const [myLoading, setMyLoading] = useState(false);
   const [myError, setMyError] = useState("");
@@ -56,6 +58,20 @@ export default function DashboardPage() {
 
     return () => { mounted = false; };
   }, [authLoading, user]);
+
+  // Mobile UX: KPI section can be collapsed to avoid an excessively tall dashboard.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const m = window.matchMedia("(max-width: 720px)");
+    const apply = () => setShowKpis(!m.matches);
+    apply();
+    if (m.addEventListener) m.addEventListener("change", apply);
+    else m.addListener(apply);
+    return () => {
+      if (m.removeEventListener) m.removeEventListener("change", apply);
+      else m.removeListener(apply);
+    };
+  }, []);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -115,7 +131,15 @@ export default function DashboardPage() {
     <Layout title="Dashboard">
       <div className="container">
         <section className="kpiSection" aria-label="Indicadores">
-          <div className="kpiGrid">
+          <div className="row wrap" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div className="small muted">Indicadores do sistema</div>
+            <button className="btn onlyMobile" type="button" onClick={() => setShowKpis((v) => !v)}>
+              {showKpis ? "Ocultar" : "Mostrar"}
+            </button>
+          </div>
+
+          {showKpis ? (
+            <div className="kpiGrid">
             <div className="kpiCard">
               <div className="kpiLabel">Imersões</div>
               <div className="kpiValue">{stats.totalImmersions}</div>
@@ -136,7 +160,8 @@ export default function DashboardPage() {
               <div className="kpiValue">{stats.doneTasks}</div>
               <div className="kpiMeta">Entregas finalizadas</div>
             </div>
-          </div>
+            </div>
+          ) : null}
         </section>
 
         <div className="grid2" style={{ marginTop: 16 }}>
