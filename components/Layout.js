@@ -22,6 +22,7 @@ function NavItem({ href, label, icon }) {
   );
 }
 
+
 export default function Layout({ title, children, hideNav = false }) {
   const { loading, profile, isFullAccess, user, signOutFast } = useAuth();
   const router = useRouter();
@@ -31,6 +32,14 @@ export default function Layout({ title, children, hideNav = false }) {
   const [notifCount, setNotifCount] = useState(0);
 
   const pageTitle = useMemo(() => title || "Sparks", [title]);
+
+  // Forçar tema claro (tema escuro removido)
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = "light";
+    }
+  }, []);
+
   useEffect(() => {
     let alive = true;
     (async () => {
