@@ -83,16 +83,34 @@ export default function PainelPage() {
   const router = useRouter();
   const { loading: authLoading, user } = useAuth();
 
-  // Toast (feedback leve, sem `alert`)
-  const [toast, setToast] = useState({ open: false, message: "", tone: "" });
+  // Toast (feedback leve, sem `alert`) + ação (Undo)
+  const [toast, setToast] = useState({ open: false, message: "", tone: "", actionLabel: "" });
   const toastTimerRef = useRef(null);
+  const toastActionRef = useRef(null);
+
+  function closeToast() {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastActionRef.current = null;
+    setToast((t) => ({ ...t, open: false, actionLabel: "" }));
+  }
 
   function notify(message, tone = "") {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ open: true, message: String(message || ""), tone: String(tone || "") });
-    toastTimerRef.current = setTimeout(() => {
-      setToast((t) => ({ ...t, open: false }));
-    }, 2200);
+    toastActionRef.current = null;
+    setToast({ open: true, message: String(message || ""), tone: String(tone || ""), actionLabel: "" });
+    toastTimerRef.current = setTimeout(() => closeToast(), 2200);
+  }
+
+  function notifyAction(message, tone, actionLabel, onAction, timeoutMs = 6500) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastActionRef.current = typeof onAction === "function" ? onAction : null;
+    setToast({
+      open: true,
+      message: String(message || ""),
+      tone: String(tone || ""),
+      actionLabel: String(actionLabel || ""),
+    });
+    toastTimerRef.current = setTimeout(() => closeToast(), timeoutMs);
   }
 
   const [loading, setLoading] = useState(true);
@@ -121,6 +139,11 @@ export default function PainelPage() {
   const [immersionOptions, setImmersionOptions] = useState([]);
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+  // Step 10: Undo para ações em lote (otimista no UI + rollback no servidor)
+  const lastBulkRef = useRef(null); // { ids, beforeById, patch, at }
+  const [undoBusy, setUndoBusy] = useState(false);
+
   const overdueSyncDone = useRef(false);
   const selectedCount = selectedIds.size;
 
@@ -406,17 +429,99 @@ export default function PainelPage() {
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
 
+    // --- Otimista (UI responde imediato)
+    const keys = Object.keys(patch || {});
+    const beforeById = new Map();
+    setTasks((prev) => {
+      const next = (prev || []).map((t) => {
+        if (!ids.includes(t.id)) return t;
+        beforeById.set(t.id, t);
+        const merged = { ...t, ...patch };
+
+        // coerência de "done_at" quando status muda
+        if (keys.includes("status")) {
+          const s = String(patch.status || "").toLowerCase();
+          const concluded = s.includes("conclu");
+          merged.done_at = concluded ? (t.done_at || new Date().toISOString()) : null;
+        }
+        return merged;
+      });
+      return next;
+    });
+
+    // guarda snapshot p/ undo
+    lastBulkRef.current = {
+      ids,
+      beforeById,
+      patch,
+      at: Date.now(),
+    };
+
     try {
       setBulkBusy(true);
       setBulkMsg("");
 
+      // --- Persiste no servidor
       await bulkUpdateTasks(ids, patch);
-      await loadTasks();
+
+      // Evita refresh pesado: já está otimista. Só revalida em background.
+      loadTasks().catch(() => {});
 
       setBulkMsg("Alterações aplicadas.");
+
+      // Toast com Undo
+      notifyAction(
+        "Alterações aplicadas.",
+        "success",
+        "Desfazer",
+        async () => {
+          const snap = lastBulkRef.current;
+          if (!snap?.ids?.length || !snap?.beforeById) return;
+          try {
+            setUndoBusy(true);
+
+            // rollback local imediato
+            setTasks((prev) => {
+              const next = (prev || []).map((t) => (snap.beforeById.has(t.id) ? snap.beforeById.get(t.id) : t));
+              return next;
+            });
+
+            // rollback no servidor (por tarefa, porque valores podem variar)
+            const fields = Object.keys(snap.patch || {});
+            // inclui done_at se tiver sido mexido implicitamente via status
+            const serverFields = Array.from(new Set([...fields, "done_at"]));
+
+            await Promise.all(
+              snap.ids.map((id) => {
+                const before = snap.beforeById.get(id);
+                if (!before) return Promise.resolve(true);
+                const rollback = {};
+                for (const k of serverFields) rollback[k] = before[k] ?? null;
+                return supabase.from("immersion_tasks").update(rollback).eq("id", id);
+              })
+            );
+
+            notify("Ação desfeita.", "success");
+            loadTasks().catch(() => {});
+          } catch (e) {
+            notify(e?.message || "Falha ao desfazer.", "danger");
+            loadTasks().catch(() => {});
+          } finally {
+            setUndoBusy(false);
+          }
+        },
+        6500
+      );
+
       setTimeout(() => setBulkMsg(""), 2200);
     } catch (e) {
+      // rollback local em caso de falha
+      const snap = lastBulkRef.current;
+      if (snap?.beforeById) {
+        setTasks((prev) => (prev || []).map((t) => (snap.beforeById.has(t.id) ? snap.beforeById.get(t.id) : t)));
+      }
       setBulkMsg(e?.message || "Falha ao aplicar alterações.");
+      notify(e?.message || "Falha ao aplicar alterações.", "danger");
     } finally {
       setBulkBusy(false);
     }
@@ -853,10 +958,46 @@ export default function PainelPage() {
         <div className="toastHost" aria-live="polite" aria-atomic="true">
           {toast.open ? (
             <div className={`toast ${toast.tone || ""}`.trim()} role="status">
-              {toast.message}
+              <div className="toastMsg">{toast.message}</div>
+              <div className="toastActions">
+                {toast.actionLabel ? (
+                  <button
+                    type="button"
+                    className="btn small ghost"
+                    onClick={async () => {
+                      const fn = toastActionRef.current;
+                      closeToast();
+                      if (fn) await fn();
+                    }}
+                    disabled={undoBusy}
+                  >
+                    {undoBusy ? "..." : toast.actionLabel}
+                  </button>
+                ) : null}
+                <button type="button" className="btn small ghost" onClick={() => closeToast()}>
+                  Fechar
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
+
+        <style jsx>{`
+          .toast {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          }
+          .toastMsg {
+            min-width: 0;
+          }
+          .toastActions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+          }
+        `}</style>
       </div>
     </Layout>
   );
