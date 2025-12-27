@@ -22,30 +22,6 @@ function NavItem({ href, label, icon }) {
   );
 }
 
-function ThemeToggle() {
-  const [theme, setTheme] = useState("dark");
-
-  useEffect(() => {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem("theme") : null;
-    const initial = saved || "dark";
-    setTheme(initial);
-    document.documentElement.dataset.theme = initial;
-  }, []);
-
-  function toggle() {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.dataset.theme = next;
-    try { window.localStorage.setItem("theme", next); } catch {}
-  }
-
-  return (
-    <button type="button" className="btn icon" onClick={toggle} aria-label={theme === "dark" ? "Alternar para tema claro" : "Alternar para tema escuro"}>
-      {theme === "dark" ? "☀" : "🌙"}
-    </button>
-  );
-}
-
 export default function Layout({ title, children, hideNav = false }) {
   const { loading, profile, isFullAccess, user, signOutFast } = useAuth();
   const router = useRouter();
@@ -191,7 +167,6 @@ export default function Layout({ title, children, hideNav = false }) {
               🔔
               {notifCount > 0 ? <span className="badge" aria-label={`${notifCount} notificações`}>{notifCount}</span> : null}
             </button>
-            <ThemeToggle />
           </div>
         </header>
 
