@@ -1,33 +1,28 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 
-function asDateOnly(d) {
-  if (!d) return null;
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
-}
-
-function addDays(date, days) {
-  if (!date) return null;
-  const d = new Date(date.getTime());
-  d.setDate(d.getDate() + (Number(days) || 0));
-  return d;
-}
-
-function toYmd(date) {
-  if (!date) return null;
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
+/**
+ * Aplica um checklist template em uma imersão e gera tarefas.
+ *
+ * Implementação (server-side):
+ * - Persiste immersions.checklist_template_id
+ * - Chama a RPC public.generate_tasks_from_checklist_template
+ *   (criada na migration 001_template_to_tasks_migration.sql)
+ *
+ * Body aceito (compatibilidade):
+ * - { immersionId, templateId, overwrite? }
+ * - { immersion_id, template_id, overwrite? }
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { immersionId, templateId } = req.body || {};
+  const body = req.body || {};
+  const immersionId = body.immersionId || body.immersion_id;
+  const templateId = body.templateId || body.template_id;
+  const overwrite = !!body.overwrite;
+
   if (!immersionId || !templateId) {
     return res.status(400).json({ error: "Informe immersionId e templateId" });
   }
@@ -35,71 +30,19 @@ export default async function handler(req, res) {
   try {
     const admin = getSupabaseAdmin();
 
-    const { data: imm, error: eImm } = await admin
-      .from("immersions")
-      .select("id, start_date, end_date")
-      .eq("id", immersionId)
-      .single();
-    if (eImm) throw eImm;
+    // 1) persiste o template na imersão
+    const { error: eUpd } = await admin.from("immersions").update({ checklist_template_id: templateId }).eq("id", immersionId);
+    if (eUpd) throw eUpd;
 
-    const start = asDateOnly(imm?.start_date);
-    const end = asDateOnly(imm?.end_date);
+    // 2) gera tarefas via RPC (sem duplicar)
+    const { data: inserted, error: eRpc } = await admin.rpc("generate_tasks_from_checklist_template", {
+      p_immersion_id: immersionId,
+      p_template_id: templateId,
+      p_overwrite: overwrite,
+    });
+    if (eRpc) throw eRpc;
 
-    const { data: items, error: eItems } = await admin
-      .from("checklist_template_items")
-      .select("id, template_id, phase, area, title, due_basis, offset_days, sort_order")
-      .eq("template_id", templateId)
-      .order("sort_order", { ascending: true })
-      .order("phase", { ascending: true });
-    if (eItems) throw eItems;
-
-    if (!items?.length) {
-      return res.status(200).json({ ok: true, inserted: 0 });
-    }
-
-    // Dedup: evita criar duplicado se o template for aplicado mais de uma vez
-    const { data: existing, error: eExisting } = await admin
-      .from("immersion_tasks")
-      .select("id, title, phase")
-      .eq("immersion_id", immersionId)
-      .limit(20000);
-    if (eExisting) throw eExisting;
-
-    const existingKey = new Set((existing || []).map((t) => `${(t.phase || "").trim()}::${String(t.title || "").trim().toLowerCase()}`));
-
-    const payload = [];
-    for (const it of items || []) {
-      const title = String(it.title || "").trim();
-      if (!title) continue;
-      const key = `${(it.phase || "").trim()}::${title.toLowerCase()}`;
-      if (existingKey.has(key)) continue;
-
-      const basis = String(it.due_basis || "start").trim().toLowerCase();
-      const baseDate = basis === "end" ? end : start;
-      const due = addDays(baseDate, it.offset_days);
-
-      payload.push({
-        immersion_id: immersionId,
-        title,
-        phase: it.phase || null,
-        area: it.area || null,
-        due_date: toYmd(due),
-        status: "Programada",
-        sort_order: Number.isFinite(it.sort_order) ? it.sort_order : 0,
-      });
-    }
-
-    if (!payload.length) {
-      return res.status(200).json({ ok: true, inserted: 0 });
-    }
-
-    const { error: eIns } = await admin.from("immersion_tasks").insert(payload);
-    if (eIns) throw eIns;
-
-    // Persiste o template no registro da imersão (se a coluna existir)
-    await admin.from("immersions").update({ checklist_template_id: templateId }).eq("id", immersionId);
-
-    return res.status(200).json({ ok: true, inserted: payload.length });
+    return res.status(200).json({ ok: true, inserted: Number(inserted || 0) });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "Falha ao aplicar checklist template" });
   }
