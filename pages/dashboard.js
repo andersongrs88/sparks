@@ -4,18 +4,46 @@ import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 
 /**
- * DASHBOARD (corrigido)
- * Objetivo:
- * - Visual compacto (SaaS) e operável
- * - KPIs clicáveis (levam ao Painel)
- * - Lista de próximas imersões com ações (Abrir painel / Abrir imersão)
- * - Atalhos de triagem (Inbox / Atrasadas / Minhas)
- * - Deep-link consistente para tarefa: /painel?immersionId=...&taskId=...
+ * DASHBOARD — HOTFIX
+ * Corrige o crash "Minified React error #31" (tentativa de renderizar objeto como filho)
+ * tornando o rendering tolerante a campos retornados como objetos (joins do Supabase).
+ *
+ * Mantém:
+ * - KPIs clicáveis
+ * - Atalhos para Painel
+ * - Próximas imersões com ações
+ * - Seções avançadas colapsáveis
  *
  * Depende do endpoint:
  * - GET /api/dashboard/stats
- *   Retorna: { stats, upcoming, overdue, riskImmersions, workload, immersionOptions }
+ *   { stats, upcoming, overdue, riskImmersions, workload, immersionOptions }
  */
+
+const asText = (v) => {
+  if (v == null) return "";
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+  // padrões comuns em joins do Supabase
+  if (typeof v === "object") {
+    return (
+      v.name ||
+      v.title ||
+      v.label ||
+      v.email ||
+      v.immersion_name ||
+      v.display_name ||
+      v.id ||
+      ""
+    );
+  }
+  return "";
+};
+
+const asId = (v) => {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "object") return v.id || "";
+  return "";
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -23,12 +51,18 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [payload, setPayload] = useState({ stats: null, upcoming: [], overdue: [], riskImmersions: [], workload: [], immersionOptions: [] });
+  const [payload, setPayload] = useState({
+    stats: null,
+    upcoming: [],
+    overdue: [],
+    riskImmersions: [],
+    workload: [],
+    immersionOptions: []
+  });
 
   const [showKpis, setShowKpis] = useState(true);
   const [immersionFilter, setImmersionFilter] = useState("all");
 
-  // ----- Fetch
   useEffect(() => {
     if (authLoading) return;
     if (!user) return;
@@ -48,11 +82,11 @@ export default function DashboardPage() {
 
         setPayload({
           stats: j?.stats || null,
-          upcoming: j?.upcoming || [],
-          overdue: j?.overdue || [],
-          riskImmersions: j?.riskImmersions || [],
-          workload: j?.workload || [],
-          immersionOptions: j?.immersionOptions || []
+          upcoming: Array.isArray(j?.upcoming) ? j.upcoming : [],
+          overdue: Array.isArray(j?.overdue) ? j.overdue : [],
+          riskImmersions: Array.isArray(j?.riskImmersions) ? j.riskImmersions : [],
+          workload: Array.isArray(j?.workload) ? j.workload : [],
+          immersionOptions: Array.isArray(j?.immersionOptions) ? j.immersionOptions : []
         });
       } catch (e) {
         if (!mounted) return;
@@ -85,46 +119,34 @@ export default function DashboardPage() {
   const riskImmersions = useMemo(() => payload?.riskImmersions || [], [payload]);
   const workload = useMemo(() => payload?.workload || [], [payload]);
 
-  // "Minhas tarefas" (você pode adaptar o backend para retornar uma lista)
-  // No estado atual, usamos as tarefas atrasadas como amostra quando filtrado.
   const myTasks = useMemo(() => {
-    // Se o backend já retornar myTasks, use-o.
     if (Array.isArray(payload?.myTasks)) return payload.myTasks;
-
-    // fallback: tarefas atrasadas (limitadas) como “pendências”
-    const base = Array.isArray(overdue) ? overdue : [];
-    const limited = base.slice(0, 6);
-    return limited;
+    return overdue.slice(0, 6);
   }, [payload, overdue]);
 
-  // ----- Helpers
-  const goPainel = (q = {}) => {
-    router.push({ pathname: "/painel", query: q });
-  };
+  const goPainel = (q = {}) => router.push({ pathname: "/painel", query: q });
 
   const goImmersion = (immersionId, returnTo) => {
-    if (!immersionId) return;
+    const id = asId(immersionId);
+    if (!id) return;
     const query = returnTo ? { returnTo } : undefined;
-    router.push({ pathname: `/imersoes/${immersionId}`, query });
+    router.push({ pathname: `/imersoes/${id}`, query });
   };
 
   const taskLink = (t) => {
-    const immersionId = t?.immersion_id || t?.immersionId || t?.immersion;
-    const taskId = t?.id || t?.task_id || t?.taskId;
+    const immersionId = asId(t?.immersion_id || t?.immersion || t?.immersionId);
+    const taskId = asId(t?.id || t?.task_id || t?.taskId);
     const q = {};
     if (immersionId) q.immersionId = immersionId;
     if (taskId) q.taskId = taskId;
     return { pathname: "/painel", query: q };
   };
 
-  const openTask = (t) => {
-    const link = taskLink(t);
-    router.push(link);
-  };
+  const openTask = (t) => router.push(taskLink(t));
 
   const filteredUpcoming = useMemo(() => {
     if (!immersionFilter || immersionFilter === "all") return upcoming;
-    return (upcoming || []).filter((u) => (u?.immersion_id || u?.id) === immersionFilter);
+    return upcoming.filter((u) => asId(u?.immersion_id || u?.id) === immersionFilter);
   }, [upcoming, immersionFilter]);
 
   return (
@@ -177,7 +199,6 @@ export default function DashboardPage() {
               <div className="kpiMeta">Entregas</div>
             </button>
 
-            {/* KPIs pessoais (quando disponíveis) */}
             <button className="kpi kpiMuted" type="button" onClick={() => goPainel({ view: "minhas" })} title="Abrir minhas tarefas">
               <div className="kpiLabel">Minhas</div>
               <div className="kpiValue">{stats.myOpen}</div>
@@ -193,7 +214,6 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="dashGrid">
-          {/* LEFT: Atalhos / Minhas tarefas */}
           <section className="card compact" aria-label="Atalhos e minhas tarefas">
             <div className="sectionHeaderCompact">
               <div>
@@ -212,13 +232,19 @@ export default function DashboardPage() {
                 <span className="muted small">Imersão</span>
                 <select className="input inputSmall" value={immersionFilter} onChange={(e) => setImmersionFilter(e.target.value)}>
                   <option value="all">Todas</option>
-                  {immersionOptions.map((im) => (
-                    <option key={im.id} value={im.id}>{im.immersion_name}</option>
-                  ))}
+                  {immersionOptions.map((im) => {
+                    const id = asId(im?.id);
+                    const name = asText(im?.immersion_name || im?.name) || id;
+                    return <option key={id} value={id}>{name}</option>;
+                  })}
                 </select>
               </div>
 
-              <button className="btn small ghost" type="button" onClick={() => goPainel({ immersionId: immersionFilter !== "all" ? immersionFilter : undefined })}>
+              <button
+                className="btn small ghost"
+                type="button"
+                onClick={() => goPainel({ immersionId: immersionFilter !== "all" ? immersionFilter : undefined })}
+              >
                 Abrir Painel filtrado
               </button>
             </div>
@@ -244,26 +270,31 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="miniList" role="list">
-                {myTasks.map((t) => (
-                  <button
-                    key={t.id || t.task_id}
-                    type="button"
-                    className="miniRow"
-                    onClick={() => openTask(t)}
-                    title="Abrir tarefa no Painel"
-                  >
-                    <div className="miniTitle">{t.title}</div>
-                    <div className="miniMeta">
-                      <span className="badge muted">{t.phase || "-"}</span>
-                      {t.due_date ? <span className="badge danger">{t.due_date}</span> : <span className="badge muted">Sem prazo</span>}
-                    </div>
-                  </button>
-                ))}
+                {myTasks.map((t) => {
+                  const key = asId(t?.id || t?.task_id) || Math.random().toString(36).slice(2);
+                  const title = asText(t?.title) || "Tarefa";
+                  const phase = asText(t?.phase) || "-";
+                  const due = asText(t?.due_date) || "";
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className="miniRow"
+                      onClick={() => openTask(t)}
+                      title="Abrir tarefa no Painel"
+                    >
+                      <div className="miniTitle">{title}</div>
+                      <div className="miniMeta">
+                        <span className="badge muted">{phase}</span>
+                        {due ? <span className="badge danger">{due}</span> : <span className="badge muted">Sem prazo</span>}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>
 
-          {/* RIGHT: Próximas imersões */}
           <section className="card compact" aria-label="Próximas imersões">
             <div className="sectionHeaderCompact">
               <div>
@@ -285,12 +316,12 @@ export default function DashboardPage() {
             ) : (
               <div className="list" role="list">
                 {filteredUpcoming.slice(0, 8).map((im) => {
-                  const immersionId = im?.immersion_id || im?.id;
-                  const title = im?.immersion_name || im?.name || "Imersão";
-                  const start = im?.start_date || im?.startDate || "-";
-                  const end = im?.end_date || im?.endDate || "-";
-                  const phase = im?.phase || im?.status || "Planejamento";
-                  const next = im?.next_action || im?.nextAction || "";
+                  const immersionId = asId(im?.immersion_id || im?.id);
+                  const title = asText(im?.immersion_name || im?.name) || "Imersão";
+                  const start = asText(im?.start_date || im?.startDate) || "-";
+                  const end = asText(im?.end_date || im?.endDate) || "-";
+                  const phase = asText(im?.phase || im?.status) || "Planejamento";
+                  const next = asText(im?.next_action || im?.nextAction) || "";
 
                   return (
                     <div className="immRow" key={immersionId} role="listitem">
@@ -305,11 +336,7 @@ export default function DashboardPage() {
                         <button className="btn small" type="button" onClick={() => goPainel({ immersionId })}>
                           Abrir painel
                         </button>
-                        <button
-                          className="btn small ghost"
-                          type="button"
-                          onClick={() => goImmersion(immersionId, encodeURIComponent(router.asPath))}
-                        >
+                        <button className="btn small ghost" type="button" onClick={() => goImmersion(immersionId, router.asPath)}>
                           Abrir
                         </button>
                       </div>
@@ -321,7 +348,6 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Bottom: Informações avançadas (compactas / colapsáveis) */}
         <div className="dashBottom">
           <details className="card compact" open={false}>
             <summary className="summaryRow">
@@ -341,21 +367,29 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {workload.map((w) => (
-                      <tr key={w.responsible_id || w.responsible}>
-                        <td>
-                          <div style={{ fontWeight: 800 }}>{w.responsible}</div>
-                          {w.overdue >= 10 ? (
-                            <div className="small" style={{ marginTop: 4 }}><span className="badge danger">Carga crítica</span></div>
-                          ) : (
-                            <div className="small muted" style={{ marginTop: 4 }}>Carga normal</div>
-                          )}
-                        </td>
-                        <td><span className="badge">{w.open}</span></td>
-                        <td><span className={w.overdue ? "badge danger" : "badge muted"}>{w.overdue}</span></td>
-                        <td><span className={w.dueSoon ? "badge" : "badge muted"}>{w.dueSoon}</span></td>
-                      </tr>
-                    ))}
+                    {workload.map((w, idx) => {
+                      const key = asId(w?.responsible_id) || asText(w?.responsible) || String(idx);
+                      const responsible = asText(w?.responsible) || asText(w?.profile) || asText(w?.user) || "—";
+                      const open = Number(w?.open ?? 0);
+                      const overdueN = Number(w?.overdue ?? 0);
+                      const dueSoon = Number(w?.dueSoon ?? w?.due_soon ?? 0);
+
+                      return (
+                        <tr key={key}>
+                          <td>
+                            <div style={{ fontWeight: 800 }}>{responsible}</div>
+                            {overdueN >= 10 ? (
+                              <div className="small" style={{ marginTop: 4 }}><span className="badge danger">Carga crítica</span></div>
+                            ) : (
+                              <div className="small muted" style={{ marginTop: 4 }}>Carga normal</div>
+                            )}
+                          </td>
+                          <td><span className="badge">{open}</span></td>
+                          <td><span className={overdueN ? "badge danger" : "badge muted"}>{overdueN}</span></td>
+                          <td><span className={dueSoon ? "badge" : "badge muted"}>{dueSoon}</span></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -383,23 +417,32 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {overdue.slice(0, 25).map((t) => (
-                      <tr key={t.id || t.task_id}>
-                        <td>
-                          <button className="linkBtn" type="button" onClick={() => goPainel({ immersionId: t.immersion_id })}>
-                            {t.immersion_name || "Ver"}
-                          </button>
-                        </td>
-                        <td>
-                          <button className="linkBtn" type="button" onClick={() => openTask(t)}>
-                            {t.title}
-                          </button>
-                        </td>
-                        <td><span className="badge muted">{t.phase || "-"}</span></td>
-                        <td><span className="badge danger">{t.days_late} dia(s)</span></td>
-                        <td>{t.due_date}</td>
-                      </tr>
-                    ))}
+                    {overdue.slice(0, 25).map((t, idx) => {
+                      const key = asId(t?.id || t?.task_id) || String(idx);
+                      const immersionName = asText(t?.immersion_name || t?.immersion) || "Ver";
+                      const title = asText(t?.title) || "Tarefa";
+                      const phase = asText(t?.phase) || "-";
+                      const daysLate = Number(t?.days_late ?? t?.daysLate ?? 0);
+                      const due = asText(t?.due_date) || "-";
+
+                      return (
+                        <tr key={key}>
+                          <td>
+                            <button className="linkBtn" type="button" onClick={() => goPainel({ immersionId: asId(t?.immersion_id || t?.immersion) })}>
+                              {immersionName}
+                            </button>
+                          </td>
+                          <td>
+                            <button className="linkBtn" type="button" onClick={() => openTask(t)}>
+                              {title}
+                            </button>
+                          </td>
+                          <td><span className="badge muted">{phase}</span></td>
+                          <td><span className="badge danger">{daysLate} dia(s)</span></td>
+                          <td>{due}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
@@ -419,22 +462,28 @@ export default function DashboardPage() {
 
             {riskImmersions.length > 0 ? (
               <div className="list" role="list">
-                {riskImmersions.slice(0, 10).map((im) => (
-                  <div className="immRow" key={im.immersion_id || im.id} role="listitem">
-                    <div className="immMain">
-                      <div className="immTitle">{im.immersion_name}</div>
-                      <div className="immMeta">{im.signal || "Risco identificado"}</div>
+                {riskImmersions.slice(0, 10).map((im, idx) => {
+                  const id = asId(im?.immersion_id || im?.id) || String(idx);
+                  const title = asText(im?.immersion_name || im?.name) || "Imersão";
+                  const signal = asText(im?.signal) || "Risco identificado";
+
+                  return (
+                    <div className="immRow" key={id} role="listitem">
+                      <div className="immMain">
+                        <div className="immTitle">{title}</div>
+                        <div className="immMeta">{signal}</div>
+                      </div>
+                      <div className="immActions">
+                        <button className="btn small" type="button" onClick={() => goPainel({ immersionId: id, view: "inbox" })}>
+                          Abrir triagem
+                        </button>
+                        <button className="btn small ghost" type="button" onClick={() => goImmersion(id, router.asPath)}>
+                          Abrir
+                        </button>
+                      </div>
                     </div>
-                    <div className="immActions">
-                      <button className="btn small" type="button" onClick={() => goPainel({ immersionId: im.immersion_id || im.id, view: "inbox" })}>
-                        Abrir triagem
-                      </button>
-                      <button className="btn small ghost" type="button" onClick={() => goImmersion(im.immersion_id || im.id, encodeURIComponent(router.asPath))}>
-                        Abrir
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="muted small" style={{ marginTop: 8 }}>Nenhuma imersão em risco no momento.</div>
