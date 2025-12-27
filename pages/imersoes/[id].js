@@ -132,20 +132,14 @@ function daysUntil(startDateValue) {
 function getCountdownSignal(days) {
   if (days === null) return null;
 
-  // Hoje ou passado => crítico
-  if (days <= 0) {
-    return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
-  }
-
-  // Faixas (ajustáveis)
-  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
-  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
-  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
-  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
-  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
-
-  // 1 a 9 dias => bordo
-  return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
+  // Labels humanizados + tonalidade
+  if (days === 0) return { label: "Começa hoje", cls: "tag danger" };
+  if (days === 1) return { label: "Falta 1 dia", cls: "tag danger" };
+  if (days < 0) return { label: `Começou há ${Math.abs(days)}d`, cls: "tag neutral" };
+  if (days <= 7) return { label: `Faltam ${days}d`, cls: "tag danger" };
+  if (days <= 20) return { label: `Faltam ${days}d`, cls: "tag warn" };
+  if (days <= 59) return { label: `Faltam ${days}d`, cls: "tag info" };
+  return { label: `Faltam ${days}d`, cls: "tag ok" };
 }
 
 function isLate(dueDateStr, status) {
@@ -1323,19 +1317,39 @@ function normalizeTemplatesForClone(items) {
 
             <div className="row">
               {signal ? (
-                <span
-                  className="badge"
-                  style={{
-                    ...signal.style,
-                    border: "1px solid",
-                    padding: "6px 10px",
-                    borderRadius: 999
-                  }}
-                  title="Dias até a data de início"
-                >
-                  {signal.label} até
+                <span className={signal.cls} title="Contagem regressiva para a data de início">
+                  {signal.label}
                 </span>
               ) : null}
+
+              <button
+                type="button"
+                className="btn"
+                onClick={async () => {
+                  try {
+                    const url = typeof window !== "undefined" ? window.location.href : "";
+                    if (!url) return;
+                    if (navigator.clipboard?.writeText) {
+                      await navigator.clipboard.writeText(url);
+                      alert("Link copiado.");
+                    } else {
+                      // fallback simples
+                      const ta = document.createElement("textarea");
+                      ta.value = url;
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand("copy");
+                      document.body.removeChild(ta);
+                      alert("Link copiado.");
+                    }
+                  } catch {
+                    alert("Não foi possível copiar o link.");
+                  }
+                }}
+                title="Copiar link desta imersão"
+              >
+                Copiar link
+              </button>
 
               {form?.status !== "Concluída" ? (
                 <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
