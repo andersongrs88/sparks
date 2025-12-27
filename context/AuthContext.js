@@ -18,6 +18,10 @@ const AuthContext = createContext(null);
 const FULL_ACCESS_ROLES = new Set(["admin", "consultor", "consultor_educacao", "designer"]);
 const PDCA_EDIT_ROLES = new Set(["eventos", "producao", "mentoria", "outros"]);
 
+const MAX_SESSION_MS = 60 * 60 * 1000; // 1 hora
+const LOGIN_TS_KEY = "sparks_login_ts";
+const LOGIN_UID_KEY = "sparks_login_uid";
+
 export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -27,11 +31,20 @@ export function AuthProvider({ children }) {
   // Mantém o app rápido em mobile e evita chamadas redundantes.
   const profileCacheRef = useRef({ userId: null, value: null, ts: 0 });
   const inflightRef = useRef(null);
+  const sessionTimerRef = useRef(null);
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 
   const refreshProfile = useCallback(async (u, { force = false } = {}) => {
     if (!u?.id) {
       setProfile(null);
+
+          // Remove controle de sessão
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.removeItem(LOGIN_TS_KEY);
+              window.localStorage.removeItem(LOGIN_UID_KEY);
+            } catch {}
+          }
       return;
     }
 
@@ -50,6 +63,14 @@ export function AuthProvider({ children }) {
         setProfile(p || null);
       } catch {
         setProfile(null);
+
+          // Remove controle de sessão
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.removeItem(LOGIN_TS_KEY);
+              window.localStorage.removeItem(LOGIN_UID_KEY);
+            } catch {}
+          }
       }
       return;
     }
@@ -62,6 +83,14 @@ export function AuthProvider({ children }) {
     } catch (e) {
       // Se não houver profile ainda, não quebrar a UI.
       setProfile(null);
+
+          // Remove controle de sessão
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.removeItem(LOGIN_TS_KEY);
+              window.localStorage.removeItem(LOGIN_UID_KEY);
+            } catch {}
+          }
       profileCacheRef.current = { userId: u.id, value: null, ts: Date.now() };
     } finally {
       inflightRef.current = null;
@@ -118,6 +147,55 @@ export function AuthProvider({ children }) {
 
   const role = normalizeRole(profile?.role || "viewer");
   // Mantém compatibilidade com bases antigas.
+
+  // Timeout de sessão: após 1 hora logado, força deslogar.
+  useEffect(() => {
+    if (!supabase) return;
+
+    // Limpa timer anterior
+    if (sessionTimerRef.current) {
+      clearTimeout(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+
+    if (!user?.id || user.id === "noauth") return;
+
+    if (typeof window === "undefined") return;
+
+    try {
+      const uid = window.localStorage.getItem(LOGIN_UID_KEY);
+      const tsStr = window.localStorage.getItem(LOGIN_TS_KEY);
+
+      // Se mudou de usuário, reinicia o relógio
+      if (!uid || uid !== user.id || !tsStr) {
+        window.localStorage.setItem(LOGIN_UID_KEY, user.id);
+        window.localStorage.setItem(LOGIN_TS_KEY, String(Date.now()));
+      }
+
+      const ts = Number(window.localStorage.getItem(LOGIN_TS_KEY) || Date.now());
+      const elapsed = Date.now() - ts;
+      const remaining = Math.max(0, MAX_SESSION_MS - elapsed);
+
+      sessionTimerRef.current = setTimeout(() => {
+        // best-effort: não depende de estado React (evita race em navegação)
+        supabase.auth.signOut({ scope: "local" }).catch(() => {});
+        try {
+          window.localStorage.removeItem(LOGIN_TS_KEY);
+          window.localStorage.removeItem(LOGIN_UID_KEY);
+        } catch {}
+      }, remaining);
+    } catch {
+      // se localStorage falhar, não bloqueia o app
+    }
+
+    return () => {
+      if (sessionTimerRef.current) {
+        clearTimeout(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+    };
+  }, [user?.id]);
+
   const normRole = role === "consultor_educacao" ? "consultor" : role;
   const isFullAccess = FULL_ACCESS_ROLES.has(normRole) || FULL_ACCESS_ROLES.has(role) || (user?.id === "noauth");
   const canEditPdca = isFullAccess || PDCA_EDIT_ROLES.has(normRole) || PDCA_EDIT_ROLES.has(role);
@@ -151,6 +229,14 @@ export function AuthProvider({ children }) {
           setUser(null);
           setProfile(null);
 
+          // Remove controle de sessão
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.removeItem(LOGIN_TS_KEY);
+              window.localStorage.removeItem(LOGIN_UID_KEY);
+            } catch {}
+          }
+
           // 3) Limpeza defensiva do storage (evita sessão "grudar" em alguns devices)
           if (typeof window !== "undefined") {
             try {
@@ -172,6 +258,14 @@ export function AuthProvider({ children }) {
         // 1) Reset local imediato
         setUser(null);
         setProfile(null);
+
+          // Remove controle de sessão
+          if (typeof window !== "undefined") {
+            try {
+              window.localStorage.removeItem(LOGIN_TS_KEY);
+              window.localStorage.removeItem(LOGIN_UID_KEY);
+            } catch {}
+          }
         profileCacheRef.current = { userId: null, value: null, ts: 0 };
 
         // 2) Limpeza defensiva
