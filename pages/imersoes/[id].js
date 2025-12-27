@@ -159,9 +159,6 @@ function isLate(dueDateStr, status) {
 
 export default function ImmersionDetailEditPage() {
   const router = useRouter();
-  const returnToRaw = typeof router.query.returnTo === "string" ? router.query.returnTo : null;
-  const returnTo = returnToRaw ? decodeURIComponent(returnToRaw) : null;
-
   const { loading: authLoading, user, isFullAccess, canEditPdca, role, profile } = useAuth();
   const canEditAll = isFullAccess;
   const canEditCurrentTab = (t) => (t === "pdca" ? canEditPdca : canEditAll);
@@ -1310,26 +1307,6 @@ function normalizeTemplatesForClone(items) {
             </div>
 
             <div className="row">
-              {returnTo ? (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => router.push(returnTo)}
-                  title="Voltar para o Painel preservando filtros e rolagem"
-                >
-                  Voltar ao Painel
-                </button>
-              ) : null}
-
-              <button
-                type="button"
-                className="btn"
-                onClick={() => router.push(`/painel?immersionId=${form?.id || id}`)}
-                disabled={!form?.id && !id}
-                title="Abrir o Painel já filtrado nesta imersão"
-              >
-                Ver tarefas no Painel
-              </button>
               {signal ? (
                 <span
                   className="badge"

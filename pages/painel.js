@@ -37,63 +37,15 @@ function slaForTask(task) {
   return { label: "No prazo", className: "badge muted" };
 }
 
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (e) {
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "absolute";
-      ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      return true;
-    } catch (e2) {
-      return false;
-    }
-  }
-}
-
-function buildTaskLink(task) {
-  if (typeof window === "undefined") return "";
-  const origin = window.location.origin;
-  return `${origin}/painel?immersionId=${encodeURIComponent(task.immersion_id)}&taskId=${encodeURIComponent(task.id)}`;
-}
-
 const PHASES = [
   { value: "PA-PRE", label: "PA-PRÉ" },
   { value: "DURANTE", label: "DURANTE" },
   { value: "POS", label: "PÓS" },
 ];
 
-const STATUS_OPTIONS = [
-  { value: "Programada", label: "Programada" },
-  { value: "Em andamento", label: "Em andamento" },
-  { value: "Bloqueada", label: "Bloqueada" },
-  { value: "Concluída", label: "Concluída" },
-];
-
 export default function PainelPage() {
   const router = useRouter();
   const { loading: authLoading, user } = useAuth();
-
-  // Toast (feedback leve, sem `alert`)
-  const [toast, setToast] = useState({ open: false, message: "", tone: "" });
-  const toastTimerRef = useRef(null);
-
-  function notify(message, tone = "") {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ open: true, message: String(message || ""), tone: String(tone || "") });
-    toastTimerRef.current = setTimeout(() => {
-      setToast((t) => ({ ...t, open: false }));
-    }, 2200);
-  }
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -106,17 +58,6 @@ export default function PainelPage() {
   const [phase, setPhase] = useState("all");
   const [status, setStatus] = useState("Pendentes");
   const [onlyOverdue, setOnlyOverdue] = useState(false);
-
-  // Drawer (BottomSheet) da tarefa
-  const [taskOpen, setTaskOpen] = useState(false);
-  const [activeTask, setActiveTask] = useState(null);
-  const [taskSaving, setTaskSaving] = useState(false);
-
-  const [editPhase, setEditPhase] = useState("");
-  const [editOwner, setEditOwner] = useState("");
-  const [editDue, setEditDue] = useState("");
-  const [editStatus, setEditStatus] = useState("");
-  const [editNotes, setEditNotes] = useState("");
 
   const [immersionOptions, setImmersionOptions] = useState([]);
 
@@ -136,18 +77,6 @@ export default function PainelPage() {
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
-
-  // URL -> filtros (suporta /painel?immersionId=...&view=inbox)
-  useEffect(() => {
-    if (!router.isReady) return;
-    const qImm = router.query?.immersionId;
-    if (typeof qImm === "string" && qImm.trim()) setImmersionId(qImm);
-    if (router.query?.view === "inbox") {
-      setStatus("Pendentes");
-      setOnlyOverdue(false);
-    }
-    // não removemos query params aqui: são parte do link compartilhável
-  }, [router.isReady, router.query?.immersionId, router.query?.view]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -205,7 +134,7 @@ export default function PainelPage() {
       }
 
       // Select compatível com bases antigas
-      const base = "id, immersion_id, template_item_id, title, phase, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";
+      const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";
       let q = supabase
         .from("immersion_tasks")
         .select(base)
@@ -286,107 +215,6 @@ export default function PainelPage() {
 
     return { inbox, overdue, dueToday, next7, all: tasks || [] };
   }, [tasks]);
-
-  function openTask(task) {
-    if (!task?.id) return;
-    setActiveTask(task);
-    setEditPhase(task.phase || "");
-    setEditOwner(task.responsible_id || "");
-    setEditDue(task.due_date || "");
-    setEditStatus(task.status || (isTaskDone(task) ? "Concluída" : "Programada"));
-    setEditNotes(task.notes || "");
-    setTaskOpen(true);
-  }
-
-  function closeTask() {
-    setTaskOpen(false);
-  }
-
-  async function fetchTaskById(taskId) {
-    const base =
-      "id, immersion_id, template_item_id, title, phase, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";
-    const { data, error: e } = await supabase.from("immersion_tasks").select(base).eq("id", taskId).maybeSingle();
-    if (e) throw e;
-    if (!data) return null;
-    return { ...data, immersion_name: data?.immersions?.immersion_name || "—" };
-  }
-
-  async function saveActiveTask() {
-    if (!activeTask?.id) return;
-    try {
-      setTaskSaving(true);
-
-      const patch = {
-        phase: editPhase || null,
-        responsible_id: editOwner || null,
-        due_date: editDue || null,
-        status: editStatus || null,
-        notes: editNotes || null,
-      };
-
-      const concluded = String(editStatus || "").toLowerCase().includes("conclu");
-      patch.done_at = concluded ? (activeTask.done_at || new Date().toISOString()) : null;
-
-      const { error: e } = await supabase.from("immersion_tasks").update(patch).eq("id", activeTask.id);
-      if (e) throw e;
-
-      notify("Tarefa atualizada.", "success");
-      await loadTasks();
-      setActiveTask((prev) => (prev ? { ...prev, ...patch } : prev));
-    } catch (e) {
-      notify(e?.message || "Falha ao salvar.", "danger");
-    } finally {
-      setTaskSaving(false);
-    }
-  }
-
-  async function toggleConcludeActive() {
-    if (!activeTask) return;
-    const done = isTaskDone(activeTask);
-    setEditStatus(done ? "Programada" : "Concluída");
-    // salva imediatamente para reduzir cliques no mobile
-    setTimeout(() => saveActiveTask(), 0);
-  }
-
-  // Deep-link: /painel?immersionId=...&taskId=... (abre a tarefa automaticamente)
-  useEffect(() => {
-    if (!router.isReady) return;
-    const taskId = router.query?.taskId;
-    if (typeof taskId !== "string" || !taskId) return;
-    if (loading) return;
-
-    let cancelled = false;
-    (async () => {
-      const found = (tasks || []).find((t) => t.id === taskId);
-      if (cancelled) return;
-      if (found) {
-        openTask(found);
-      } else {
-        // fallback: pode não estar no filtro atual
-        try {
-          const single = await fetchTaskById(taskId);
-          if (cancelled) return;
-          if (single) openTask(single);
-        } catch {
-          // ignore
-        }
-      }
-
-      // remove taskId da URL para evitar reabrir em refresh
-      try {
-        const nextQuery = { ...(router.query || {}) };
-        delete nextQuery.taskId;
-        router.replace({ pathname: "/painel", query: nextQuery }, undefined, { shallow: true });
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, router.query?.taskId, loading, tasks]);
 
   function toggleSelected(id) {
     setSelectedIds((prev) => {
@@ -531,8 +359,7 @@ export default function PainelPage() {
         <button
           type="button"
           className="planTaskMain"
-          onClick={() => openTask(t)}
-          aria-label={`Abrir tarefa: ${t.title}`}
+          onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
         >
           <div className="planTaskTitle">{t.title}</div>
           <div className="planTaskMeta" aria-label="Detalhes da tarefa">
@@ -546,31 +373,6 @@ export default function PainelPage() {
         <div className="planTaskAside">
           <span className={sla.className}>{sla.label}</span>
           <span className={isTaskDone(t) ? "badge success" : "badge muted"}>{isTaskDone(t) ? "Concluída" : "Aberta"}</span>
-          <div className="row" style={{ gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              className="btn small"
-              onClick={(e) => {
-                e.stopPropagation();
-                const rt = encodeURIComponent(router.asPath);
-                router.push(`/imersoes/${t.immersion_id}?returnTo=${rt}`);
-              }}
-            >
-              Imersão
-            </button>
-            <button
-              type="button"
-              className="btn small"
-              onClick={async (e) => {
-                e.stopPropagation();
-                const ok = await copyText(buildTaskLink(t));
-                if (!ok) notify("Não foi possível copiar o link.", "danger");
-                else notify("Link copiado.", "success");
-              }}
-            >
-              Copiar link
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -735,128 +537,6 @@ export default function PainelPage() {
         >
           <FiltersContent />
         </BottomSheet>
-
-        <BottomSheet
-          open={taskOpen}
-          onClose={closeTask}
-          title={activeTask ? "Tarefa" : "Tarefa"}
-          footer={
-            <div className="row" style={{ justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-              <div className="row" style={{ gap: 10, alignItems: "center" }}>
-                <button className="btn" type="button" onClick={toggleConcludeActive} disabled={!activeTask || taskSaving}>
-                  {activeTask && !isTaskDone(activeTask) ? "Concluir" : "Reabrir"}
-                </button>
-                {activeTask ? (
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={async () => {
-                      const ok = await copyText(buildTaskLink(activeTask));
-                      if (!ok) notify("Não foi possível copiar o link.", "danger");
-                      else notify("Link copiado.", "success");
-                    }}
-                    disabled={taskSaving}
-                  >
-                    Copiar link
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="row" style={{ gap: 10, alignItems: "center" }}>
-                <button className="btn" type="button" onClick={closeTask} disabled={taskSaving}>
-                  Fechar
-                </button>
-                <button className="btn primary" type="button" onClick={saveActiveTask} disabled={!activeTask || taskSaving}>
-                  {taskSaving ? "Salvando..." : "Salvar"}
-                </button>
-              </div>
-            </div>
-          }
-        >
-          {!activeTask ? (
-            <div className="small muted">Nenhuma tarefa selecionada.</div>
-          ) : (
-            <div className="grid" style={{ gap: 12 }}>
-              <div>
-                <div className="small muted">Título</div>
-                <div style={{ fontWeight: 600 }}>{activeTask.title}</div>
-              </div>
-
-              <div className="row wrap" style={{ gap: 10 }}>
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => {
-                    const rt = encodeURIComponent(router.asPath);
-                    router.push(`/imersoes/${activeTask.immersion_id}?returnTo=${rt}`);
-                  }}
-                  disabled={taskSaving}
-                >
-                  Abrir imersão
-                </button>
-                {activeTask.template_item_id ? <span className="pill soft">Origem: template</span> : <span className="pill soft">Origem: manual</span>}
-                <span className="pill soft">{activeTask.immersion_name || "—"}</span>
-              </div>
-
-              <div className="row wrap" style={{ gap: 12 }}>
-                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
-                  <label className="label">Fase</label>
-                  <select className="input" value={editPhase} onChange={(e) => setEditPhase(e.target.value)} disabled={taskSaving}>
-                    <option value="">Sem fase</option>
-                    {PHASES.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
-                  <label className="label">Responsável</label>
-                  <select className="input" value={editOwner} onChange={(e) => setEditOwner(e.target.value)} disabled={taskSaving}>
-                    <option value="">Sem responsável</option>
-                    {(profiles || []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name || p.email || p.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="row wrap" style={{ gap: 12 }}>
-                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
-                  <label className="label">Prazo</label>
-                  <input className="input" type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} disabled={taskSaving} />
-                </div>
-
-                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
-                  <label className="label">Status</label>
-                  <select className="input" value={editStatus} onChange={(e) => setEditStatus(e.target.value)} disabled={taskSaving}>
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid" style={{ gap: 6 }}>
-                <label className="label">Notas</label>
-                <textarea className="input" rows={4} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} disabled={taskSaving} />
-              </div>
-            </div>
-          )}
-        </BottomSheet>
-
-        <div className="toastHost" aria-live="polite" aria-atomic="true">
-          {toast.open ? (
-            <div className={`toast ${toast.tone || ""}`.trim()} role="status">
-              {toast.message}
-            </div>
-          ) : null}
-        </div>
       </div>
     </Layout>
   );

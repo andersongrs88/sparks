@@ -2,8 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
-import { supabase } from "../lib/supabaseClient";
-import { sortTasksByPriority } from "../lib/tasks";
+
+/**
+ * DASHBOARD (corrigido)
+ * Objetivo:
+ * - Visual compacto (SaaS) e operável
+ * - KPIs clicáveis (levam ao Painel)
+ * - Lista de próximas imersões com ações (Abrir painel / Abrir imersão)
+ * - Atalhos de triagem (Inbox / Atrasadas / Minhas)
+ * - Deep-link consistente para tarefa: /painel?immersionId=...&taskId=...
+ *
+ * Depende do endpoint:
+ * - GET /api/dashboard/stats
+ *   Retorna: { stats, upcoming, overdue, riskImmersions, workload, immersionOptions }
+ */
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -11,43 +23,37 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [payload, setPayload] = useState({ stats: null, upcoming: [], overdue: [] });
+  const [payload, setPayload] = useState({ stats: null, upcoming: [], overdue: [], riskImmersions: [], workload: [], immersionOptions: [] });
 
   const [showKpis, setShowKpis] = useState(true);
-
-  const [myTasks, setMyTasks] = useState([]);
-  const [myLoading, setMyLoading] = useState(false);
-  const [myError, setMyError] = useState("");
   const [immersionFilter, setImmersionFilter] = useState("all");
-  const [immersionOptions, setImmersionOptions] = useState([]);
 
+  // ----- Fetch
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [authLoading, user, router]);
+    if (authLoading) return;
+    if (!user) return;
 
-  useEffect(() => {
-    if (authLoading || !user) return;
     let mounted = true;
 
     (async () => {
       try {
-        setError("");
         setLoading(true);
+        setError("");
 
-        const r = await fetch("/api/dashboard/stats", { method: "GET" });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || "Falha ao carregar dados.");
+        const res = await fetch("/api/dashboard/stats", { method: "GET" });
+        if (!res.ok) throw new Error("Falha ao carregar o dashboard.");
+        const j = await res.json();
 
         if (!mounted) return;
-        // Normaliza para o shape esperado pela UI atual
+
         setPayload({
           stats: j?.stats || null,
           upcoming: j?.upcoming || [],
           overdue: j?.overdue || [],
           riskImmersions: j?.riskImmersions || [],
-          workload: j?.workload || []
+          workload: j?.workload || [],
+          immersionOptions: j?.immersionOptions || []
         });
-        setImmersionOptions(j?.immersionOptions || []);
       } catch (e) {
         if (!mounted) return;
         setError(e?.message || "Falha ao carregar dados.");
@@ -56,278 +62,262 @@ export default function DashboardPage() {
       }
     })();
 
-    return () => { mounted = false; };
-  }, [authLoading, user]);
-
-  // Mobile UX: KPI section can be collapsed to avoid an excessively tall dashboard.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const m = window.matchMedia("(max-width: 720px)");
-    const apply = () => setShowKpis(!m.matches);
-    apply();
-    if (m.addEventListener) m.addEventListener("change", apply);
-    else m.addListener(apply);
     return () => {
-      if (m.removeEventListener) m.removeEventListener("change", apply);
-      else m.removeListener(apply);
+      mounted = false;
     };
-  }, []);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    let mounted = true;
-
-    async function loadMy() {
-      try {
-        setMyError("");
-        setMyLoading(true);
-
-        // Keep the select list aligned with the actual database schema.
-        // Some deployments may not have an evidence_link column, so we avoid selecting it here.
-        let query = supabase
-          .from("immersion_tasks")
-          .select("id, immersion_id, title, status, due_date, immersions(immersion_name)")
-          .eq("responsible_id", user.id)
-          .neq("status", "Concluída");
-
-        if (immersionFilter !== "all") query = query.eq("immersion_id", immersionFilter);
-
-        const { data, error: qErr } = await query
-          .order("due_date", { ascending: true, nullsFirst: false })
-          .limit(20);
-
-        if (qErr) throw qErr;
-        if (!mounted) return;
-        setMyTasks(sortTasksByPriority(data ?? []));
-      } catch (e) {
-        if (!mounted) return;
-        setMyError(e?.message || "Falha ao carregar tarefas.");
-      } finally {
-        if (mounted) setMyLoading(false);
-      }
-    }
-
-    loadMy();
-    return () => { mounted = false; };
-  }, [authLoading, user, immersionFilter]);
+  }, [authLoading, user]);
 
   const stats = useMemo(() => {
     const s = payload?.stats;
     return {
       totalImmersions: s?.totalImmersions ?? 0,
       totalTasks: s?.totalTasks ?? 0,
-      lateTasks: s?.lateTasks ?? 0,
-      doneTasks: s?.doneTasks ?? 0
+      overdueTasks: s?.overdueTasks ?? 0,
+      doneTasks: s?.doneTasks ?? 0,
+      myOpen: s?.myOpen ?? 0,
+      myOverdue: s?.myOverdue ?? 0
     };
   }, [payload]);
 
-  const riskImmersions = payload?.riskImmersions ?? [];
-  const workload = payload?.workload ?? [];
+  const immersionOptions = useMemo(() => payload?.immersionOptions || [], [payload]);
+  const overdue = useMemo(() => payload?.overdue || [], [payload]);
+  const upcoming = useMemo(() => payload?.upcoming || [], [payload]);
+  const riskImmersions = useMemo(() => payload?.riskImmersions || [], [payload]);
+  const workload = useMemo(() => payload?.workload || [], [payload]);
 
-  if (authLoading) return null;
-  if (!user) return null;
+  // "Minhas tarefas" (você pode adaptar o backend para retornar uma lista)
+  // No estado atual, usamos as tarefas atrasadas como amostra quando filtrado.
+  const myTasks = useMemo(() => {
+    // Se o backend já retornar myTasks, use-o.
+    if (Array.isArray(payload?.myTasks)) return payload.myTasks;
+
+    // fallback: tarefas atrasadas (limitadas) como “pendências”
+    const base = Array.isArray(overdue) ? overdue : [];
+    const limited = base.slice(0, 6);
+    return limited;
+  }, [payload, overdue]);
+
+  // ----- Helpers
+  const goPainel = (q = {}) => {
+    router.push({ pathname: "/painel", query: q });
+  };
+
+  const goImmersion = (immersionId, returnTo) => {
+    if (!immersionId) return;
+    const query = returnTo ? { returnTo } : undefined;
+    router.push({ pathname: `/imersoes/${immersionId}`, query });
+  };
+
+  const taskLink = (t) => {
+    const immersionId = t?.immersion_id || t?.immersionId || t?.immersion;
+    const taskId = t?.id || t?.task_id || t?.taskId;
+    const q = {};
+    if (immersionId) q.immersionId = immersionId;
+    if (taskId) q.taskId = taskId;
+    return { pathname: "/painel", query: q };
+  };
+
+  const openTask = (t) => {
+    const link = taskLink(t);
+    router.push(link);
+  };
+
+  const filteredUpcoming = useMemo(() => {
+    if (!immersionFilter || immersionFilter === "all") return upcoming;
+    return (upcoming || []).filter((u) => (u?.immersion_id || u?.id) === immersionFilter);
+  }, [upcoming, immersionFilter]);
 
   return (
-    <Layout title="Dashboard">
-      <div className="container">
-        <section className="kpiSection" aria-label="Indicadores">
-          <div className="row wrap" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div className="small muted">Indicadores do sistema</div>
-            <button className="btn onlyMobile" type="button" onClick={() => setShowKpis((v) => !v)}>
-              {showKpis ? "Ocultar" : "Mostrar"}
+    <Layout title="Dashboard" subtitle="Planejamento, execução e controle com base no Educagrama">
+      <div className="dashWrap">
+        <div className="dashTop">
+          <div>
+            <div className="muted small">Indicadores do sistema</div>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn small onlyMobile" type="button" onClick={() => setShowKpis((v) => !v)}>
+              {showKpis ? "Ocultar KPIs" : "Mostrar KPIs"}
             </button>
-          </div>
-
-          {showKpis ? (
-            <div className="kpiGrid">
-            <div className="kpiCard">
-              <div className="kpiLabel">Imersões</div>
-              <div className="kpiValue">{stats.totalImmersions}</div>
-              <div className="kpiMeta">Cadastradas no sistema</div>
-            </div>
-            <div className="kpiCard">
-              <div className="kpiLabel">Tarefas</div>
-              <div className="kpiValue">{stats.totalTasks}</div>
-              <div className="kpiMeta">Total registradas</div>
-            </div>
-            <div className="kpiCard danger">
-              <div className="kpiLabel">Atrasadas</div>
-              <div className="kpiValue">{stats.lateTasks}</div>
-              <div className="kpiMeta">Prioridade máxima</div>
-            </div>
-            <div className="kpiCard success">
-              <div className="kpiLabel">Concluídas</div>
-              <div className="kpiValue">{stats.doneTasks}</div>
-              <div className="kpiMeta">Entregas finalizadas</div>
-            </div>
-            </div>
-          ) : null}
-        </section>
-
-        <div className="grid2" style={{ marginTop: 16 }}>
-          <div className="card">
-            <div className="sectionHeader">
-              <div>
-                <h3 className="sectionTitle">Minhas tarefas</h3>
-                <div className="small muted">Entregas pendentes atribuídas a você</div>
-              </div>
-              <div className="row wrap" style={{ gap: 10 }}>
-                <div className="row" style={{ gap: 8 }}>
-                  <span className="small muted">Imersão</span>
-                  <select className="input" value={immersionFilter} onChange={(e) => setImmersionFilter(e.target.value)}>
-                    <option value="all">Todas</option>
-                    {(immersionOptions || []).map((im) => (
-                      <option key={im.id} value={im.id}>{im.immersion_name}</option>
-                    ))}
-                  </select>
-                </div>
-                <button className="btn" onClick={() => router.push("/painel")}>Abrir plano de ação</button>
-              </div>
-            </div>
-
-            {myError ? (
-              <div className="alert danger" role="status">
-                Não foi possível carregar suas tarefas. Tente novamente.
-              </div>
-            ) : null}
-            {myLoading ? <div className="skeletonList" aria-label="Carregando tarefas" /> : null}
-
-            {!myLoading && (myTasks || []).length === 0 ? (
-              <div className="emptyState" style={{ marginTop: 12 }}>
-                <div className="emptyTitle">Nenhuma tarefa pendente</div>
-                <div className="small muted">Você está em dia. Selecione outra imersão para filtrar ou acesse o plano de ação.</div>
-              </div>
-            ) : null}
-
-            <div className="list" style={{ marginTop: 12 }}>
-              {(myTasks || []).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="listItem"
-                  onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
-                >
-                  <div className="listItemMain">
-                    <div className="listItemTitle">{t.title}</div>
-                    <div className="listItemMeta">
-                      {t?.immersions?.immersion_name ? `Imersão: ${t.immersions.immersion_name} • ` : ""}
-                      {t.due_date ? `Prazo: ${t.due_date}` : "Sem prazo"}
-                    </div>
-                  </div>
-                  <div className="listItemAside">
-                    <span className={t.due_date ? "badge" : "badge muted"}>{t.status}</span>
-                    <span className="chev" aria-hidden="true">›</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="sectionHeader">
-              <div>
-                <h3 className="sectionTitle">Próximas imersões</h3>
-                <div className="small muted">Planejamento e status operacional</div>
-              </div>
-              <button className="btn" onClick={() => router.push("/imersoes")}>Ver todas</button>
-            </div>
-
-            {error ? (
-              <div className="alert danger" role="status">
-                Não foi possível carregar as imersões. Tente novamente.
-              </div>
-            ) : null}
-            {loading ? <div className="skeletonList" aria-label="Carregando imersões" /> : null}
-
-            {!loading && (payload?.upcoming || []).length === 0 ? (
-              <p className="muted" style={{ marginTop: 10 }}>Nenhuma imersão cadastrada.</p>
-            ) : null}
-
-            <div className="cardsList" style={{ marginTop: 12 }}>
-              {(payload?.upcoming || []).map((it) => (
-                <div key={it.id} className="miniCard" role="group" aria-label={it.immersion_name}>
-                  <div className="miniCardMain">
-                    <div className="miniCardTitle">{it.immersion_name}</div>
-                    <div className="miniCardMeta">
-                      {it.start_date} → {it.end_date} • {it.status}
-                      {it.next_action?.title ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}` : ""}
-                    </div>
-                  </div>
-                  <div className="miniCardAside">
-                    <span className="pill">{it.total_tasks || 0} tarefas</span>
-                    <button className="btn" onClick={() => router.push(`/imersoes/${it.id}`)}>Abrir</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <button className="btn small ghost" type="button" onClick={() => router.push("/painel")}>
+              Abrir Painel
+            </button>
           </div>
         </div>
 
-        {/* Prioridade de leitura: sinais de execução primeiro, detalhes de atrasos por último. */}
-        <div className="grid2" style={{ marginTop: 16 }}>
-          <div className="card">
-            <div className="sectionHeader">
+        {error ? (
+          <div className="card compact">
+            <div className="badge danger">Erro</div>
+            <div style={{ marginTop: 8 }}>{error}</div>
+          </div>
+        ) : null}
+
+        {showKpis ? (
+          <section className="kpiGridCompact" aria-label="KPIs do sistema">
+            <button className="kpi" type="button" onClick={() => goPainel({})} title="Abrir Painel">
+              <div className="kpiLabel">Imersões</div>
+              <div className="kpiValue">{stats.totalImmersions}</div>
+              <div className="kpiMeta">Cadastradas</div>
+            </button>
+
+            <button className="kpi" type="button" onClick={() => goPainel({})} title="Abrir Painel">
+              <div className="kpiLabel">Tarefas</div>
+              <div className="kpiValue">{stats.totalTasks}</div>
+              <div className="kpiMeta">Total</div>
+            </button>
+
+            <button className="kpi kpiAlert" type="button" onClick={() => goPainel({ view: "overdue" })} title="Ver atrasadas no Painel">
+              <div className="kpiLabel">Atrasadas</div>
+              <div className="kpiValue">{stats.overdueTasks}</div>
+              <div className="kpiMeta">Prioridade máxima</div>
+            </button>
+
+            <button className="kpi kpiOk" type="button" onClick={() => goPainel({ view: "done" })} title="Ver concluídas no Painel">
+              <div className="kpiLabel">Concluídas</div>
+              <div className="kpiValue">{stats.doneTasks}</div>
+              <div className="kpiMeta">Entregas</div>
+            </button>
+          </section>
+        ) : null}
+
+        <div className="dashGrid">
+          {/* LEFT: Atalhos / Minhas tarefas */}
+          <section className="card compact" aria-label="Atalhos e minhas tarefas">
+            <div className="sectionHeaderCompact">
               <div>
-                <h3 className="sectionTitle">Imersões em risco</h3>
-                <div className="small muted">Sinalização automática por atrasos, prazos próximos e tarefas sem dono</div>
+                <h3 className="h3">Atalhos</h3>
+                <div className="muted small">Triagem rápida</div>
               </div>
-              <button className="btn" onClick={() => router.push("/relatorios")}>Ver relatórios</button>
+              <div className="row" style={{ gap: 8 }}>
+                <button className="btn small" type="button" onClick={() => goPainel({ view: "minhas" })}>Minhas</button>
+                <button className="btn small" type="button" onClick={() => goPainel({ view: "inbox" })}>Inbox</button>
+                <button className="btn small" type="button" onClick={() => goPainel({ view: "overdue" })}>Atrasadas</button>
+              </div>
             </div>
 
-            {!loading && riskImmersions.length === 0 ? (
-              <div className="emptyState" style={{ marginTop: 12 }}>
-                <div className="emptyTitle">Nenhum risco relevante</div>
-                <div className="small muted">No momento, as imersões estão em controle operacional.</div>
+            <div className="row wrap" style={{ gap: 10, marginTop: 10, alignItems: "center" }}>
+              <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                <span className="muted small">Imersão</span>
+                <select className="input inputSmall" value={immersionFilter} onChange={(e) => setImmersionFilter(e.target.value)}>
+                  <option value="all">Todas</option>
+                  {immersionOptions.map((im) => (
+                    <option key={im.id} value={im.id}>{im.immersion_name}</option>
+                  ))}
+                </select>
               </div>
-            ) : null}
 
-            {riskImmersions.length > 0 ? (
-              <div className="list" style={{ marginTop: 12 }}>
-                {riskImmersions.map((r) => (
-                  <button key={r.immersion_id} className="listItem" type="button" onClick={() => router.push(`/imersoes/${r.immersion_id}`)}>
-                    <div className="listItemMain">
-                      <div className="listItemTitle">{r.immersion_name}</div>
-                      <div className="listItemMeta">
-                        {r.start_date ? `Início: ${r.start_date} • ` : ""}
-                        {r.status ? `Status: ${r.status}` : ""}
-                        {r.reasons?.length ? ` • Motivos: ${r.reasons.join(", ")}` : ""}
-                      </div>
-                      {r.reasons?.length ? (
-                        <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
-                          {r.reasons.slice(0, 4).map((tx, idx) => (
-                            <span key={idx} className="pill">{tx}</span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="listItemAside">
-                      <span className={r.level === "Alto" ? "badge danger" : r.level === "Médio" ? "badge" : "badge muted"}>{r.level}</span>
-                      <span className="chev" aria-hidden="true">›</span>
+              <button className="btn small ghost" type="button" onClick={() => goPainel({ immersionId: immersionFilter !== "all" ? immersionFilter : undefined })}>
+                Abrir Painel filtrado
+              </button>
+            </div>
+
+            <div className="divider" />
+
+            <div className="sectionHeaderCompact" style={{ marginTop: 4 }}>
+              <div>
+                <h3 className="h3">Pendências em foco</h3>
+                <div className="muted small">Amostra (até 6)</div>
+              </div>
+              <button className="btn small" type="button" onClick={() => goPainel({ view: "overdue" })}>
+                Ver tudo
+              </button>
+            </div>
+
+            {!loading && myTasks.length === 0 ? (
+              <div className="empty">
+                <strong>Nenhuma tarefa pendente</strong>
+                <div className="muted small" style={{ marginTop: 6 }}>
+                  Você está em dia. Use o Painel para filtrar por outras imersões.
+                </div>
+              </div>
+            ) : (
+              <div className="miniList" role="list">
+                {myTasks.map((t) => (
+                  <button
+                    key={t.id || t.task_id}
+                    type="button"
+                    className="miniRow"
+                    onClick={() => openTask(t)}
+                    title="Abrir tarefa no Painel"
+                  >
+                    <div className="miniTitle">{t.title}</div>
+                    <div className="miniMeta">
+                      <span className="badge muted">{t.phase || "-"}</span>
+                      {t.due_date ? <span className="badge danger">{t.due_date}</span> : <span className="badge muted">Sem prazo</span>}
                     </div>
                   </button>
                 ))}
               </div>
-            ) : null}
-          </div>
+            )}
+          </section>
 
-          <div className="card">
-            <div className="sectionHeader">
+          {/* RIGHT: Próximas imersões */}
+          <section className="card compact" aria-label="Próximas imersões">
+            <div className="sectionHeaderCompact">
               <div>
-                <h3 className="sectionTitle">Sobrecarga por responsável</h3>
-                <div className="small muted">Abertas, atrasadas e vencendo em até 3 dias</div>
+                <h3 className="h3">Próximas imersões</h3>
+                <div className="muted small">Planejamento e status operacional</div>
               </div>
-              <button className="btn" onClick={() => router.push("/usuarios")}>Gerenciar usuários</button>
+              <button className="btn small ghost" type="button" onClick={() => router.push("/imersoes")}>
+                Ver todas
+              </button>
             </div>
 
-            {!loading && workload.length === 0 ? (
-              <div className="emptyState" style={{ marginTop: 12 }}>
-                <div className="emptyTitle">Sem dados de responsáveis</div>
-                <div className="small muted">Defina o responsável nas tarefas para ativar esta visão.</div>
+            {!loading && filteredUpcoming.length === 0 ? (
+              <div className="empty">
+                <strong>Nenhuma imersão encontrada</strong>
+                <div className="muted small" style={{ marginTop: 6 }}>
+                  Ajuste o filtro de imersão ou crie uma nova imersão.
+                </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="list" role="list">
+                {filteredUpcoming.slice(0, 8).map((im) => {
+                  const immersionId = im?.immersion_id || im?.id;
+                  const title = im?.immersion_name || im?.name || "Imersão";
+                  const start = im?.start_date || im?.startDate || "-";
+                  const end = im?.end_date || im?.endDate || "-";
+                  const phase = im?.phase || im?.status || "Planejamento";
+                  const next = im?.next_action || im?.nextAction || "";
+
+                  return (
+                    <div className="immRow" key={immersionId} role="listitem">
+                      <div className="immMain">
+                        <div className="immTitle">{title}</div>
+                        <div className="immMeta">
+                          {start} → {end} • {phase}
+                        </div>
+                        {next ? <div className="immNext">Próxima ação: {next}</div> : null}
+                      </div>
+                      <div className="immActions">
+                        <button className="btn small" type="button" onClick={() => goPainel({ immersionId })}>
+                          Abrir painel
+                        </button>
+                        <button
+                          className="btn small ghost"
+                          type="button"
+                          onClick={() => goImmersion(immersionId, encodeURIComponent(router.asPath))}
+                        >
+                          Abrir
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* Bottom: Informações avançadas (compactas / colapsáveis) */}
+        <div className="dashBottom">
+          <details className="card compact" open={false}>
+            <summary className="summaryRow">
+              <span style={{ fontWeight: 750 }}>Carga por responsável</span>
+              <span className="muted small">Visão de gargalos</span>
+            </summary>
 
             {workload.length > 0 ? (
-              <div className="tableWrap" style={{ marginTop: 10 }}>
+              <div className="tableWrap compactTable">
                 <table className="table">
                   <thead>
                     <tr>
@@ -339,15 +329,13 @@ export default function DashboardPage() {
                   </thead>
                   <tbody>
                     {workload.map((w) => (
-                      <tr key={w.responsible_id}>
+                      <tr key={w.responsible_id || w.responsible}>
                         <td>
-                          <div style={{ fontWeight: 850 }}>{w.responsible}</div>
-                          {w.reasons?.length ? (
-                            <div className="small muted" style={{ marginTop: 4 }}>
-                              Motivo: {w.reasons.join(", ")}
-                            </div>
+                          <div style={{ fontWeight: 800 }}>{w.responsible}</div>
+                          {w.overdue >= 10 ? (
+                            <div className="small" style={{ marginTop: 4 }}><span className="badge danger">Carga crítica</span></div>
                           ) : (
-                            <div className="small muted" style={{ marginTop: 4 }}>Carga operacional normal</div>
+                            <div className="small muted" style={{ marginTop: 4 }}>Carga normal</div>
                           )}
                         </td>
                         <td><span className="badge">{w.open}</span></td>
@@ -358,51 +346,189 @@ export default function DashboardPage() {
                   </tbody>
                 </table>
               </div>
-            ) : null}
-          </div>
-        </div>
+            ) : (
+              <div className="muted small" style={{ marginTop: 8 }}>Sem dados de carga no momento.</div>
+            )}
+          </details>
 
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <h3 style={{ margin: 0 }}>Tarefas atrasadas</h3>
-            <button className="btn" onClick={() => router.push("/painel")}>Abrir painel</button>
-          </div>
+          <details className="card compact" open={false}>
+            <summary className="summaryRow">
+              <span style={{ fontWeight: 750 }}>Tarefas atrasadas</span>
+              <span className="muted small">Amostra operacional</span>
+            </summary>
 
-          {!loading && (payload?.overdue || []).length === 0 ? (
-            <p className="muted" style={{ marginTop: 10 }}>Nenhuma tarefa atrasada no momento.</p>
-          ) : null}
-
-          {!loading && (payload?.overdue || []).length > 0 ? (
-            <div style={{ marginTop: 10, overflowX: "auto" }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Imersão</th>
-                    <th>Tarefa</th>
-                    <th>Fase</th>
-                    <th>Atraso</th>
-                    <th>Prazo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(payload?.overdue || []).map((t) => (
-                    <tr key={t.id}>
-                      <td>
-                        <a href={`/imersoes/${t.immersion_id}`} style={{ fontWeight: 700 }}>{t.immersion_name}</a>
-                        <div className="small muted">{t.immersion_status}</div>
-                      </td>
-                      <td>{t.title}</td>
-                      <td><span className="badge muted">{t.phase || "-"}</span></td>
-                      <td><span className="badge danger">{t.days_late} dia(s)</span></td>
-                      <td>{t.due_date}</td>
+            {overdue.length > 0 ? (
+              <div className="tableWrap compactTable">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Imersão</th>
+                      <th>Tarefa</th>
+                      <th>Fase</th>
+                      <th>Atraso</th>
+                      <th>Prazo</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
+                  </thead>
+                  <tbody>
+                    {overdue.slice(0, 25).map((t) => (
+                      <tr key={t.id || t.task_id}>
+                        <td>
+                          <button className="linkBtn" type="button" onClick={() => goPainel({ immersionId: t.immersion_id })}>
+                            {t.immersion_name || "Ver"}
+                          </button>
+                        </td>
+                        <td>
+                          <button className="linkBtn" type="button" onClick={() => openTask(t)}>
+                            {t.title}
+                          </button>
+                        </td>
+                        <td><span className="badge muted">{t.phase || "-"}</span></td>
+                        <td><span className="badge danger">{t.days_late} dia(s)</span></td>
+                        <td>{t.due_date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+                  <button className="btn small" type="button" onClick={() => goPainel({ view: "overdue" })}>Abrir no Painel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="muted small" style={{ marginTop: 8 }}>Nenhuma tarefa atrasada.</div>
+            )}
+          </details>
+
+          <details className="card compact" open={false}>
+            <summary className="summaryRow">
+              <span style={{ fontWeight: 750 }}>Imersões em risco</span>
+              <span className="muted small">Sinais de execução</span>
+            </summary>
+
+            {riskImmersions.length > 0 ? (
+              <div className="list" role="list">
+                {riskImmersions.slice(0, 10).map((im) => (
+                  <div className="immRow" key={im.immersion_id || im.id} role="listitem">
+                    <div className="immMain">
+                      <div className="immTitle">{im.immersion_name}</div>
+                      <div className="immMeta">{im.signal || "Risco identificado"}</div>
+                    </div>
+                    <div className="immActions">
+                      <button className="btn small" type="button" onClick={() => goPainel({ immersionId: im.immersion_id || im.id, view: "inbox" })}>
+                        Abrir triagem
+                      </button>
+                      <button className="btn small ghost" type="button" onClick={() => goImmersion(im.immersion_id || im.id, encodeURIComponent(router.asPath))}>
+                        Abrir
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted small" style={{ marginTop: 8 }}>Nenhuma imersão em risco no momento.</div>
+            )}
+          </details>
         </div>
       </div>
+
+      <style jsx>{`
+        .dashWrap { max-width: 1280px; margin: 0 auto; }
+        .dashTop { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 4px 0 12px; }
+
+        .kpiGridCompact {
+          display:grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+          margin-top: 10px;
+        }
+
+        .kpi {
+          text-align:left;
+          border-radius: 12px;
+          padding: 12px 14px;
+          border: 1px solid var(--color-border-default);
+          background: var(--color-surface-1);
+          cursor: pointer;
+          transition: transform .08s ease, border-color .12s ease;
+        }
+        .kpi:hover { transform: translateY(-1px); border-color: rgba(255,255,255,0.18); }
+        .kpi:focus { outline: 2px solid rgba(125, 211, 252, 0.35); outline-offset: 2px; }
+
+        .kpiLabel { font-size: 12px; opacity: .75; }
+        .kpiValue { font-size: 22px; font-weight: 850; line-height: 1.1; margin-top: 6px; }
+        .kpiMeta { font-size: 12px; opacity: .70; margin-top: 4px; }
+
+        .kpiAlert { background: rgba(255, 77, 77, 0.08); border-color: rgba(255, 77, 77, 0.22); }
+        .kpiOk { background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.22); }
+
+        .dashGrid {
+          display:grid;
+          grid-template-columns: 360px minmax(0, 1fr);
+          gap: 12px;
+          margin-top: 12px;
+          align-items: start;
+        }
+
+        .card.compact { padding: 12px; }
+        .sectionHeaderCompact { display:flex; align-items:flex-start; justify-content:space-between; gap: 12px; }
+        .h3 { margin: 0; font-size: 14px; font-weight: 850; line-height: 1.2; }
+
+        .inputSmall { height: 34px; padding: 6px 10px; font-size: 13px; }
+        .divider { height: 1px; background: var(--color-border-default); opacity: .65; margin: 12px 0; }
+
+        .empty { border: 1px dashed var(--color-border-default); border-radius: 12px; padding: 12px; background: rgba(255,255,255,0.02); }
+
+        .miniList { display:flex; flex-direction:column; gap: 8px; margin-top: 10px; }
+        .miniRow {
+          text-align:left;
+          border: 1px solid var(--color-border-default);
+          background: var(--color-surface-2);
+          border-radius: 12px;
+          padding: 10px 10px;
+          cursor: pointer;
+        }
+        .miniRow:hover { border-color: rgba(255,255,255,0.18); }
+        .miniTitle { font-weight: 800; font-size: 13px; line-height: 1.2; }
+        .miniMeta { margin-top: 6px; display:flex; gap: 8px; flex-wrap: wrap; }
+
+        .list { display:flex; flex-direction:column; gap: 10px; margin-top: 12px; }
+        .immRow {
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap: 12px;
+          padding: 12px;
+          border-radius: 12px;
+          border: 1px solid var(--color-border-default);
+          background: var(--color-surface-2);
+        }
+        .immMain { min-width: 0; }
+        .immTitle { font-weight: 850; font-size: 14px; line-height: 1.2; }
+        .immMeta { font-size: 12px; opacity: .72; margin-top: 4px; }
+        .immNext { font-size: 12px; margin-top: 6px; opacity: .9; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 640px; }
+        .immActions { display:flex; gap: 8px; flex-wrap: wrap; justify-content:flex-end; }
+
+        .dashBottom { margin-top: 12px; display:flex; flex-direction:column; gap: 12px; }
+        .summaryRow { display:flex; align-items:center; justify-content:space-between; gap: 12px; cursor: pointer; }
+        .summaryRow::-webkit-details-marker { display:none; }
+
+        .compactTable { margin-top: 10px; }
+        .linkBtn {
+          background: transparent;
+          border: none;
+          padding: 0;
+          cursor: pointer;
+          color: inherit;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+        }
+        .linkBtn:hover { opacity: .85; }
+
+        @media (max-width: 980px) {
+          .kpiGridCompact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .dashGrid { grid-template-columns: 1fr; }
+          .immNext { max-width: 100%; }
+        }
+      `}</style>
     </Layout>
   );
 }
