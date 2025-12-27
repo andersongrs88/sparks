@@ -3126,19 +3126,21 @@ function normalizeTemplatesForClone(items) {
                       ))}
                     </select>
                     {!COST_CATEGORIES.includes(editDraft.category) ? (
-                      <input
-                        className="input"
-                        style={{ marginTop: 8 }}
-                        placeholder="Digite a categoria"
-                        list="costCategories"
-                        value={editDraft.category || ""}
-                        onChange={(e) => onDraft("category", e.target.value)}
-                      />
-                      <datalist id="costCategories">
-                        {COST_CATEGORIES.map((c) => (
-                          <option key={c} value={c} />
-                        ))}
-                      </datalist>
+                      <>
+                        <input
+                          className="input"
+                          style={{ marginTop: 8 }}
+                          placeholder="Digite a categoria"
+                          list="costCategories"
+                          value={editDraft.category || ""}
+                          onChange={(e) => onDraft("category", e.target.value)}
+                        />
+                        <datalist id="costCategories">
+                          {COST_CATEGORIES.map((c) => (
+                            <option key={c} value={c} />
+                          ))}
+                        </datalist>
+                      </>
                     ) : null}
                   </Field>
                   <Field label="Valor (R$)">
