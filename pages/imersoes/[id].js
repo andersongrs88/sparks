@@ -132,14 +132,20 @@ function daysUntil(startDateValue) {
 function getCountdownSignal(days) {
   if (days === null) return null;
 
-  // Labels humanizados + tonalidade
-  if (days === 0) return { label: "Começa hoje", cls: "tag danger" };
-  if (days === 1) return { label: "Falta 1 dia", cls: "tag danger" };
-  if (days < 0) return { label: `Começou há ${Math.abs(days)}d`, cls: "tag neutral" };
-  if (days <= 7) return { label: `Faltam ${days}d`, cls: "tag danger" };
-  if (days <= 20) return { label: `Faltam ${days}d`, cls: "tag warn" };
-  if (days <= 59) return { label: `Faltam ${days}d`, cls: "tag info" };
-  return { label: `Faltam ${days}d`, cls: "tag ok" };
+  // Hoje ou passado => crítico
+  if (days <= 0) {
+    return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
+  }
+
+  // Faixas (ajustáveis)
+  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
+  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
+  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
+  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
+  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
+
+  // 1 a 9 dias => bordo
+  return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
 }
 
 function isLate(dueDateStr, status) {
@@ -439,7 +445,7 @@ export default function ImmersionDetailEditPage() {
           immersion_id: id,
           category: editDraft.category || null,
           item: (editDraft.item || "").trim(),
-          value: editDraft.value === "" || editDraft.value === null || typeof editDraft.value === "undefined" ? null : Number(editDraft.value),
+          value: parseBRLNumber(editDraft.value),
           description: editDraft.description || null
         };
         if (!payload.item) return setError("Preencha o item do custo.");
@@ -1317,39 +1323,19 @@ function normalizeTemplatesForClone(items) {
 
             <div className="row">
               {signal ? (
-                <span className={signal.cls} title="Contagem regressiva para a data de início">
-                  {signal.label}
+                <span
+                  className="badge"
+                  style={{
+                    ...signal.style,
+                    border: "1px solid",
+                    padding: "6px 10px",
+                    borderRadius: 999
+                  }}
+                  title="Dias até a data de início"
+                >
+                  {signal.label} até
                 </span>
               ) : null}
-
-              <button
-                type="button"
-                className="btn"
-                onClick={async () => {
-                  try {
-                    const url = typeof window !== "undefined" ? window.location.href : "";
-                    if (!url) return;
-                    if (navigator.clipboard?.writeText) {
-                      await navigator.clipboard.writeText(url);
-                      alert("Link copiado.");
-                    } else {
-                      // fallback simples
-                      const ta = document.createElement("textarea");
-                      ta.value = url;
-                      document.body.appendChild(ta);
-                      ta.select();
-                      document.execCommand("copy");
-                      document.body.removeChild(ta);
-                      alert("Link copiado.");
-                    }
-                  } catch {
-                    alert("Não foi possível copiar o link.");
-                  }
-                }}
-                title="Copiar link desta imersão"
-              >
-                Copiar link
-              </button>
 
               {form?.status !== "Concluída" ? (
                 <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
@@ -3127,13 +3113,24 @@ function normalizeTemplatesForClone(items) {
                         className="input"
                         style={{ marginTop: 8 }}
                         placeholder="Digite a categoria"
+                        list="costCategories"
                         value={editDraft.category || ""}
                         onChange={(e) => onDraft("category", e.target.value)}
                       />
+                      <datalist id="costCategories">
+                        <option value="Hotel / Hospedagem" />
+                        <option value="Passagens / Transporte" />
+                        <option value="Alimentação" />
+                        <option value="Material / Brindes" />
+                        <option value="Equipe / Terceiros" />
+                        <option value="Infra / Locação" />
+                        <option value="Plataformas / Ferramentas" />
+                        <option value="Outros" />
+                      </datalist>
                     ) : null}
                   </Field>
                   <Field label="Valor (R$)">
-                    <input className="input" inputMode="decimal" value={editDraft.value ?? ""} onChange={(e) => onDraft("value", e.target.value)} />
+                    <input className="input" inputMode="decimal" placeholder="Ex.: 550,00" value={editDraft.value ?? ""} onChange={(e) => onDraft("value", e.target.value)} />
                   </Field>
                   <Field label="Item">
                     <input className="input" value={editDraft.item || ""} onChange={(e) => onDraft("item", e.target.value)} />
@@ -3625,4 +3622,19 @@ function normalizeTemplatesForClone(items) {
 
     </Layout>
   );
+}
+function parseBRLNumber(v) {
+  if (v === null || typeof v === "undefined") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+  // Remove currency symbols and spaces
+  const cleaned = s.replace(/[^0-9,.-]/g, "");
+  // If it uses comma as decimal separator, convert to dot and remove thousand separators
+  const normalized = cleaned
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(/,(?=\d{1,2}$)/, ".")
+    .replace(/,/g, "");
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
 }
