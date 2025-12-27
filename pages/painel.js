@@ -76,18 +76,6 @@ export default function PainelPage() {
   const router = useRouter();
   const { loading: authLoading, user } = useAuth();
 
-  // Toast (feedback leve, sem `alert`)
-  const [toast, setToast] = useState({ open: false, message: "", tone: "" });
-  const toastTimerRef = useRef(null);
-
-  function notify(message, tone = "") {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ open: true, message: String(message || ""), tone: String(tone || "") });
-    toastTimerRef.current = setTimeout(() => {
-      setToast((t) => ({ ...t, open: false }));
-    }, 2200);
-  }
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -435,8 +423,7 @@ export default function PainelPage() {
               onClick={async (e) => {
                 e.stopPropagation();
                 const ok = await copyText(buildTaskLink(t));
-                if (!ok) notify("Não foi possível copiar o link.", "danger");
-                else notify("Link copiado.", "success");
+                if (!ok) alert("Não foi possível copiar o link.");
               }}
             >
               Copiar link
@@ -606,14 +593,6 @@ export default function PainelPage() {
         >
           <FiltersContent />
         </BottomSheet>
-
-        <div className="toastHost" aria-live="polite" aria-atomic="true">
-          {toast.open ? (
-            <div className={`toast ${toast.tone || ""}`.trim()} role="status">
-              {toast.message}
-            </div>
-          ) : null}
-        </div>
       </div>
     </Layout>
   );
