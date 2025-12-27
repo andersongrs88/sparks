@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { canSeeMenuItem, roleLabel } from "../lib/permissions";
 import { getNotificationSummary } from "../lib/notifications";
+import { pollAndNotify } from "../lib/browserNotifications";
 // Notificações removidas por opção de produto (tela não utilizada).
 
 const SYSTEM_FULL_NAME = "Sparks by Educagrama, Sistema Inteligente de Planejamento e Gestão do Conhecimento";
@@ -68,6 +69,25 @@ export default function Layout({ title, children, hideNav = false }) {
       }
     })();
     return () => { alive = false; };
+  }, [user?.id, profile?.role, isFullAccess]);
+
+  // Browser notifications (opt-in). Polls periodically while the app is open.
+  useEffect(() => {
+    let alive = true;
+    if (!user || user.id === "noauth") return;
+
+    async function tick() {
+      if (!alive) return;
+      try {
+        await pollAndNotify({ user, profile, isFullAccess });
+      } catch {
+        // best-effort
+      }
+    }
+
+    tick();
+    const id = setInterval(tick, 120_000);
+    return () => { alive = false; clearInterval(id); };
   }, [user?.id, profile?.role, isFullAccess]);
   const documentTitle = useMemo(() => {
     // Discreto: mantém o nome completo do sistema no título do navegador,

@@ -4,6 +4,13 @@ import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
 import { requireAuth } from "../lib/auth";
 import { classifyTask, getNotificationSummary } from "../lib/notifications";
+import {
+  getBrowserNotificationPermission,
+  isBrowserNotificationsEnabled,
+  isBrowserNotificationsSupported,
+  requestBrowserNotificationPermission,
+  setBrowserNotificationsEnabled,
+} from "../lib/browserNotifications";
 
 function formatDate(d) {
   if (!d) return "-";
@@ -14,11 +21,24 @@ export default function NotificacoesPage() {
   const router = useRouter();
   const { loading, user, profile, isFullAccess } = useAuth();
   const [summary, setSummary] = useState({ overdue: 0, today: 0, soon: 0, total: 0, items: [] });
+  const [browserEnabled, setBrowserEnabled] = useState(false);
+  const [perm, setPerm] = useState("unknown");
 
   useEffect(() => {
     if (loading) return;
     requireAuth(router);
   }, [loading, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      setBrowserEnabled(isBrowserNotificationsEnabled());
+      setPerm(getBrowserNotificationPermission());
+    } catch {
+      setBrowserEnabled(false);
+      setPerm("unknown");
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -55,6 +75,57 @@ export default function NotificacoesPage() {
     <Layout title="Notificações">
       <div className="card">
         <h2>Notificações</h2>
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="row" style={{ alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700 }}>Notificações no navegador</div>
+              <div className="small muted">
+                Status: {isBrowserNotificationsSupported() ? perm : "Indisponível neste navegador"}
+              </div>
+            </div>
+
+            <div className="row" style={{ gap: 8 }}>
+              {!isBrowserNotificationsSupported() ? null : (
+                browserEnabled ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      setBrowserNotificationsEnabled(false);
+                      setBrowserEnabled(false);
+                    }}
+                  >
+                    Desativar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={async () => {
+                      const p = await requestBrowserNotificationPermission();
+                      setPerm(p);
+                      if (p === "granted") {
+                        setBrowserNotificationsEnabled(true);
+                        setBrowserEnabled(true);
+                      }
+                    }}
+                  >
+                    Ativar
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          {isBrowserNotificationsSupported() && perm === "denied" ? (
+            <p className="small" style={{ marginTop: 10 }}>
+              Você bloqueou as notificações. Para ativar, libere nas configurações do navegador (Site settings → Notifications) e recarregue esta página.
+            </p>
+          ) : null}
+          <p className="small" style={{ marginTop: 10 }}>
+            Quando ativado, o sistema notifica automaticamente ao surgir aumento de tarefas atrasadas ou vencendo hoje (enquanto o sistema estiver aberto).
+          </p>
+        </div>
         <p style={{ marginTop: 0 }}>
           Atrasadas: <b>{summary.overdue}</b> | Vencem hoje: <b>{summary.today}</b> | Próximos 7 dias: <b>{summary.soon}</b>
         </p>
