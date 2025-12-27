@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
@@ -34,6 +34,14 @@ export default function NovaImersaoPage() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const errorRef = useRef(null);
+
+  useEffect(() => {
+    if (error && errorRef.current) {
+      try { errorRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+      try { errorRef.current.focus({ preventScroll: true }); } catch {}
+    }
+  }, [error]);
   const [people, setPeople] = useState([]);
   const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [immersionOptions, setImmersionOptions] = useState([]);
@@ -240,7 +248,18 @@ export default function NovaImersaoPage() {
           Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).
         </div>
 
-        {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{error}</div> : null}
+        {error ? (
+          <div
+            ref={errorRef}
+            tabIndex={-1}
+            role="alert"
+            aria-live="assertive"
+            className="small"
+            style={{ color: "var(--danger)", marginBottom: 10 }}
+          >
+            {error}
+          </div>
+        ) : null}
 
         <form onSubmit={onSubmit}>
           <div className="section">

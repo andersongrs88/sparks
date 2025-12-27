@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import BottomSheet from "../../components/BottomSheet";
@@ -173,8 +173,18 @@ export default function ImmersionDetailEditPage() {
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
 
+  const errorRef = useRef(null);
+
+  useEffect(() => {
+    if (error && errorRef.current) {
+      try { errorRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+      try { errorRef.current.focus({ preventScroll: true }); } catch {}
+    }
+  }, [error]);
+
   const [form, setForm] = useState(null);
   const [originalStatus, setOriginalStatus] = useState(null);
+  const isLocked = originalStatus === "Concluída";
 
   // Governança: bloqueio para concluir imersão com pendências
   const [closeBlock, setCloseBlock] = useState({ open: false, summary: null, sample: [] });
@@ -571,6 +581,11 @@ export default function ImmersionDetailEditPage() {
   async function onSaveImmersion(e) {
     e.preventDefault();
     if (!form) return;
+
+    if (isLocked) {
+      setError("Esta imersão está Concluída e não pode mais ser editada.");
+      return;
+    }
 
     if (!canEditCurrentTab(tab)) {
       setError(tab === "pdca" ? "Sem permissão para editar o PDCA." : "Sem permissão para editar esta imersão.");
@@ -1358,11 +1373,15 @@ function normalizeTemplatesForClone(items) {
 
         {}
 
-        {error ? <div className="small" style={{ color: "var(--danger)", marginBottom: 12 }}>{error}</div> : null}
+        {error ? (
+              <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>
+                {error}
+              </div>
+            ) : null}
 
         {!form ? <div className="small">Nada para editar.</div> : null}
 
-        <fieldset disabled={!full} style={{ border: 0, padding: 0, margin: 0 }}>
+        <fieldset disabled={!full || isLocked || !canEditCurrentTab(tab) || saving} style={{ border: 0, padding: 0, margin: 0 }}>
         {form && tab === "essencial" ? (
           <>
             <Section
@@ -3041,7 +3060,7 @@ function normalizeTemplatesForClone(items) {
             <button className="btn" type="button" onClick={() => router.push("/imersoes")}>
               Voltar
             </button>
-            <button className="btn primary" type="submit" disabled={saving || loading || !form}>
+            <button className="btn primary" type="submit" disabled={saving || loading || !form || isLocked}>
               {saving ? "Salvando..." : "Salvar alterações"}
             </button>
           </div>
