@@ -45,6 +45,7 @@ export default function EditarUsuarioPage() {
   const [error, setError] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [pwdBusy, setPwdBusy] = useState(false);
+  const [tab, setTab] = useState("dados");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -156,46 +157,80 @@ export default function EditarUsuarioPage() {
               Você pode desativar o usuário para ele não aparecer como responsável nas tarefas.
             </div>
 
-            <Field label="Nome">
-              <input className="input" value={form.name || ""} onChange={(e) => set("name", e.target.value)} />
-            </Field>
+            <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={tab === "dados" ? "btn primary" : "btn"}
+                onClick={() => setTab("dados")}
+              >
+                Dados
+              </button>
+              <button
+                type="button"
+                className={tab === "permissoes" ? "btn primary" : "btn"}
+                onClick={() => setTab("permissoes")}
+              >
+                Permissões
+              </button>
+            </div>
 
-            <Field label="Email (opcional)">
-              <input className="input" value={form.email || ""} onChange={(e) => set("email", e.target.value)} />
-            </Field>
+            {tab === "dados" ? (
+              <>
+                <Field label="Nome">
+                  <input className="input" value={form.name || ""} onChange={(e) => set("name", e.target.value)} />
+                </Field>
 
-            <Field label="Tipo">
-              <select className="input" value={form.role || "viewer"} onChange={(e) => set("role", e.target.value)}>
-                {ROLES.map((r) => (
-                  <option key={r.key} value={r.key}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                <Field label="Email (opcional)">
+                  <input className="input" value={form.email || ""} onChange={(e) => set("email", e.target.value)} />
+                </Field>
 
-            <Field
-              label="Senha"
-              hint="Opcional: defina uma nova senha para o usuário (mínimo 8 caracteres)."
-            >
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <input
-                  className="input"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Nova senha"
-                />
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={onChangePassword}
-                  disabled={pwdBusy || saving || removing}
+                <Field
+                  label="Senha"
+                  hint="Opcional: defina uma nova senha para o usuário (mínimo 8 caracteres)."
                 >
-                  {pwdBusy ? "Atualizando..." : "Atualizar senha"}
-                </button>
-              </div>
-            </Field>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <input
+                      className="input"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Nova senha"
+                    />
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={onChangePassword}
+                      disabled={pwdBusy || saving || removing}
+                    >
+                      {pwdBusy ? "Atualizando..." : "Atualizar senha"}
+                    </button>
+                  </div>
+                </Field>
+              </>
+            ) : null}
+
+            {tab === "permissoes" ? (
+              <>
+                <Field label="Tipo de acesso" hint="Define o que o usuário consegue ver e editar no sistema.">
+                  <select className="input" value={form.role || "viewer"} onChange={(e) => set("role", e.target.value)}>
+                    {ROLES.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <div className="card" style={{ background: "var(--panel)", border: "1px solid var(--border)", marginBottom: 12 }}>
+                  <div className="h2" style={{ marginBottom: 6 }}>Resumo das permissões</div>
+                  <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+                    <li><b>Admin / Consultor / Designer</b>: edita tudo (imersões, tarefas, materiais, custos, etc.).</li>
+                    <li><b>Eventos / Produção / Mentoria / Outros</b>: vê imersões e painel; <b>não vê custos</b> e edita apenas <b>PDCA</b>.</li>
+                    <li><b>Visualização</b>: apenas leitura (dashboard + imersões).</li>
+                  </ul>
+                </div>
+              </>
+            ) : null}
 
             <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
               <input type="checkbox" checked={!!form.is_active} onChange={(e) => set("is_active", e.target.checked)} />
