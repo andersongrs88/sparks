@@ -1435,13 +1435,7 @@ function normalizeTemplatesForClone(items) {
             <Section
               title="Informações"
               description="Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer)."
-              right={
-                full ? (
-                  <button type="button" className="btn" onClick={openApplyTemplatesFlow}>
-                    Carregar automaticamente
-                  </button>
-                ) : null
-              }
+              right={null}
             >
               <div className="grid2">
                 <Field label="Nome da imersão">
@@ -1465,53 +1459,7 @@ function normalizeTemplatesForClone(items) {
                 </Field>
               </div>
 
-              <Section
-                title="Templates do tipo"
-                description="Ao aplicar, o sistema pode pré-carregar tarefas, cronograma, materiais, ferramentas e vídeos para este tipo."
-              >
-                <div className="grid2">
-                  <Field label="Templates do tipo">
-                    <select
-                      className="input"
-                      value={applyTplForm.immersion_type || form.type || ""}
-                      onChange={(e) => setApplyTplForm((p) => ({ ...p, immersion_type: e.target.value }))}
-                    >
-                      <option value="">Selecione</option>
-                      {IMMERSION_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Carregar automaticamente">
-                    <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-                      {[
-                        ["tasks", "Tarefas"],
-                        ["schedule", "Cronograma"],
-                        ["materials", "Materiais"],
-                        ["tools", "Ferramentas"],
-                        ["videos", "Vídeos"],
-                      ].map(([key, label]) => (
-                        <label key={key} className="chip" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={!!applyTplForm.include?.[key]}
-                            onChange={(e) =>
-                              setApplyTplForm((p) => ({ ...p, include: { ...(p.include || {}), [key]: e.target.checked } }))
-                            }
-                          />
-                          <span className="small">{label}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="small muted" style={{ marginTop: 8 }}>
-                      Clique em <b>Carregar automaticamente</b> (no topo desta aba) para aplicar os templates na imersão atual.
-                    </div>
-                  </Field>
-                </div>
-              </Section>
+              {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
 
               <Section title="Informações básicas">
                 <div className="grid2">
@@ -2914,15 +2862,34 @@ function normalizeTemplatesForClone(items) {
                         const prof = t.responsible_id ? profileById.get(t.responsible_id) : null;
                         const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
                         const s = deadlineStatus(t);
+                        const isDone = t.status === "Concluída" || t.status === "Concluida" || !!t.done_at;
                         return (
                           <div key={t.id} className="compactItem">
                             <div className="compactMain">
                               <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
-                                  <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
-                                    <span className={`badge ${s.kind}`}>{s.label}</span>
-                                    {t.status === "Concluída" && t.done_at ? <span className="small muted">Realizada: {t.done_at}</span> : null}
+                                  <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+                                    {canEdit ? (
+                                      <label className="chk" title={isDone ? "Marcar como não concluída" : "Marcar como concluída"}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isDone}
+                                          onChange={(e) =>
+                                            onQuickUpdateTask(t, e.target.checked
+                                              ? { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0, 10) }
+                                              : { status: "Programada", done_at: null }
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                    ) : null}
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
+                                      <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+                                        <span className={`badge ${s.kind}`}>{s.label}</span>
+                                        {isDone && t.done_at ? <span className="small muted">Realizada: {t.done_at}</span> : null}
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                                 <div>

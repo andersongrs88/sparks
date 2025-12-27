@@ -129,6 +129,28 @@ input[type="checkbox"] {
   height: 18px;
 }
 
+/* Accessible checkbox (better contrast + tap target)
+   Use by wrapping with class="chk" in the UI */
+.chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chk input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.chkLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
@@ -773,13 +795,13 @@ a:hover { text-decoration: underline; }
 /* Mobile-first KPI: avoid horizontal scroll on small phones (better tap targets + readability) */
 @media (max-width: 560px) {
   .kpiGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow-x: visible;
     scroll-snap-type: none;
   }
 
-  .kpiCard { padding: 12px; }
-  .kpiValue { font-size: 22px; }
+  .kpiCard { padding: 10px; }
+  .kpiValue { font-size: 20px; }
   .kpiLabel, .kpiMeta { font-size: 11px; }
 }
 
