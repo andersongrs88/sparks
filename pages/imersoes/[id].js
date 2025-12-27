@@ -1322,6 +1322,16 @@ function normalizeTemplatesForClone(items) {
                 </span>
               ) : null}
 
+              <button
+                type="button"
+                className="btn"
+                onClick={() => router.push(`/painel?immersionId=${id}`)}
+                disabled={!id}
+                title="Abrir o Painel filtrado por esta imersão"
+              >
+                Ver tarefas no Painel
+              </button>
+
               {form?.status !== "Concluída" ? (
                 <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
                   Clonar

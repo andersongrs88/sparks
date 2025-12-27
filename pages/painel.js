@@ -45,6 +45,93 @@ const PHASES = [
 
 export default function PainelPage() {
   const router = useRouter();
+
+  const RETURN_KEY = "sparks:painel:return";
+  const [copyMsg, setCopyMsg] = useState("");
+
+  function saveReturnState() {
+    try {
+      if (typeof window === "undefined") return;
+      const payload = { url: router.asPath, y: window.scrollY || 0, ts: Date.now() };
+      window.sessionStorage.setItem(RETURN_KEY, JSON.stringify(payload));
+    } catch {}
+  }
+
+  function restoreReturnState() {
+    try {
+      if (typeof window === "undefined") return;
+      const raw = window.sessionStorage.getItem(RETURN_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      // Expira em 10 minutos para evitar comportamento inesperado
+      if (!data?.url || Date.now() - (data.ts || 0) > 10 * 60 * 1000) {
+        window.sessionStorage.removeItem(RETURN_KEY);
+        return;
+      }
+      // Compara com a URL atual (sem exigir taskId)
+      const current = router.asPath || "";
+      const stripTaskId = (u) => u.replace(/([?&])taskId=[^&]+(&?)/, (m, p1, p2) => (p2 ? p1 : ""));
+      if (stripTaskId(data.url) !== stripTaskId(current)) return;
+
+      window.sessionStorage.removeItem(RETURN_KEY);
+      const y = Number(data.y || 0);
+      if (!Number.isNaN(y)) window.scrollTo({ top: y, behavior: "auto" });
+    } catch {}
+  }
+
+  function buildTaskLink(task) {
+    if (!task?.id || !task?.immersion_id) return "";
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    return `${base}/painel?immersionId=${task.immersion_id}&taskId=${task.id}`;
+  }
+
+  async function copyTaskLink(task) {
+    try {
+      const link = buildTaskLink(task);
+      if (!link) return;
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = link;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopyMsg("Link copiado.");
+      window.setTimeout(() => setCopyMsg(""), 1800);
+    } catch {
+      setCopyMsg("Não foi possível copiar.");
+      window.setTimeout(() => setCopyMsg(""), 1800);
+    }
+  }
+
+  // Deep-link: /painel?immersionId=...&taskId=...
+  const [initialTaskId, setInitialTaskId] = useState(null);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const q = router.query || {};
+    if (q.immersionId && typeof q.immersionId === "string") setImmersionId(q.immersionId);
+    if (q.phase && typeof q.phase === "string") setPhase(q.phase);
+    if (q.status && typeof q.status === "string") setStatus(q.status);
+    if (q.ownerId && typeof q.ownerId === "string") setOwnerId(q.ownerId);
+    if (q.view === "inbox") setTriage("inbox");
+    if (q.triage && typeof q.triage === "string") setTriage(q.triage);
+    if (q.overdue === "1") setOnlyOverdue(true);
+    if (q.taskId && typeof q.taskId === "string") setInitialTaskId(q.taskId);
+  }, [router.isReady]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    restoreReturnState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady]);
+
   const { loading: authLoading, user } = useAuth();
 
   const [loading, setLoading] = useState(true);
@@ -57,6 +144,8 @@ export default function PainelPage() {
   const [immersionId, setImmersionId] = useState("all");
   const [phase, setPhase] = useState("all");
   const [status, setStatus] = useState("Pendentes");
+  const [ownerId, setOwnerId] = useState("all");
+  const [triage, setTriage] = useState("all");
   const [onlyOverdue, setOnlyOverdue] = useState(false);
 
   const [immersionOptions, setImmersionOptions] = useState([]);
@@ -66,6 +155,13 @@ export default function PainelPage() {
   const selectedCount = selectedIds.size;
 
   const [showFilters, setShowFilters] = useState(false);
+
+  // Task drawer (BottomSheet)
+  const [activeTask, setActiveTask] = useState(null);
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+  const [taskPatch, setTaskPatch] = useState({ phase: "", responsible_id: "", due_date: "", status: "", notes: "" });
+  const [taskBusy, setTaskBusy] = useState(false);
+  const [taskMsg, setTaskMsg] = useState("");
 
   // Bulk state
   const [bulkOwner, setBulkOwner] = useState("");
@@ -119,10 +215,20 @@ export default function PainelPage() {
     };
   }, [authLoading, user]);
 
-  async function loadTasks() {
+  async function loadTasks(overrides = {}) {
     try {
       setError("");
       setLoading(true);
+
+      const eff = {
+        query: overrides.query ?? query,
+        immersionId: overrides.immersionId ?? immersionId,
+        phase: overrides.phase ?? phase,
+        status: overrides.status ?? status,
+        ownerId: overrides.ownerId ?? ownerId,
+        triage: overrides.triage ?? triage,
+        onlyOverdue: overrides.onlyOverdue ?? onlyOverdue,
+      };
 
       // Governança: manter atrasadas sinalizadas (best-effort)
       // Evita rodar em toda mudança de filtro para não degradar performance.
@@ -134,24 +240,28 @@ export default function PainelPage() {
       }
 
       // Select compatível com bases antigas
-      const base = "id, immersion_id, title, phase, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";
+      const base = "id, immersion_id, template_item_id, title, phase, area, status, due_date, done_at, notes, responsible_id, created_at, updated_at, immersions(immersion_name)";
       let q = supabase
         .from("immersion_tasks")
         .select(base)
         .order("due_date", { ascending: true, nullsFirst: false })
         .limit(1200);
 
-      if (immersionId !== "all") q = q.eq("immersion_id", immersionId);
-      if (phase !== "all") q = q.eq("phase", phase);
+      if (eff.immersionId !== "all") q = q.eq("immersion_id", eff.immersionId);
+      if (eff.phase !== "all") q = q.eq("phase", eff.phase);
+      if (eff.ownerId !== "all") q = q.eq("responsible_id", eff.ownerId);
+      if (eff.triage === "unassigned") q = q.is("responsible_id", null);
+      if (eff.triage === "nodue") q = q.is("due_date", null);
+      if (eff.triage === "nophase") q = q.is("phase", null);
 
-      if (status === "Concluídas") {
+      if (eff.status === "Concluídas") {
         q = q.or("status.ilike.%conclu%,done_at.not.is.null");
       } else {
         q = q.or("status.is.null,status.not.ilike.%conclu%,done_at.is.null");
       }
 
-      if (query?.trim()) {
-        const term = query.trim();
+      if (eff.query?.trim()) {
+        const term = eff.query.trim();
         // busca por título + nome da imersão (join)
         q = q.or(`title.ilike.%${term}%,immersions.immersion_name.ilike.%${term}%`);
       }
@@ -164,7 +274,7 @@ export default function PainelPage() {
         immersion_name: t?.immersions?.immersion_name || "—",
       }));
 
-      if (onlyOverdue) {
+      if (eff.onlyOverdue) {
         const today = iso(new Date());
         rows = rows.filter((t) => t.due_date && !isTaskDone(t) && t.due_date < today);
       }
@@ -185,6 +295,37 @@ export default function PainelPage() {
       setLoading(false);
     }
   }
+
+  function openTaskSheet(t) {
+    setActiveTask(t);
+    setTaskPatch({
+      phase: t?.phase || "",
+      responsible_id: t?.responsible_id || "",
+      due_date: t?.due_date || "",
+      status: t?.status || "",
+      notes: t?.notes || "",
+    });
+    setTaskSheetOpen(true);
+  }
+
+  // Abre automaticamente uma tarefa quando a URL contém taskId
+  // Ex.: /painel?immersionId=<uuid>&taskId=<uuid>
+  useEffect(() => {
+    if (!initialTaskId) return;
+    if (loading) return;
+    const t = (tasks || []).find((x) => x.id === initialTaskId);
+    if (t) {
+      openTaskSheet(t);
+      // opcional: remover taskId da URL após abrir
+      try {
+        const q = { ...router.query };
+        delete q.taskId;
+        router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+      } catch {}
+    }
+    setInitialTaskId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTaskId, loading, tasks]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -215,6 +356,62 @@ export default function PainelPage() {
 
     return { inbox, overdue, dueToday, next7, all: tasks || [] };
   }, [tasks]);
+
+  function closeTaskSheet() {
+    setTaskSheetOpen(false);
+    setActiveTask(null);
+  }
+
+  async function saveTaskPatch() {
+    if (!activeTask?.id) return;
+
+    const patch = {
+      phase: taskPatch.phase || null,
+      responsible_id: taskPatch.responsible_id || null,
+      due_date: taskPatch.due_date || null,
+      status: taskPatch.status || null,
+      notes: taskPatch.notes || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      setBulkBusy(true);
+      setBulkMsg("");
+      const { error: e } = await supabase.from("immersion_tasks").update(patch).eq("id", activeTask.id);
+      if (e) throw e;
+
+      await loadTasks();
+      setBulkMsg("Tarefa atualizada.");
+      setTimeout(() => setBulkMsg(""), 2000);
+      closeTaskSheet();
+    } catch (e) {
+      setBulkMsg(e?.message || "Falha ao salvar a tarefa.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function toggleDoneActiveTask() {
+    if (!activeTask?.id) return;
+    const done = isTaskDone(activeTask);
+    const patch = done
+      ? { status: "Aberta", done_at: null }
+      : { status: "Concluída", done_at: new Date().toISOString() };
+    try {
+      setBulkBusy(true);
+      setBulkMsg("");
+      const { error: e } = await supabase.from("immersion_tasks").update(patch).eq("id", activeTask.id);
+      if (e) throw e;
+      await loadTasks();
+      setBulkMsg(done ? "Tarefa reaberta." : "Tarefa concluída.");
+      setTimeout(() => setBulkMsg(""), 2000);
+      closeTaskSheet();
+    } catch (e) {
+      setBulkMsg(e?.message || "Falha ao atualizar a tarefa.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   function toggleSelected(id) {
     setSelectedIds((prev) => {
@@ -307,6 +504,20 @@ export default function PainelPage() {
               ))}
             </select>
           </div>
+
+          <div className="grid" style={{ gap: 6, flex: 1 }}>
+            <label className="label">Responsável</label>
+            <select className="input" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+              <option value="all">Todos</option>
+              {user?.id ? <option value={user.id}>Minhas</option> : null}
+              {(profiles || []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {(p.name || p.email || p.id).toString()}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="grid" style={{ gap: 6, flex: 1 }}>
             <label className="label">Status</label>
             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -321,12 +532,24 @@ export default function PainelPage() {
           <span className="small">Somente atrasadas (atalho)</span>
         </label>
 
+        <div className="grid" style={{ gap: 6 }}>
+          <label className="label">Pendências</label>
+          <select className="input" value={triage} onChange={(e) => setTriage(e.target.value)}>
+            <option value="all">Todas</option>
+            <option value="unassigned">Sem responsável</option>
+            <option value="nodue">Sem prazo</option>
+            <option value="nophase">Sem fase</option>
+          </select>
+        </div>
+
         <div className="row" style={{ gap: 10, justifyContent: "flex-end" }}>
           <button className="btn" type="button" onClick={() => {
             setQuery("");
             setImmersionId("all");
             setPhase("all");
             setStatus("Pendentes");
+            setOwnerId("all");
+            setTriage("all");
             setOnlyOverdue(false);
           }}>
             Limpar
@@ -359,7 +582,8 @@ export default function PainelPage() {
         <button
           type="button"
           className="planTaskMain"
-          onClick={() => router.push(`/imersoes/${t.immersion_id}`)}
+          onClick={() => openTaskSheet(t)}
+          aria-label={`Abrir detalhes da tarefa: ${t.title}`}
         >
           <div className="planTaskTitle">{t.title}</div>
           <div className="planTaskMeta" aria-label="Detalhes da tarefa">
@@ -371,6 +595,21 @@ export default function PainelPage() {
         </button>
 
         <div className="planTaskAside">
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ padding: "6px 10px", fontSize: 12 }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              saveReturnState();
+              router.push(`/imersoes/${t.immersion_id}?from=painel&returnTo=${encodeURIComponent(router.asPath)}`);
+            }}
+            aria-label={`Abrir imersão da tarefa: ${t.immersion_name || "Imersão"}`}
+            title="Abrir imersão"
+          >
+            Imersão
+          </button>
           <span className={sla.className}>{sla.label}</span>
           <span className={isTaskDone(t) ? "badge success" : "badge muted"}>{isTaskDone(t) ? "Concluída" : "Aberta"}</span>
         </div>
@@ -473,6 +712,92 @@ export default function PainelPage() {
           </div>
 
           <div className="row wrap" style={{ gap: 10 }}>
+
+        <div className="quickFilters" role="navigation" aria-label="Atalhos de triagem">
+          <button
+            type="button"
+            className={"chip" + (ownerId === user.id && status === "Pendentes" && triage === "all" && !onlyOverdue ? " active" : "")}
+            onClick={() => {
+              setOwnerId(user.id);
+              setStatus("Pendentes");
+              setTriage("all");
+              setOnlyOverdue(false);
+              loadTasks({ ownerId: user.id, status: "Pendentes", triage: "all", onlyOverdue: false });
+            }}
+          >
+            Minhas
+          </button>
+
+          <button
+            type="button"
+            className={"chip" + (onlyOverdue ? " active" : "")}
+            onClick={() => {
+              setOwnerId("all");
+              setStatus("Pendentes");
+              setTriage("all");
+              setOnlyOverdue(true);
+              loadTasks({ ownerId: "all", status: "Pendentes", triage: "all", onlyOverdue: true });
+            }}
+          >
+            Atrasadas
+          </button>
+
+          <button
+            type="button"
+            className={"chip" + (triage === "unassigned" ? " active" : "")}
+            onClick={() => {
+              setOwnerId("all");
+              setStatus("Pendentes");
+              setTriage("unassigned");
+              setOnlyOverdue(false);
+              loadTasks({ ownerId: "all", status: "Pendentes", triage: "unassigned", onlyOverdue: false });
+            }}
+          >
+            Sem responsável
+          </button>
+
+          <button
+            type="button"
+            className={"chip" + (triage === "nodue" ? " active" : "")}
+            onClick={() => {
+              setOwnerId("all");
+              setStatus("Pendentes");
+              setTriage("nodue");
+              setOnlyOverdue(false);
+              loadTasks({ ownerId: "all", status: "Pendentes", triage: "nodue", onlyOverdue: false });
+            }}
+          >
+            Sem prazo
+          </button>
+
+          <button
+            type="button"
+            className={"chip" + (triage === "nophase" ? " active" : "")}
+            onClick={() => {
+              setOwnerId("all");
+              setStatus("Pendentes");
+              setTriage("nophase");
+              setOnlyOverdue(false);
+              loadTasks({ ownerId: "all", status: "Pendentes", triage: "nophase", onlyOverdue: false });
+            }}
+          >
+            Sem fase
+          </button>
+
+          <button
+            type="button"
+            className={"chip" + (ownerId === "all" && triage === "all" && !onlyOverdue ? " active" : "")}
+            onClick={() => {
+              setOwnerId("all");
+              setStatus("Pendentes");
+              setTriage("all");
+              setOnlyOverdue(false);
+              loadTasks({ ownerId: "all", status: "Pendentes", triage: "all", onlyOverdue: false });
+            }}
+          >
+            Todas
+          </button>
+        </div>
             <button className="btn onlyDesktop" type="button" onClick={() => setShowFilters(true)}>
               Filtros
             </button>
@@ -537,7 +862,179 @@ export default function PainelPage() {
         >
           <FiltersContent />
         </BottomSheet>
+
+        <BottomSheet
+          open={taskSheetOpen}
+          onClose={closeTaskSheet}
+          title={activeTask ? "Tarefa" : "Tarefa"}
+          footer={
+            <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <button className="btn" type="button" onClick={closeTaskSheet} disabled={bulkBusy}>
+                Fechar
+              </button>
+              <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+                <button className="btn" type="button" onClick={toggleDoneActiveTask} disabled={bulkBusy || !activeTask}>
+                  {activeTask && isTaskDone(activeTask) ? "Reabrir" : "Concluir"}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => copyTaskLink(activeTask)}
+                  disabled={bulkBusy || !activeTask}
+                  title="Copiar link direto desta tarefa"
+                >
+                  Copiar link
+                </button>
+                <button className="btn primary" type="button" onClick={saveTaskPatch} disabled={bulkBusy || !activeTask}>
+                  Salvar
+                </button>
+              </div>
+            </div>
+          }
+        >
+          {!activeTask ? (
+            <div className="small muted">Nenhuma tarefa selecionada.</div>
+          ) : (
+            <div className="grid" style={{ gap: 12 }}>
+              <div className="grid" style={{ gap: 4 }}>
+                <div className="label">Título</div>
+                <div style={{ fontWeight: 600 }}>{activeTask.title}</div>
+                {copyMsg ? <div className="small" style={{ marginTop: 6 }}>{copyMsg}</div> : null}
+              </div>
+
+              <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <span className="pill soft">Imersão: {activeTask.immersion_name || "—"}</span>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    closeTaskSheet();
+                    saveReturnState();
+                    router.push(`/imersoes/${activeTask.immersion_id}?from=painel&returnTo=${encodeURIComponent(router.asPath)}`);
+                  }}
+                >
+                  Abrir imersão
+                </button>
+              </div>
+
+              {activeTask.template_item_id ? (
+                <div className="small muted">
+                  Origem do template: <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace" }}>{activeTask.template_item_id}</span>
+                </div>
+              ) : null}
+
+              <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
+                  <label className="label">Fase</label>
+                  <select
+                    className="input"
+                    value={taskPatch.phase}
+                    onChange={(e) => setTaskPatch((p) => ({ ...p, phase: e.target.value }))}
+                  >
+                    <option value="">Sem fase</option>
+                    {PHASES.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
+                  <label className="label">Responsável</label>
+                  <select
+                    className="input"
+                    value={taskPatch.responsible_id}
+                    onChange={(e) => setTaskPatch((p) => ({ ...p, responsible_id: e.target.value }))}
+                  >
+                    <option value="">Sem responsável</option>
+                    {(profiles || []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name || p.email || p.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
+                  <label className="label">Prazo</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={taskPatch.due_date}
+                    onChange={(e) => setTaskPatch((p) => ({ ...p, due_date: e.target.value }))}
+                  />
+                </div>
+
+                <div className="grid" style={{ gap: 6, flex: 1, minWidth: 220 }}>
+                  <label className="label">Status</label>
+                  <select
+                    className="input"
+                    value={taskPatch.status}
+                    onChange={(e) => setTaskPatch((p) => ({ ...p, status: e.target.value }))}
+                  >
+                    <option value="">(automático)</option>
+                    <option value="Aberta">Aberta</option>
+                    <option value="Programada">Programada</option>
+                    <option value="Em andamento">Em andamento</option>
+                    <option value="Bloqueada">Bloqueada</option>
+                    <option value="Concluída">Concluída</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid" style={{ gap: 6 }}>
+                <label className="label">Notas</label>
+                <textarea
+                  className="input"
+                  rows={4}
+                  value={taskPatch.notes}
+                  onChange={(e) => setTaskPatch((p) => ({ ...p, notes: e.target.value }))}
+                  placeholder="Observações, dependências, links..."
+                />
+              </div>
+            </div>
+          )}
+        </BottomSheet>
       </div>
+    
+      <style jsx>{`
+        .quickFilters{
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:12px;
+        }
+        .chip{
+          border:1px solid var(--color-border-default);
+          background: var(--color-surface-2);
+          color: var(--color-text-primary);
+          padding:8px 10px;
+          border-radius: 999px;
+          font-size: 13px;
+          line-height: 1;
+        }
+        .chip.active{
+          border-color: var(--color-primary);
+        }
+        .bulkBar{
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+          z-index: 50;
+          pointer-events: none;
+        }
+        .bulkBarInner{
+          pointer-events: auto;
+          max-width: 1100px;
+          margin: 0 auto;
+          padding: 12px;
+        }
+      `}</style>
+
     </Layout>
   );
 }
