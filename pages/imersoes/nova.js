@@ -349,7 +349,7 @@ export default function NovaImersaoPage() {
               </div>
 
               <div className="grid2">
-                <Field label="Produção">
+                <Field label="Produção (Responsável)">
                   <select className="input" value={form.production_responsible} onChange={(e) => setForm((p) => ({ ...p, production_responsible: e.target.value }))}>
                     <option value="">—</option>
                     {people.map((p) => (
