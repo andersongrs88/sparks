@@ -48,6 +48,8 @@ export default async function handler(req, res) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
 
+    const userId = typeof req.query?.userId === "string" ? req.query.userId : null;
+
     // Cache no edge da Vercel (reduz muito a latência do dashboard)
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
 
@@ -68,6 +70,17 @@ export default async function handler(req, res) {
 
     const totalImmersions = immersions?.length || 0;
     const totalTasks = tasks?.length || 0;
+    const myOpen = userId
+      ? (tasks || []).filter((t) => t?.responsible_id === userId && !isTaskDone(t)).length
+      : 0;
+
+    const myOverdue = userId
+      ? (tasks || [])
+          .filter((t) => t?.responsible_id === userId && !isTaskDone(t) && t?.due_date)
+          .map((t) => ({ ...t, due_only: toLocalDateOnly(t.due_date) }))
+          .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime()).length
+      : 0;
+
     const today = toLocalDateOnly(new Date());
 
     const doneTasks = (tasks || []).filter((t) => isTaskDone(t)).length;
@@ -226,7 +239,7 @@ export default async function handler(req, res) {
       .slice(0, 12);
 
     return res.status(200).json({
-      stats: { totalImmersions, totalTasks, lateTasks, doneTasks },
+      stats: { totalImmersions, totalTasks, lateTasks, doneTasks, myOpen, myOverdue },
       upcoming,
       overdue: overdueList,
       riskImmersions,
