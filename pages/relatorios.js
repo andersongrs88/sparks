@@ -52,7 +52,8 @@ export default function RelatoriosPage() {
         // Importante: bases antigas podem não ter responsible_id ainda.
         // Tentamos com responsible_id e degradamos caso a coluna não exista.
         const baseSelect = "id, immersion_id, status, due_date, immersions(immersion_name)";
-        async function fetchTasks(withOwner) {
+
+        async function fetchOpenTasks(withOwner) {
           const { data, error } = await supabase
             .from("immersion_tasks")
             .select(withOwner ? `${baseSelect}, responsible_id` : baseSelect)
@@ -63,13 +64,22 @@ export default function RelatoriosPage() {
           return data ?? [];
         }
 
+        async function fetchAllTasks(withOwner) {
+          const { data, error } = await supabase
+            .from("immersion_tasks")
+            .select(withOwner ? `${baseSelect}, responsible_id` : baseSelect)
+            .limit(5000);
+          if (error) throw error;
+          return data ?? [];
+        }
+
         let taskRows = [];
         try {
-          taskRows = await fetchTasks(true);
+          taskRows = await fetchOpenTasks(true);
         } catch (e) {
           const msg = String(e?.message || "");
           if (msg.includes("responsible_id") && msg.includes("does not exist")) {
-            taskRows = await fetchTasks(false);
+            taskRows = await fetchOpenTasks(false);
           } else {
             throw e;
           }
@@ -79,6 +89,7 @@ export default function RelatoriosPage() {
         const overdue = (taskRows || []).filter((t) => new Date(t.due_date + "T00:00:00") < today);
 
         const byImm = new Map();
+
         for (const t of overdue) {
           const key = t.immersion_id;
           const prev = byImm.get(key) || { immersion_id: key, name: t.immersions?.immersion_name || "-", overdue: 0 };
@@ -86,7 +97,20 @@ export default function RelatoriosPage() {
           byImm.set(key, prev);
         }
 
-        // 2) Tarefas por dono
+        // 2) Tarefas por dono (inclui concluídas e atrasadas)
+        // Aqui precisamos trazer TODAS as tarefas (inclusive Concluídas), senão o card fica zerado.
+        let allTaskRows = [];
+        try {
+          allTaskRows = await fetchAllTasks(true);
+        } catch (e) {
+          const msg = String(e?.message || "");
+          if (msg.includes("responsible_id") && msg.includes("does not exist")) {
+            allTaskRows = await fetchAllTasks(false);
+          } else {
+            throw e;
+          }
+        }
+
         let profiles = [];
         try {
           const r2 = await supabase.from("profiles").select("id, name").limit(5000);
@@ -96,11 +120,22 @@ export default function RelatoriosPage() {
         }
         const profMap = new Map((profiles || []).map((p) => [p.id, p.name]));
         const byOwner = new Map();
-        for (const t of taskRows || []) {
+
+        for (const t of allTaskRows || []) {
           const key = t.responsible_id || "-";
-          const prev = byOwner.get(key) || { owner_id: key, owner: profMap.get(key) || "Sem dono", open: 0, done: 0 };
-          if (t.status === "Concluída") prev.done += 1;
-          else prev.open += 1;
+          const ownerLabel = key === "-" ? "Sem dono" : (profMap.get(key) || "Sem dono");
+          const prev = byOwner.get(key) || { owner_id: key, owner: ownerLabel, open: 0, done: 0, overdue: 0 };
+
+          if (t.status === "Concluída") {
+            prev.done += 1;
+          } else {
+            prev.open += 1;
+            if (t.due_date) {
+              const due = new Date(String(t.due_date).slice(0, 10) + "T00:00:00");
+              if (due < today) prev.overdue += 1;
+            }
+          }
+
           byOwner.set(key, prev);
         }
 
@@ -230,7 +265,7 @@ export default function RelatoriosPage() {
                   className="btn sm"
                   onClick={() => downloadCSV(
                     "tarefas_por_dono.csv",
-                    [["Dono", "Abertas", "Concluídas"], ...data.tasksByOwner.map((r) => [r.owner, r.open, r.done])]
+                    [["Dono", "Abertas", "Atrasadas", "Concluídas"], ...data.tasksByOwner.map((r) => [r.owner, r.open, r.overdue, r.done])]
                   )}
                   disabled={!data.tasksByOwner.length}
                 >
@@ -239,12 +274,13 @@ export default function RelatoriosPage() {
               </div>
               <div className="tableWrap" style={{ marginTop: 8 }}>
                 <table className="table">
-                <thead><tr><th>Dono</th><th>Abertas</th><th>Concluídas</th></tr></thead>
+                <thead><tr><th>Dono</th><th>Abertas</th><th>Atrasadas</th><th>Concluídas</th></tr></thead>
                 <tbody>
                   {data.tasksByOwner.map((r) => (
                     <tr key={r.owner_id}>
                       <td>{r.owner}</td>
                       <td>{r.open}</td>
+                      <td><span className={r.overdue > 0 ? "badge danger" : "badge muted"}>{r.overdue}</span></td>
                       <td>{r.done}</td>
                     </tr>
                   ))}
