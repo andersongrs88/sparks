@@ -128,6 +128,23 @@ function daysUntil(startDateValue) {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
+function parseCurrencyBRL(input) {
+  if (input === null || typeof input === "undefined") return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+  // Remove símbolos e espaços
+  let s = raw.replace(/\s/g, "").replace(/^R\$\s?/, "");
+  // Se vier no padrão 1.234,56 => remove milhares e troca vírgula por ponto
+  if (s.includes(",") && s.includes(".")) {
+    s = s.replace(/\./g, "").replace(/,/g, ".");
+  } else if (s.includes(",")) {
+    s = s.replace(/,/g, ".");
+  }
+  const n = Number.parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+
 // Farol por dias
 function getCountdownSignal(days) {
   if (days === null) return null;
@@ -445,7 +462,7 @@ export default function ImmersionDetailEditPage() {
           immersion_id: id,
           category: editDraft.category || null,
           item: (editDraft.item || "").trim(),
-          value: parseBRLNumber(editDraft.value),
+          value: parseCurrencyBRL(editDraft.value),
           description: editDraft.description || null
         };
         if (!payload.item) return setError("Preencha o item do custo.");
@@ -3118,19 +3135,14 @@ function normalizeTemplatesForClone(items) {
                         onChange={(e) => onDraft("category", e.target.value)}
                       />
                       <datalist id="costCategories">
-                        <option value="Hotel / Hospedagem" />
-                        <option value="Passagens / Transporte" />
-                        <option value="Alimentação" />
-                        <option value="Material / Brindes" />
-                        <option value="Equipe / Terceiros" />
-                        <option value="Infra / Locação" />
-                        <option value="Plataformas / Ferramentas" />
-                        <option value="Outros" />
+                        {COST_CATEGORIES.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
                       </datalist>
                     ) : null}
                   </Field>
                   <Field label="Valor (R$)">
-                    <input className="input" inputMode="decimal" placeholder="Ex.: 550,00" value={editDraft.value ?? ""} onChange={(e) => onDraft("value", e.target.value)} />
+                    <input className="input" inputMode="decimal" value={editDraft.value ?? ""} onChange={(e) => onDraft("value", e.target.value)} />
                   </Field>
                   <Field label="Item">
                     <input className="input" value={editDraft.item || ""} onChange={(e) => onDraft("item", e.target.value)} />
@@ -3622,19 +3634,4 @@ function normalizeTemplatesForClone(items) {
 
     </Layout>
   );
-}
-function parseBRLNumber(v) {
-  if (v === null || typeof v === "undefined") return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  const s = String(v).trim();
-  if (!s) return null;
-  // Remove currency symbols and spaces
-  const cleaned = s.replace(/[^0-9,.-]/g, "");
-  // If it uses comma as decimal separator, convert to dot and remove thousand separators
-  const normalized = cleaned
-    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
-    .replace(/,(?=\d{1,2}$)/, ".")
-    .replace(/,/g, "");
-  const num = Number(normalized);
-  return Number.isFinite(num) ? num : null;
 }
