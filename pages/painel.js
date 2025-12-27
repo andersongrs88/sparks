@@ -139,6 +139,20 @@ export default function PainelPage() {
 
   const [showFilters, setShowFilters] = useState(false);
 
+  // UI: Colapso/expansão por bloco (triagem rápida, especialmente no mobile)
+  // Ordem desejada: Atrasadas, Próximos 7 dias, Inbox e Todas.
+  // Mantemos "Vencem hoje" por utilidade operacional.
+  const SECTION_ORDER = ["overdue", "next7", "inbox", "all", "dueToday"];
+  const [collapsedByKey, setCollapsedByKey] = useState(() => ({
+    overdue: false,
+    next7: false,
+    inbox: false,
+    all: false,
+    dueToday: false,
+  }));
+
+  const sectionRefs = useRef({});
+
   // Bulk state
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkDue, setBulkDue] = useState("");
@@ -508,6 +522,37 @@ export default function PainelPage() {
     setBulkMsg("");
   }
 
+  function selectAllToggle() {
+    // Seleciona todas as tarefas do filtro atual (carregadas na tela)
+    const ids = (tasks || []).map((t) => t?.id).filter(Boolean);
+    if (!ids.length) return;
+    setSelectedIds((prev) => {
+      if (prev.size === ids.length) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  function collapseAllSections() {
+    setCollapsedByKey((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((k) => (next[k] = true));
+      return next;
+    });
+  }
+
+  function scrollToSection(key) {
+    // Expande o bloco e faz scroll suave para o topo dele
+    setCollapsedByKey((prev) => ({ ...prev, [key]: false }));
+    const el = sectionRefs.current?.[key];
+    if (el && typeof el.scrollIntoView === "function") {
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {
+        el.scrollIntoView();
+      }
+    }
+  }
+
   async function applyBulk(patch) {
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
@@ -747,28 +792,49 @@ export default function PainelPage() {
     );
   }
 
-  function Block({ title, hint, items }) {
+  function Block({ keyName, title, hint, items }) {
+    const isCollapsed = !!collapsedByKey?.[keyName];
     return (
-      <div className="card" style={{ marginTop: 12 }}>
-        <div className="sectionHeader">
+      <div
+        className="card"
+        style={{ marginTop: 12 }}
+        ref={(el) => {
+          if (el && keyName) sectionRefs.current[keyName] = el;
+        }}
+      >
+        <div className="sectionHeader" style={{ alignItems: "center" }}>
           <div>
             <h3 className="sectionTitle">{title}</h3>
             {hint ? <div className="small muted">{hint}</div> : null}
           </div>
-          <span className="pill">{items.length}</span>
+
+          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+            <span className="pill" aria-label={`Quantidade: ${items.length}`}>{items.length}</span>
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => setCollapsedByKey((prev) => ({ ...prev, [keyName]: !prev[keyName] }))}
+              aria-expanded={!isCollapsed}
+              aria-controls={`section-${keyName}`}
+            >
+              {isCollapsed ? "Expandir" : "Recolher"}
+            </button>
+          </div>
         </div>
 
-        {items.length === 0 ? (
-          <div className="emptyState" style={{ marginTop: 10 }}>
-            <div className="small muted">Sem itens neste bloco.</div>
-          </div>
-        ) : (
-          <div className="list" style={{ marginTop: 10 }}>
-            {items.map((t) => (
-              <TaskRow key={t.id} t={t} />
-            ))}
-          </div>
-        )}
+        <div id={`section-${keyName}`} hidden={isCollapsed}>
+          {items.length === 0 ? (
+            <div className="emptyState" style={{ marginTop: 10 }}>
+              <div className="small muted">Sem itens neste bloco.</div>
+            </div>
+          ) : (
+            <div className="list" style={{ marginTop: 10 }}>
+              {items.map((t) => (
+                <TaskRow key={t.id} t={t} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -833,6 +899,8 @@ export default function PainelPage() {
   if (authLoading) return null;
   if (!user) return null;
 
+  const allSelected = (tasks || []).length > 0 && selectedCount === (tasks || []).length;
+
   return (
     <Layout title="Plano de Ação">
       <div className="container">
@@ -849,10 +917,37 @@ export default function PainelPage() {
             <button className="btn onlyMobile" type="button" onClick={() => setShowFilters(true)}>
               Filtros
             </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={selectAllToggle}
+              disabled={loading || !(tasks || []).length}
+              aria-label={allSelected ? "Limpar seleção de todas as tarefas" : "Selecionar todas as tarefas"}
+            >
+              {allSelected ? "Limpar tudo" : "Selecionar tudo"}
+            </button>
+            <button className="btn" type="button" onClick={collapseAllSections} disabled={loading}>
+              Recolher todas
+            </button>
             <button className="btn" type="button" onClick={loadTasks}>
               Atualizar
             </button>
           </div>
+        </div>
+
+        <div className="row wrap" style={{ gap: 10, marginTop: 10 }} aria-label="Filtros rápidos">
+          <button className="btn small" type="button" onClick={() => scrollToSection("overdue")} disabled={loading}>
+            Atrasadas
+          </button>
+          <button className="btn small" type="button" onClick={() => scrollToSection("next7")} disabled={loading}>
+            Próximos 7 dias
+          </button>
+          <button className="btn small" type="button" onClick={() => scrollToSection("inbox")} disabled={loading}>
+            Inbox
+          </button>
+          <button className="btn small" type="button" onClick={() => scrollToSection("all")} disabled={loading}>
+            Todas
+          </button>
         </div>
 
         {error ? (
@@ -864,26 +959,31 @@ export default function PainelPage() {
         {!loading ? (
           <>
             <Block
-              title="Inbox"
-              hint="Tarefas sem responsável, sem prazo ou sem fase. Use as ações em lote para triagem rápida."
-              items={grouped.inbox}
-            />
-            <Block
+              keyName="overdue"
               title="Atrasadas"
               hint="Prioridade máxima. Resolva ou reagende."
               items={grouped.overdue}
             />
             <Block
+              keyName="dueToday"
               title="Vencem hoje"
               hint="Fechamento do dia."
               items={grouped.dueToday}
             />
             <Block
+              keyName="next7"
               title="Próximos 7 dias"
               hint="Planejamento imediato."
               items={grouped.next7}
             />
             <Block
+              keyName="inbox"
+              title="Inbox"
+              hint="Tarefas sem responsável, sem prazo ou sem fase. Use as ações em lote para triagem rápida."
+              items={grouped.inbox}
+            />
+            <Block
+              keyName="all"
               title="Todas"
               hint="Visão completa conforme filtros."
               items={grouped.all}
