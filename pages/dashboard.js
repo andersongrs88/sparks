@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabaseClient";
 
 /**
  * DASHBOARD — HOTFIX
@@ -16,7 +17,7 @@ import { useAuth } from "../context/AuthContext";
  *
  * Depende do endpoint:
  * - GET /api/dashboard/stats
- *   { stats, upcoming, overdue, riskImmersions, workload, immersionOptions }
+ *   { stats, upcoming, overdue, workload, immersionOptions }
  */
 
 const asText = (v) => {
@@ -55,10 +56,12 @@ export default function DashboardPage() {
     stats: null,
     upcoming: [],
     overdue: [],
-    riskImmersions: [],
     workload: [],
     immersionOptions: []
   });
+
+  const [myStats, setMyStats] = useState({ myOpen: 0, myOverdue: 0 });
+  const [myTasksLocal, setMyTasksLocal] = useState([]);
 
   const [showKpis, setShowKpis] = useState(true);
   const [immersionFilter, setImmersionFilter] = useState("all");
@@ -74,7 +77,7 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
 
-        const res = await fetch(`/api/dashboard/stats?userId=${encodeURIComponent(user.id)}`, { method: "GET" });
+        const res = await fetch("/api/dashboard/stats", { method: "GET" });
         if (!res.ok) throw new Error("Falha ao carregar o dashboard.");
         const j = await res.json();
 
@@ -84,7 +87,6 @@ export default function DashboardPage() {
           stats: j?.stats || null,
           upcoming: Array.isArray(j?.upcoming) ? j.upcoming : [],
           overdue: Array.isArray(j?.overdue) ? j.overdue : [],
-          riskImmersions: Array.isArray(j?.riskImmersions) ? j.riskImmersions : [],
           workload: Array.isArray(j?.workload) ? j.workload : [],
           immersionOptions: Array.isArray(j?.immersionOptions) ? j.immersionOptions : []
         });
@@ -101,28 +103,79 @@ export default function DashboardPage() {
     };
   }, [authLoading, user]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        if (!user?.id) {
+          setMyStats({ myOpen: 0, myOverdue: 0 });
+          setMyTasksLocal([]);
+          return;
+        }
+        if (!supabase) return;
+
+        const { data, error } = await supabase
+          .from("immersion_tasks")
+          .select("id,title,phase,due_date,immersion_id,status,done_at")
+          .eq("responsible_id", user.id)
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .limit(200);
+
+        if (error) throw error;
+        if (!mounted) return;
+
+        const today = toDateOnly(iso(new Date()));
+        const open = [];
+        for (const t of Array.isArray(data) ? data : []) {
+          const st = String(t?.status || "").toLowerCase();
+          const done = !!t?.done_at || st === "done" || st === "concluida" || st === "concluída";
+          if (done) continue;
+          open.push(t);
+        }
+
+        let myOverdue = 0;
+        for (const t of open) {
+          const due = toDateOnly(t?.due_date);
+          if (due && today && due.getTime() < today.getTime()) myOverdue += 1;
+        }
+
+        setMyTasksLocal(open);
+        setMyStats({ myOpen: open.length, myOverdue });
+      } catch (e) {
+        setMyStats({ myOpen: 0, myOverdue: 0 });
+        setMyTasksLocal([]);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id]);
+
+
   const stats = useMemo(() => {
     const s = payload?.stats;
     return {
       totalImmersions: s?.totalImmersions ?? 0,
       totalTasks: s?.totalTasks ?? 0,
-      overdueTasks: s?.overdueTasks ?? 0,
+      overdueTasks: s?.overdueTasks ?? s?.lateTasks ?? 0,
       doneTasks: s?.doneTasks ?? 0,
-      myOpen: s?.myOpen ?? 0,
-      myOverdue: s?.myOverdue ?? 0
+      myOpen: s?.myOpen ?? myStats.myOpen ?? 0,
+      myOverdue: s?.myOverdue ?? myStats.myOverdue ?? 0
     };
-  }, [payload]);
+  }, [payload, myStats]);
 
   const immersionOptions = useMemo(() => payload?.immersionOptions || [], [payload]);
   const overdue = useMemo(() => payload?.overdue || [], [payload]);
   const upcoming = useMemo(() => payload?.upcoming || [], [payload]);
-  const riskImmersions = useMemo(() => payload?.riskImmersions || [], [payload]);
   const workload = useMemo(() => payload?.workload || [], [payload]);
 
   const myTasks = useMemo(() => {
+    if (Array.isArray(myTasksLocal) && myTasksLocal.length) return myTasksLocal.slice(0, 6);
     if (Array.isArray(payload?.myTasks)) return payload.myTasks;
     return overdue.slice(0, 6);
-  }, [payload, overdue]);
+  }, [payload, overdue, myTasksLocal]);
 
   const goPainel = (q = {}) => router.push({ pathname: "/painel", query: q });
 
@@ -374,15 +427,22 @@ export default function DashboardPage() {
                       const overdueN = Number(w?.overdue ?? 0);
                       const dueSoon = Number(w?.dueSoon ?? w?.due_soon ?? 0);
 
+                      const sev = overdueN >= 10 || (open >= 30 && overdueN >= 6) ? "critical" : overdueN >= 5 || open >= 20 ? "warn" : "ok";
+                      const rowStyle = sev === "critical"
+                        ? { background: "var(--color-danger-soft)" }
+                        : sev === "warn"
+                          ? { background: "var(--color-warning-soft)" }
+                          : undefined;
+
                       return (
-                        <tr key={key}>
+                        <tr key={key} style={rowStyle}>
                           <td>
                             <div style={{ fontWeight: 800 }}>{responsible}</div>
-                            {overdueN >= 10 ? (
+                            {sev === "critical" ? (
                               <div className="small" style={{ marginTop: 4 }}>
                                 <span className="badge danger">Crítico</span>
                               </div>
-                            ) : overdueN >= 4 ? (
+                            ) : sev === "warn" ? (
                               <div className="small" style={{ marginTop: 4 }}>
                                 <span className="badge warn">Atenção</span>
                               </div>
@@ -390,9 +450,9 @@ export default function DashboardPage() {
                               <div className="small muted" style={{ marginTop: 4 }}>Normal</div>
                             )}
                           </td>
-                          <td><span className="badge">{open}</span></td>
+                          <td><span className={sev === "critical" ? "badge danger" : sev === "warn" ? "badge warn" : "badge"}>{open}</span></td>
                           <td><span className={overdueN ? "badge danger" : "badge muted"}>{overdueN}</span></td>
-                          <td><span className={dueSoon ? "badge" : "badge muted"}>{dueSoon}</span></td>
+                          <td><span className={dueSoon ? (sev === "critical" ? "badge danger" : sev === "warn" ? "badge warn" : "badge") : "badge muted"}>{dueSoon}</span></td>
                         </tr>
                       );
                     })}
@@ -404,96 +464,10 @@ export default function DashboardPage() {
             )}
           </details>
 
-          <details className="card compact" open={false}>
-            <summary className="summaryRow">
-              <span style={{ fontWeight: 750 }}>Tarefas atrasadas</span>
-                          </summary>
+          
 
-            {overdue.length > 0 ? (
-              <div className="tableWrap compactTable">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Imersão</th>
-                      <th>Tarefa</th>
-                      <th>Fase</th>
-                      <th>Atraso</th>
-                      <th>Prazo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overdue.slice(0, 25).map((t, idx) => {
-                      const key = asId(t?.id || t?.task_id) || String(idx);
-                      const immersionName = asText(t?.immersion_name || t?.immersion) || "Ver";
-                      const title = asText(t?.title) || "Tarefa";
-                      const phase = asText(t?.phase) || "-";
-                      const daysLate = Number(t?.days_late ?? t?.daysLate ?? 0);
-                      const due = asText(t?.due_date) || "-";
 
-                      return (
-                        <tr key={key}>
-                          <td>
-                            <button className="linkBtn" type="button" onClick={() => goPainel({ immersionId: asId(t?.immersion_id || t?.immersion) })}>
-                              {immersionName}
-                            </button>
-                          </td>
-                          <td>
-                            <button className="linkBtn" type="button" onClick={() => openTask(t)}>
-                              {title}
-                            </button>
-                          </td>
-                          <td><span className="badge muted">{phase}</span></td>
-                          <td><span className="badge danger">{daysLate} dia(s)</span></td>
-                          <td>{due}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
-                  <button className="btn small" type="button" onClick={() => goPainel({ view: "overdue" })}>Abrir no Painel</button>
-                </div>
-              </div>
-            ) : (
-              <div className="muted small" style={{ marginTop: 8 }}>Nenhuma tarefa atrasada.</div>
-            )}
-          </details>
 
-          <details className="card compact" open={false}>
-            <summary className="summaryRow">
-              <span style={{ fontWeight: 750 }}>Imersões em risco</span>
-              <span className="muted small">Sinais de execução</span>
-            </summary>
-
-            {riskImmersions.length > 0 ? (
-              <div className="list" role="list">
-                {riskImmersions.slice(0, 10).map((im, idx) => {
-                  const id = asId(im?.immersion_id || im?.id) || String(idx);
-                  const title = asText(im?.immersion_name || im?.name) || "Imersão";
-                  const signal = asText(im?.signal) || "Risco identificado";
-
-                  return (
-                    <div className="immRow" key={id} role="listitem">
-                      <div className="immMain">
-                        <div className="immTitle">{title}</div>
-                        <div className="immMeta">{signal}</div>
-                      </div>
-                      <div className="immActions">
-                        <button className="btn small" type="button" onClick={() => goPainel({ immersionId: id, view: "inbox" })}>
-                          Abrir triagem
-                        </button>
-                        <button className="btn small ghost" type="button" onClick={() => goImmersion(id, router.asPath)}>
-                          Abrir
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="muted small" style={{ marginTop: 8 }}>Nenhuma imersão em risco no momento.</div>
-            )}
-          </details>
         </div>
       </div>
 
