@@ -508,12 +508,14 @@ export default function DashboardPage() {
           border-radius: 12px;
           padding: 12px 14px;
           border: 1px solid var(--color-border-default);
-          background: var(--color-surface-1);
+                    background: var(--color-surface-1);
+          box-shadow: var(--shadow-sm);
+background: var(--color-surface-1);
           cursor: pointer;
           transition: transform .08s ease, border-color .12s ease;
         }
-        .kpi:hover { transform: translateY(-1px); border-color: rgba(255,255,255,0.18); }
-        .kpi:focus { outline: 2px solid rgba(125, 211, 252, 0.35); outline-offset: 2px; }
+        .kpi:hover { transform: translateY(-1px); border-color: var(--color-border-muted); }
+        .kpi:focus { outline: 2px solid rgba(96, 165, 250, 0.45); outline-offset: 2px; }
 
         .kpiLabel { font-size: 12px; opacity: .75; }
         .kpiValue { font-size: 22px; font-weight: 850; line-height: 1.1; margin-top: 6px; }
@@ -521,7 +523,7 @@ export default function DashboardPage() {
 
         .kpiAlert { background: rgba(255, 77, 77, 0.08); border-color: rgba(255, 77, 77, 0.22); }
         .kpiOk { background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.22); }
-        .kpiMuted { background: rgba(255, 255, 255, 0.03); }
+        .kpiMuted { background: var(--color-surface-2); }
         .kpiWarn { background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.22); }
 
         .dashGrid {
@@ -539,7 +541,7 @@ export default function DashboardPage() {
         .inputSmall { height: 34px; padding: 6px 10px; font-size: 13px; }
         .divider { height: 1px; background: var(--color-border-default); opacity: .65; margin: 12px 0; }
 
-        .empty { border: 1px dashed var(--color-border-default); border-radius: 12px; padding: 12px; background: rgba(255,255,255,0.02); }
+        .empty { border: 1px dashed var(--color-border-default); border-radius: 12px; padding: 12px; background: var(--color-surface-1); }
 
         .miniList { display:flex; flex-direction:column; gap: 8px; margin-top: 10px; }
         .miniRow {
@@ -550,7 +552,7 @@ export default function DashboardPage() {
           padding: 10px 10px;
           cursor: pointer;
         }
-        .miniRow:hover { border-color: rgba(255,255,255,0.18); }
+        .miniRow:hover { border-color: var(--color-border-muted); }
         .miniTitle { font-weight: 800; font-size: 13px; line-height: 1.2; }
         .miniMeta { margin-top: 6px; display:flex; gap: 8px; flex-wrap: wrap; }
 
@@ -563,7 +565,8 @@ export default function DashboardPage() {
           padding: 12px;
           border-radius: 12px;
           border: 1px solid var(--color-border-default);
-          background: var(--color-surface-2);
+                    background: var(--color-surface-1);
+background: var(--color-surface-2);
         }
         .immMain { min-width: 0; }
         .immTitle { font-weight: 850; font-size: 14px; line-height: 1.2; }
