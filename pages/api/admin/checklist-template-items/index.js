@@ -14,14 +14,17 @@ async function requireAdmin({ url, anon, token }) {
   const requester = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: userData, error: userErr } = await requester.auth.getUser();
   if (userErr || !userData?.user) return { ok: false, status: 401, error: "Sessão inválida." };
+
   const { data: prof, error: profErr } = await requester
     .from("profiles")
     .select("id, role, is_active")
     .eq("id", userData.user.id)
     .single();
+
   if (profErr) return { ok: false, status: 403, error: "Não foi possível validar permissões." };
   if (!prof?.is_active) return { ok: false, status: 403, error: "Usuário inativo." };
   if (prof?.role !== "admin") return { ok: false, status: 403, error: "Apenas ADMIN." };
+
   return { ok: true };
 }
 
@@ -29,11 +32,13 @@ export default async function handler(req, res) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
   if (!url || !anon) return json(res, 500, { error: "Supabase não configurado." });
   if (!serviceKey) return json(res, 500, { error: "SUPABASE_SERVICE_ROLE_KEY não configurada no servidor." });
 
   const token = getBearerToken(req);
   if (!token) return json(res, 401, { error: "Token ausente." });
+
   const gate = await requireAdmin({ url, anon, token });
   if (!gate.ok) return json(res, gate.status, { error: gate.error });
 
@@ -42,14 +47,17 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const templateId = String(req.query?.template_id || "").trim();
     if (!templateId) return json(res, 400, { error: "template_id é obrigatório." });
+
     const { data, error } = await admin
       .from("checklist_template_items")
-      .select("id, template_id, phase, area,
-      responsible_id, title, due_basis, offset_days, sort_order, created_at")
+      // NOTE: keep select string in a single line to avoid bundler parsing errors.
+      // 'area' is kept for backward-compatibility, but the UI uses responsible_id.
+      .select("id, template_id, phase, responsible_id, title, due_basis, offset_days, sort_order, created_at, area")
       .eq("template_id", templateId)
       .order("sort_order", { ascending: true })
       .order("phase", { ascending: true })
       .order("title", { ascending: true });
+
     if (error) return json(res, 400, { error: error.message });
     return json(res, 200, { data: data || [] });
   }
@@ -68,6 +76,7 @@ export default async function handler(req, res) {
 
     const tpl = String(template_id || "").trim();
     const t = String(title || "").trim();
+
     if (!tpl) return json(res, 400, { error: "template_id é obrigatório." });
     if (!t) return json(res, 400, { error: "Título é obrigatório." });
 
@@ -87,6 +96,7 @@ export default async function handler(req, res) {
       .insert(payload)
       .select("id")
       .single();
+
     if (error) return json(res, 400, { error: error.message });
     return json(res, 200, { id: data?.id });
   }
