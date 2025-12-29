@@ -34,7 +34,21 @@ export function AuthProvider({ children }) {
   const sessionTimerRef = useRef(null);
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 
-  const refreshProfile = useCallback(async (u, { force = false } = {}) => {
+  
+  async function touchLastLogin(u) {
+    try {
+      if (!supabase || !u?.id) return;
+      // best-effort: user can update own profile row (RLS should allow).
+      await supabase
+        .from("profiles")
+        .update({ last_login_at: new Date().toISOString() })
+        .eq("id", u.id);
+    } catch {
+      // ignore
+    }
+  }
+
+const refreshProfile = useCallback(async (u, { force = false } = {}) => {
     if (!u?.id) {
       setProfile(null);
 
@@ -124,9 +138,10 @@ export function AuthProvider({ children }) {
         refreshProfile(sessionUser).catch(() => {});
 
         // Listener
-        const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
           const u = session?.user || null;
           setUser(u);
+          if (event === "SIGNED_IN" && u) touchLastLogin(u);
           // Não aguarda (evita atrasos e race conditions em mobile/webview)
           refreshProfile(u, { force: true }).catch(() => {});
         });

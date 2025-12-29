@@ -15,6 +15,25 @@ const ROLES_LABEL = {
   viewer: "Somente visualização"
 };
 
+
+function formatLastLogin(ts) {
+  if (!ts) return "-";
+  try {
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return "-";
+    // dd/mm/yyyy hh:mm
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  } catch {
+    return "-";
+  }
+}
+
+
 export default function UsuariosListPage() {
   const router = useRouter();
   const { loading: authLoading, user, isFullAccess } = useAuth();
@@ -107,6 +126,7 @@ export default function UsuariosListPage() {
                 <th>Email</th>
                 <th>Tipo</th>
                 <th>Ativo</th>
+                <th>Último login</th>
               </tr>
             </thead>
 
@@ -117,6 +137,7 @@ export default function UsuariosListPage() {
                   <td>{u.email || "-"}</td>
                   <td>{ROLES_LABEL[u.role] || u.role || "-"}</td>
                   <td>{u.is_active ? "Sim" : "Não"}</td>
+                  <td>{formatLastLogin(u.last_login_at)}</td>
                 </tr>
               ))}
             </tbody>

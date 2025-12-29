@@ -86,7 +86,7 @@ export default async function handler(req, res) {
         name: cleanName,
         email: cleanEmail,
         role: cleanRole,
-        ...(cleanPermissions ? { permissions: cleanPermissions } : {}),
+        permissions: cleanPermissions,
         is_active: cleanActive
       },
       { onConflict: "id" }
