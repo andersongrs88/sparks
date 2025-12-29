@@ -491,6 +491,67 @@ a:hover { text-decoration: underline; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } }
 
+/* Templates (Checklist) - layout mais legível */
+.gridTemplates{
+  display:grid;
+  grid-template-columns: 0.95fr 1.35fr;
+  gap: 12px;
+}
+@media (max-width: 980px){
+  .gridTemplates{ grid-template-columns: 1fr; }
+}
+
+.tplList{
+  display: grid;
+  gap: 8px;
+}
+.tplListBtn{
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+}
+.tplListBtn:hover{ filter: brightness(0.98); }
+.tplListBtn.active{
+  border-color: rgba(31,79,153,0.35);
+  box-shadow: 0 0 0 2px rgba(31,79,153,0.08);
+}
+
+.templatesRightHeader{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tplItemsList{ }
+
+.tplItemRow{
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  padding: 12px;
+}
+.tplItemRowInner{
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+@media (max-width: 640px){
+  .tplItemRowInner{ flex-direction: column; align-items: stretch; }
+}
+
+.tplBadges{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .field label {
   display: block;
   font-size: 12px;

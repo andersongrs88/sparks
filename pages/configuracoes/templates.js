@@ -35,6 +35,11 @@ export default function ChecklistTemplatesPage() {
 
   const [profiles, setProfiles] = useState([]);
 
+  // UX: colapsos para reduzir ruído visual e melhorar leitura
+  const [showTplEdit, setShowTplEdit] = useState(false);
+  const [showNewTpl, setShowNewTpl] = useState(false);
+  const [showNewItem, setShowNewItem] = useState(false);
+
   const [newTpl, setNewTpl] = useState({ name: "", description: "" });
   const [newItem, setNewItem] = useState({
     phase: "PA-PRE",
@@ -81,6 +86,7 @@ export default function ChecklistTemplatesPage() {
 
   useEffect(() => {
     loadTemplatesAndSelectFirst();
+    loadProfiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -110,6 +116,26 @@ export default function ChecklistTemplatesPage() {
     [templates, activeId]
   );
 
+  const profileNameById = useMemo(() => {
+    const m = new Map();
+    for (const p of profiles || []) {
+      const label = (p?.name || p?.email || "Usuário").trim();
+      if (p?.id) m.set(p.id, label);
+    }
+    return m;
+  }, [profiles]);
+
+  const itemCounts = useMemo(() => {
+    const counts = { total: 0 };
+    for (const p of PHASES) counts[p.key] = 0;
+    for (const it of items || []) {
+      counts.total += 1;
+      const k = String(it?.phase || "").trim();
+      if (k && counts[k] !== undefined) counts[k] += 1;
+    }
+    return counts;
+  }, [items]);
+
   useEffect(() => {
     if (activeTemplate) {
       setTplEdit({
@@ -120,6 +146,9 @@ export default function ChecklistTemplatesPage() {
     } else {
       setTplEdit(null);
     }
+    // Quando trocar template, fecha edições para evitar confusão
+    setShowTplEdit(false);
+    setShowNewItem(false);
     setItemEditId("");
     setItemEdit(null);
   }, [activeTemplate?.id]);
@@ -166,7 +195,7 @@ export default function ChecklistTemplatesPage() {
       await createTemplateItem({
         template_id: activeId,
         phase: newItem.phase,
-        area: newItem.area || null,
+        responsible_id: newItem.responsible_id || null,
         title: newItem.title.trim(),
         due_basis: newItem.due_basis,
         offset_days: Number(newItem.offset_days || 0),
@@ -178,6 +207,14 @@ export default function ChecklistTemplatesPage() {
       setError(e2?.message || "Falha ao criar item.");
     }
   }
+
+  const phaseLabel = (k) => (PHASES.find((p) => p.key === k)?.label || k || "-");
+  const dueBasisLabel = (k) => (k === "end" ? "Fim" : "Início");
+  const responsibleLabel = (responsibleId) => {
+    const id = String(responsibleId || "").trim();
+    if (!id) return "Sem responsável";
+    return profileNameById.get(id) || "Responsável";
+  };
 
   async function onDeleteItem(item) {
     const ok = window.confirm("Excluir esta tarefa do template?");
@@ -194,123 +231,223 @@ export default function ChecklistTemplatesPage() {
     <Layout title="Configurações • Templates de checklist">
       {error ? <div className="error">{error}</div> : null}
 
-      <div className="grid2">
+      <div className="gridTemplates">
+        {/* ESQUERDA: seleção e configurações do template (com colapsos) */}
         <div className="card">
           <div className="h2">Templates</div>
-          {loading ? <div className="small">Carregando…</div> : null}
+          <div className="small muted">Selecione um template e gerencie seus itens.</div>
+          {loading ? <div className="small" style={{ marginTop: 8 }}>Carregando…</div> : null}
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            {(templates || []).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`btn ${t.id === activeId ? "primary" : ""}`}
-                onClick={() => setActiveId(t.id)}
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-
-          {activeTemplate ? (
-            <div style={{ marginTop: 12 }}>
-              <div className="small muted">Editar template selecionado</div>
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <div>
-                  <div className="small">Nome</div>
-                  <input
-                    className="input"
-                    value={tplEdit?.name || ""}
-                    onChange={(e) => setTplEdit((p) => ({ ...(p || {}), name: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <div className="small">Descrição</div>
-                  <input
-                    className="input"
-                    value={tplEdit?.description || ""}
-                    onChange={(e) => setTplEdit((p) => ({ ...(p || {}), description: e.target.value }))}
-                  />
-                </div>
-                <label className="row" style={{ gap: 10, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={tplEdit?.is_active !== false}
-                    onChange={(e) => setTplEdit((p) => ({ ...(p || {}), is_active: e.target.checked }))}
-                  />
-                  <span className="small">Ativo</span>
-                </label>
-              </div>
-
-              <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div className="tplList" style={{ marginTop: 12 }}>
+            {(templates || []).length === 0 ? (
+              <div className="small">Nenhum template encontrado.</div>
+            ) : (
+              (templates || []).map((t) => (
                 <button
-                  className="btn primary"
+                  key={t.id}
                   type="button"
-                  onClick={async () => {
-                    setError("");
-                    try {
-                      await updateTemplate(activeTemplate.id, {
-                        name: tplEdit?.name,
-                        description: tplEdit?.description,
-                        is_active: tplEdit?.is_active,
-                      });
-                      await Promise.all([loadTemplatesAndSelectFirst(), loadProfiles()]);
-                      setActiveId(activeTemplate.id);
-                    } catch (e) {
-                      setError(e?.message || "Falha ao salvar template.");
-                    }
+                  className={`tplListBtn ${t.id === activeId ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveId(t.id);
+                    setShowTplEdit(false);
+                    setItemEditId("");
+                    setItemEdit(null);
                   }}
                 >
-                  Salvar
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontWeight: 700 }}>{t.name}</span>
+                    {t.is_active ? <span className="badge success">Ativo</span> : <span className="badge muted">Inativo</span>}
+                  </div>
+                  {t.description ? <div className="small muted" style={{ marginTop: 4 }}>{t.description}</div> : null}
                 </button>
-                <button className="btn" type="button" onClick={() => setTplEdit({ name: activeTemplate.name || "", description: activeTemplate.description || "", is_active: activeTemplate.is_active !== false })}>
-                  Desfazer
-                </button>
-                <button className="btn danger" type="button" onClick={() => onDeleteTemplate(activeTemplate)}>
-                  Excluir template
-                </button>
-              </div>
+              ))
+            )}
+          </div>
+
+          {/* Configurações do template selecionado */}
+          {activeTemplate ? (
+            <div style={{ marginTop: 14 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setShowTplEdit((v) => !v)}
+                style={{ width: "100%", justifyContent: "space-between" }}
+              >
+                <span>Configurações do template</span>
+                <span className="small muted">{showTplEdit ? "Recolher" : "Expandir"}</span>
+              </button>
+
+              {showTplEdit ? (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <div>
+                    <div className="small">Nome</div>
+                    <input
+                      className="input"
+                      value={tplEdit?.name || ""}
+                      onChange={(e) => setTplEdit((p) => ({ ...(p || {}), name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <div className="small">Descrição</div>
+                    <input
+                      className="input"
+                      value={tplEdit?.description || ""}
+                      onChange={(e) => setTplEdit((p) => ({ ...(p || {}), description: e.target.value }))}
+                    />
+                  </div>
+                  <label className="row" style={{ gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={tplEdit?.is_active !== false}
+                      onChange={(e) => setTplEdit((p) => ({ ...(p || {}), is_active: e.target.checked }))}
+                    />
+                    <span className="small">Ativo</span>
+                  </label>
+
+                  <div style={{ marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      className="btn primary"
+                      type="button"
+                      onClick={async () => {
+                        setError("");
+                        try {
+                          await updateTemplate(activeTemplate.id, {
+                            name: tplEdit?.name,
+                            description: tplEdit?.description,
+                            is_active: tplEdit?.is_active,
+                          });
+                          await Promise.all([loadTemplatesAndSelectFirst(), loadProfiles()]);
+                          setActiveId(activeTemplate.id);
+                        } catch (e) {
+                          setError(e?.message || "Falha ao salvar template.");
+                        }
+                      }}
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() =>
+                        setTplEdit({
+                          name: activeTemplate.name || "",
+                          description: activeTemplate.description || "",
+                          is_active: activeTemplate.is_active !== false,
+                        })
+                      }
+                    >
+                      Desfazer
+                    </button>
+                    <button className="btn danger" type="button" onClick={() => onDeleteTemplate(activeTemplate)}>
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
-          <hr style={{ margin: "16px 0", borderColor: "#1f1f1f" }} />
-
-          <div className="h2">Novo template</div>
-          <form onSubmit={onCreateTemplate}>
-            <div className="small">Nome</div>
-            <input
-              className="input"
-              value={newTpl.name}
-              onChange={(e) => setNewTpl((p) => ({ ...p, name: e.target.value }))}
-            />
-            <div className="small" style={{ marginTop: 8 }}>
-              Descrição
-            </div>
-            <input
-              className="input"
-              value={newTpl.description}
-              onChange={(e) => setNewTpl((p) => ({ ...p, description: e.target.value }))}
-            />
-            <button className="btn primary" style={{ marginTop: 10 }}>
-              Criar
+          {/* Novo template (colapsado por padrão) */}
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowNewTpl((v) => !v)}
+              style={{ width: "100%", justifyContent: "space-between" }}
+            >
+              <span>+ Novo template</span>
+              <span className="small muted">{showNewTpl ? "Recolher" : "Expandir"}</span>
             </button>
-          </form>
+            {showNewTpl ? (
+              <form onSubmit={onCreateTemplate} style={{ marginTop: 10 }}>
+                <div className="small">Nome</div>
+                <input className="input" value={newTpl.name} onChange={(e) => setNewTpl((p) => ({ ...p, name: e.target.value }))} />
+                <div className="small" style={{ marginTop: 8 }}>Descrição</div>
+                <input className="input" value={newTpl.description} onChange={(e) => setNewTpl((p) => ({ ...p, description: e.target.value }))} />
+                <button className="btn primary" style={{ marginTop: 10 }}>Criar</button>
+              </form>
+            ) : null}
+          </div>
         </div>
 
+        {/* DIREITA: itens do template */}
         <div className="card">
-          <div className="h2">Itens do template</div>
-          {!activeId ? <div className="small">Selecione um template à esquerda.</div> : null}
-          {itemsLoading ? <div className="small">Carregando itens…</div> : null}
+          <div className="templatesRightHeader">
+            <div>
+              <div className="h2">Checklist do template: {activeTemplate?.name || "—"}</div>
+              <div className="small muted">
+                {itemCounts.total} item(ns) • PA-PRÉ: {itemCounts["PA-PRE"]} • DURANTE: {itemCounts["DURANTE"]} • PÓS: {itemCounts["POS"]}
+              </div>
+            </div>
+            <button className="btn primary" type="button" onClick={() => setShowNewItem(true)}>
+              + Adicionar item
+            </button>
+          </div>
+
+          {!activeId ? <div className="small" style={{ marginTop: 10 }}>Selecione um template à esquerda.</div> : null}
+          {itemsLoading ? <div className="small" style={{ marginTop: 10 }}>Carregando itens…</div> : null}
 
           {activeId ? (
             <>
-              <div style={{ marginTop: 10 }}>
+              {showNewItem ? (
+                <div className="card" style={{ marginTop: 12, padding: 12 }}>
+                  <div className="h2" style={{ marginBottom: 6 }}>Adicionar item</div>
+                  <form onSubmit={(e) => { onCreateItem(e); setShowNewItem(false); }}>
+                    <div>
+                      <div className="small">Título</div>
+                      <input className="input" value={newItem.title} onChange={(e) => setNewItem((p) => ({ ...p, title: e.target.value }))} />
+                    </div>
+
+                    <div className="row wrap" style={{ gap: 10, marginTop: 8 }}>
+                      <div className="col">
+                        <div className="small">Fase</div>
+                        <select className="input" value={newItem.phase} onChange={(e) => setNewItem((p) => ({ ...p, phase: e.target.value }))}>
+                          {PHASES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="col">
+                        <div className="small">Responsável</div>
+                        <select className="input" value={newItem.responsible_id} onChange={(e) => setNewItem((p) => ({ ...p, responsible_id: e.target.value }))}>
+                          <option value="">Sem responsável</option>
+                          {profiles.map((p) => <option key={p.id} value={p.id}>{(p.name || p.email || "Usuário").trim()}</option>)}
+                        </select>
+                      </div>
+                      <div className="col">
+                        <div className="small">Base do prazo</div>
+                        <select className="input" value={newItem.due_basis} onChange={(e) => setNewItem((p) => ({ ...p, due_basis: e.target.value }))}>
+                          <option value="start">Início</option>
+                          <option value="end">Fim</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="row wrap" style={{ gap: 10, marginTop: 8 }}>
+                      <div className="col">
+                        <div className="small">Offset (dias)</div>
+                        <input className="input" type="number" value={newItem.offset_days} onChange={(e) => setNewItem((p) => ({ ...p, offset_days: e.target.value }))} />
+                        <div className="small muted">Ex.: -10 cria 10 dias antes.</div>
+                      </div>
+                      <div className="col">
+                        <div className="small">Ordem</div>
+                        <input className="input" type="number" value={newItem.sort_order} onChange={(e) => setNewItem((p) => ({ ...p, sort_order: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                      <button className="btn primary" type="submit">Adicionar</button>
+                      <button className="btn" type="button" onClick={() => setShowNewItem(false)}>Cancelar</button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
+
+              <div className="tplItemsList" style={{ marginTop: 12 }}>
                 {(items || []).length === 0 ? (
                   <div className="small">Nenhum item ainda.</div>
                 ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 10 }}>
                     {items.map((it) => (
-                      <div key={it.id} className="card" style={{ padding: 12 }}>
+                      <div key={it.id} className="tplItemRow">
                         {itemEditId === it.id ? (
                           <div style={{ display: "grid", gap: 8 }}>
                             <div className="row wrap" style={{ gap: 10 }}>
@@ -386,11 +523,18 @@ export default function ChecklistTemplatesPage() {
                             </div>
                           </div>
                         ) : (
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div className="tplItemRowInner">
                             <div>
-                              <div className="h2" style={{ marginBottom: 4 }}>{it.title}</div>
-                              <div className="small">Fase: {it.phase} • Área: {it.area || "-"} • Base: {it.due_basis} • Offset: {it.offset_days} dia(s)</div>
+                              <div style={{ fontWeight: 800, fontSize: 16, lineHeight: "22px" }}>{it.title}</div>
+                              <div className="tplBadges" style={{ marginTop: 8 }}>
+                                <span className="badge">{phaseLabel(it.phase)}</span>
+                                <span className="badge muted">{responsibleLabel(it.responsible_id)}</span>
+                                <span className="badge muted">Base: {dueBasisLabel(it.due_basis)}</span>
+                                <span className="badge muted">Offset: {Number(it.offset_days ?? 0)} dia(s)</span>
+                                <span className="badge muted">Ordem: {Number(it.sort_order ?? 0)}</span>
+                              </div>
                             </div>
+
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               <button className="btn" type="button" onClick={() => { setItemEditId(it.id); setItemEdit({ ...it }); }}>
                                 Editar
@@ -406,89 +550,6 @@ export default function ChecklistTemplatesPage() {
                   </div>
                 )}
               </div>
-
-              <hr style={{ margin: "16px 0", borderColor: "#1f1f1f" }} />
-
-              <div className="h2">Adicionar item</div>
-              <form onSubmit={onCreateItem}>
-                <div className="row">
-                  <div className="col">
-                    <div className="small">Fase</div>
-                    <select
-                      className="input"
-                      value={newItem.phase}
-                      onChange={(e) => setNewItem((p) => ({ ...p, phase: e.target.value }))}
-                    >
-                      {PHASES.map((p) => (
-                        <option key={p.key} value={p.key}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col">
-                    <div className="small">Responsável</div>
-                    <select
-                      className="input"
-                      value={newItem.responsible_id}
-                      onChange={(e) => setNewItem((p) => ({ ...p, responsible_id: e.target.value }))}
-                    >
-                      <option value="">Sem responsável</option>
-                      {profiles.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {(p.name || p.email || "Usuário").trim()}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col">
-                    <div className="small">Base do prazo</div>
-                    <select
-                      className="input"
-                      value={newItem.due_basis}
-                      onChange={(e) => setNewItem((p) => ({ ...p, due_basis: e.target.value }))}
-                    >
-                      <option value="start">Início</option>
-                      <option value="end">Fim</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="small" style={{ marginTop: 8 }}>
-                  Título
-                </div>
-                <input
-                  className="input"
-                  value={newItem.title}
-                  onChange={(e) => setNewItem((p) => ({ ...p, title: e.target.value }))}
-                />
-
-                <div className="row" style={{ marginTop: 8 }}>
-                  <div className="col">
-                    <div className="small">Offset (dias)</div>
-                    <input
-                      className="input"
-                      type="number"
-                      value={newItem.offset_days}
-                      onChange={(e) => setNewItem((p) => ({ ...p, offset_days: e.target.value }))}
-                    />
-                    <div className="small">Ex.: -10 cria 10 dias antes.</div>
-                  </div>
-                  <div className="col">
-                    <div className="small">Ordem</div>
-                    <input
-                      className="input"
-                      type="number"
-                      value={newItem.sort_order}
-                      onChange={(e) => setNewItem((p) => ({ ...p, sort_order: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <button className="btn primary" style={{ marginTop: 10 }}>
-                  Adicionar
-                </button>
-              </form>
             </>
           ) : null}
         </div>
