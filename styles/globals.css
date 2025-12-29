@@ -631,7 +631,14 @@ a:hover { text-decoration: underline; }
 :root[data-theme="light"] .btn { background: #fff; }
 
 .btn:hover { border-color: rgba(96, 165, 250, 0.40); }
-.btn.primary { background: rgba(96, 165, 250, 0.18); border-color: rgba(96, 165, 250, 0.28); }
+.btn.primary{
+  background: linear-gradient(135deg, #5b6cff, #7b5cff);
+  color: #fff;
+  border: none;
+}
+.btn.primary:hover{ filter: brightness(1.05); transform: translateY(-1px); }
+.btn.primary:active{ filter: brightness(0.95); transform: translateY(0); }
+.btn.primary:disabled{ opacity: 0.6; cursor: not-allowed; }
 .btn.danger { background: rgba(248, 113, 113, 0.14); border-color: rgba(248, 113, 113, 0.28); }
 
 .table { width: 100%; border-collapse: separate; border-spacing: 0; }

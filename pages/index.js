@@ -1,22 +1,30 @@
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../lib/supabaseClient";
+import { useAuth } from "../context/AuthContext";
 
+/**
+ * Rota raiz "/"
+ * - Sem sessão => leva para /login
+ * - Com sessão => leva para /dashboard
+ *
+ * Mantém o comportamento esperado ao abrir o link (login) e ao estar autenticado (dashboard).
+ */
 export default function Home() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        router.replace("/dashboard");
-      }
-      // se NÃO tiver sessão → fica no login
-    });
-  }, []);
+    if (loading) return;
 
-  return (
-    <>
-      {/* COMPONENTE DE LOGIN AQUI */}
-    </>
-  );
+    // Deslogado: garante que o usuário veja o login ao acessar o link
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    // Logado: segue para o dashboard
+    router.replace("/dashboard");
+  }, [loading, user, router]);
+
+  return null;
 }

@@ -218,7 +218,7 @@ export default function LoginPage() {
                   </Link>
                 </div>
 
-                <button className="btn" disabled={!canSubmit} type="submit">
+                <button className="btn primary" disabled={!canSubmit} type="submit">
                   {busy ? (
                     <span className="btnInner">
                       <span className="spinner" aria-hidden="true" />
