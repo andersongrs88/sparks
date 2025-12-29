@@ -82,9 +82,9 @@ export default function LoginPage() {
               <div className="brand">
                 <div className="mark" />
                 <div className="brandText">
-                  <div className="brandTitle">Sparks</div>
+                  <div className="brandTitle"></div>
                   <div className="brandSub">
-                    Sistema Estratégico de Planejamento e Gestão do Conhecimento
+                    Sistema Inteligênte de Planejamento e Gestão do Conhecimento
                   </div>
                 </div>
               </div>
@@ -110,7 +110,7 @@ export default function LoginPage() {
 
               <div className="panelFoot">
                 <div className="tinyMuted">
-                  Dica: crie usuários no Supabase (Authentication → Users) e ajuste o papel em /usuarios.
+                  Dica: Cadê seu analista senhor(a)?.
                 </div>
               </div>
             </div>
