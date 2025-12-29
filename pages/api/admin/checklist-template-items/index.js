@@ -44,7 +44,8 @@ export default async function handler(req, res) {
     if (!templateId) return json(res, 400, { error: "template_id é obrigatório." });
     const { data, error } = await admin
       .from("checklist_template_items")
-      .select("id, template_id, phase, area, title, due_basis, offset_days, sort_order, created_at")
+      .select("id, template_id, phase, area,
+      responsible_id, title, due_basis, offset_days, sort_order, created_at")
       .eq("template_id", templateId)
       .order("sort_order", { ascending: true })
       .order("phase", { ascending: true })
@@ -58,6 +59,7 @@ export default async function handler(req, res) {
       template_id,
       phase,
       area,
+      responsible_id,
       title,
       due_basis = "start",
       offset_days = 0,
@@ -73,6 +75,7 @@ export default async function handler(req, res) {
       template_id: tpl,
       phase: String(phase || "").trim() || null,
       area: String(area || "").trim() || null,
+      responsible_id: responsible_id ? String(responsible_id).trim() : null,
       title: t,
       due_basis: String(due_basis || "start").trim() === "end" ? "end" : "start",
       offset_days: Number(offset_days ?? 0),

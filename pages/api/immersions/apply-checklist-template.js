@@ -47,7 +47,7 @@ export default async function handler(req, res) {
 
     const { data: items, error: eItems } = await admin
       .from("checklist_template_items")
-      .select("id, template_id, phase, area, title, due_basis, offset_days, sort_order")
+      .select("id, template_id, phase, area, responsible_id, title, due_basis, offset_days, sort_order")
       .eq("template_id", templateId)
       .order("sort_order", { ascending: true })
       .order("phase", { ascending: true });
@@ -83,6 +83,7 @@ export default async function handler(req, res) {
         title,
         phase: it.phase || null,
         area: it.area || null,
+        responsible_id: it.responsible_id || null,
         due_date: toYmd(due),
         status: "Programada",
         sort_order: Number.isFinite(it.sort_order) ? it.sort_order : 0,

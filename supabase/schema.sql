@@ -195,6 +195,9 @@ create table if not exists public.checklist_template_items (
   created_at timestamptz not null default now()
 );
 
+-- migração leve: garante novas colunas caso a tabela já exista
+alter table public.checklist_template_items add column if not exists responsible_id uuid;
+
 -- Migração leve: garante coluna 'area' caso a tabela já exista
 alter table public.checklist_template_items add column if not exists area text;
 
