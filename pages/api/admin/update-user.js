@@ -51,6 +51,7 @@ export default async function handler(req, res) {
   if (!gate.ok) return json(res, gate.status, { error: gate.error });
 
   const { id, name, email, role, is_active } = req.body || {};
+  const permissions = req.body?.permissions;
   const userId = String(id || "").trim();
   if (!userId) return json(res, 400, { error: "id é obrigatório." });
 
@@ -59,6 +60,11 @@ export default async function handler(req, res) {
   const cleanRole = String(role || "viewer").trim() || "viewer";
   const cleanActive = is_active === false ? false : true;
   if (!cleanName) return json(res, 400, { error: "Nome é obrigatório." });
+
+  // permissions: aceita objeto simples (mapa de booleanos). Qualquer outro tipo vira null.
+  const cleanPermissions = permissions && typeof permissions === "object" && !Array.isArray(permissions)
+    ? permissions
+    : null;
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
@@ -75,7 +81,14 @@ export default async function handler(req, res) {
   const { error: upsertErr } = await admin
     .from("profiles")
     .upsert(
-      { id: userId, name: cleanName, email: cleanEmail, role: cleanRole, is_active: cleanActive },
+      {
+        id: userId,
+        name: cleanName,
+        email: cleanEmail,
+        role: cleanRole,
+        ...(cleanPermissions ? { permissions: cleanPermissions } : {}),
+        is_active: cleanActive
+      },
       { onConflict: "id" }
     );
 

@@ -7,6 +7,7 @@ import { listProfiles } from "../../lib/profiles";
 import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
+import { normalizeRole } from "../../lib/permissions";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
@@ -43,6 +44,12 @@ export default function NovaImersaoPage() {
     }
   }, [error]);
   const [people, setPeople] = useState([]);
+  const [peopleByRole, setPeopleByRole] = useState({
+    consultores: [],
+    designers: [],
+    producao: [],
+    eventos: []
+  });
   const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [immersionOptions, setImmersionOptions] = useState([]);
   const [speakers, setSpeakers] = useState([]);
@@ -85,7 +92,26 @@ export default function NovaImersaoPage() {
       try {
         const all = await listProfiles();
         const active = (all || []).filter((p) => !!p.is_active);
-        if (mounted) setPeople(active);
+        if (mounted) {
+          setPeople(active);
+
+          const by = { consultores: [], designers: [], producao: [], eventos: [] };
+          for (const p of active) {
+            const r = normalizeRole(p?.role);
+            if (r === "consultor") by.consultores.push(p);
+            if (r === "consultor_educacao") by.consultores.push(p);
+            if (r === "designer") by.designers.push(p);
+            if (r === "producao") by.producao.push(p);
+            if (r === "eventos") by.eventos.push(p);
+          }
+
+          // Ordena para UX
+          for (const k of Object.keys(by)) {
+            by[k].sort((a, b) => String(a?.name || a?.email || "").localeCompare(String(b?.name || b?.email || "")));
+          }
+
+          setPeopleByRole(by);
+        }
       } catch {
         // silencioso: o cadastro ainda funciona sem a lista de pessoas
       }
@@ -329,7 +355,7 @@ export default function NovaImersaoPage() {
                 <Field label="Consultor" hint="Obrigatório">
                   <select className="input" value={form.educational_consultant} onChange={(e) => setForm((p) => ({ ...p, educational_consultant: e.target.value }))}>
                     <option value="">Selecione</option>
-                    {people.map((p) => (
+                    {(peopleByRole.consultores || []).map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
                       </option>
@@ -339,7 +365,7 @@ export default function NovaImersaoPage() {
                 <Field label="Designer" hint="Obrigatório">
                   <select className="input" value={form.instructional_designer} onChange={(e) => setForm((p) => ({ ...p, instructional_designer: e.target.value }))}>
                     <option value="">Selecione</option>
-                    {people.map((p) => (
+                    {(peopleByRole.designers || []).map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
                       </option>
@@ -352,7 +378,7 @@ export default function NovaImersaoPage() {
                 <Field label="Produção">
                   <select className="input" value={form.production_responsible} onChange={(e) => setForm((p) => ({ ...p, production_responsible: e.target.value }))}>
                     <option value="">—</option>
-                    {people.map((p) => (
+                    {(peopleByRole.producao || []).map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
                       </option>
@@ -362,7 +388,7 @@ export default function NovaImersaoPage() {
                 <Field label="Eventos">
                   <select className="input" value={form.events_responsible} onChange={(e) => setForm((p) => ({ ...p, events_responsible: e.target.value }))}>
                     <option value="">—</option>
-                    {people.map((p) => (
+                    {(peopleByRole.eventos || []).map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
                       </option>

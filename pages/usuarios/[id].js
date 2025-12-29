@@ -4,19 +4,95 @@ import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { deleteProfile, getProfile, setUserPassword, updateProfile } from "../../lib/profiles";
 
-const ROLES = [
-  { key: "admin", label: "Admin" },
-  { key: "consultor_educacao", label: "Consultor de Educação" },
-  { key: "designer", label: "Designer" },
+const ROLE_PRESETS = [
+  // Mantemos ADMIN por segurança (gestão total).
+  { key: "admin", label: "Administrador" },
 
-  // Acesso básico (somente visualização)
-  { key: "eventos", label: "Eventos (visualização)" },
-  { key: "tecnica", label: "Técnica (visualização)" },
-  { key: "relacionamento", label: "Relacionamento (visualização)" },
-  { key: "producao", label: "Produção (visualização)" },
-  { key: "mentoria", label: "Mentoria (visualização)" },
+  // Lista solicitada
+  { key: "consultor_educacao", label: "Consultor" },
+  { key: "designer", label: "Designer" },
+  { key: "producao", label: "Produção" },
+  { key: "eventos", label: "Eventos" },
+  { key: "tecnica", label: "Técnica" },
+  { key: "mentoria", label: "Mentoria" },
   { key: "viewer", label: "Visualização" }
 ];
+
+const PERMISSIONS = [
+  { key: "view_dashboard", label: "Ver Dashboard" },
+  { key: "view_immersoes", label: "Ver Imersões" },
+  { key: "view_painel", label: "Ver Plano de Ação" },
+  { key: "view_relatorios", label: "Ver Relatórios" },
+  { key: "view_templates", label: "Ver Templates" },
+  { key: "view_palestrantes", label: "Ver Palestrantes" },
+  { key: "view_usuarios", label: "Ver Usuários" },
+
+  { key: "edit_immersoes", label: "Editar Imersões" },
+  { key: "edit_tasks", label: "Editar Tarefas" },
+  { key: "edit_pdca", label: "Editar PDCA" },
+  { key: "view_costs", label: "Ver Custos" },
+  { key: "edit_costs", label: "Editar Custos" },
+  { key: "manage_users", label: "Gerenciar Usuários" }
+];
+
+function presetPermissions(roleKey) {
+  const base = {
+    view_dashboard: true,
+    view_immersoes: true,
+    view_painel: true,
+    view_relatorios: true,
+    view_templates: false,
+    view_palestrantes: true,
+    view_usuarios: false,
+    edit_immersoes: false,
+    edit_tasks: false,
+    edit_pdca: false,
+    view_costs: false,
+    edit_costs: false,
+    manage_users: false
+  };
+
+  const r = String(roleKey || "viewer");
+
+  if (r === "viewer") {
+    return { ...base, view_painel: false, view_relatorios: false };
+  }
+
+  // Operacional: vê (quase) tudo, edita apenas PDCA.
+  if (r === "producao" || r === "eventos" || r === "tecnica" || r === "mentoria") {
+    return { ...base, edit_pdca: true, view_templates: false, view_usuarios: false, view_costs: false, edit_costs: false };
+  }
+
+  // Semi-admin: edita tudo (menos usuários)
+  if (r === "consultor_educacao" || r === "consultor" || r === "designer") {
+    return {
+      ...base,
+      view_templates: true,
+      edit_immersoes: true,
+      edit_tasks: true,
+      edit_pdca: true,
+      view_costs: true,
+      edit_costs: true
+    };
+  }
+
+  // Admin
+  if (r === "admin") {
+    return {
+      ...base,
+      view_templates: true,
+      view_usuarios: true,
+      edit_immersoes: true,
+      edit_tasks: true,
+      edit_pdca: true,
+      view_costs: true,
+      edit_costs: true,
+      manage_users: true
+    };
+  }
+
+  return base;
+}
 
 function Field({ label, children, hint }) {
   return (
@@ -46,6 +122,7 @@ export default function EditarUsuarioPage() {
   const [newPassword, setNewPassword] = useState("");
   const [pwdBusy, setPwdBusy] = useState(false);
   const [tab, setTab] = useState("dados");
+  const [permCustom, setPermCustom] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -61,7 +138,13 @@ export default function EditarUsuarioPage() {
         setLoading(true);
         setError("");
         const data = await getProfile(id);
-        if (mounted) setForm(data);
+        if (mounted) {
+          // Garante que sempre exista um objeto de permissões para a UI.
+          const roleKey = data?.role || "viewer";
+          const perms = data?.permissions && typeof data.permissions === "object" ? data.permissions : presetPermissions(roleKey);
+          setPermCustom(!!data?.permissions);
+          setForm({ ...data, role: roleKey, permissions: perms });
+        }
       } catch (e) {
         if (mounted) setError(e?.message || "Falha ao carregar usuário.");
       } finally {
@@ -77,6 +160,11 @@ export default function EditarUsuarioPage() {
 
   function set(field, value) {
     setForm((p) => ({ ...p, [field]: value }));
+  }
+
+  function setPerm(key, value) {
+    setForm((p) => ({ ...p, permissions: { ...(p?.permissions || {}), [key]: !!value } }));
+    setPermCustom(true);
   }
 
   async function onSave(e) {
@@ -95,8 +183,20 @@ export default function EditarUsuarioPage() {
         name: form.name.trim(),
         email: (form.email || "").trim() || null,
         role: form.role || "viewer",
+        // Se o usuário mexeu nas permissões, persistimos o objeto.
+        // Caso contrário, gravamos o preset do role (garante consistência e facilita debug).
+        permissions: permCustom ? (form.permissions || presetPermissions(form.role)) : presetPermissions(form.role),
         is_active: !!form.is_active
       });
+
+      // Recarrega o profile na tela para refletir mudanças imediatamente.
+      const refreshed = await getProfile(form.id);
+      const roleKey = refreshed?.role || (form.role || "viewer");
+      const perms = refreshed?.permissions && typeof refreshed.permissions === "object"
+        ? refreshed.permissions
+        : presetPermissions(roleKey);
+      setPermCustom(!!refreshed?.permissions);
+      setForm({ ...refreshed, role: roleKey, permissions: perms });
 
       alert("Usuário salvo.");
     } catch (e2) {
@@ -211,9 +311,20 @@ export default function EditarUsuarioPage() {
 
             {tab === "permissoes" ? (
               <>
-                <Field label="Tipo de acesso" hint="Define o que o usuário consegue ver e editar no sistema.">
-                  <select className="input" value={form.role || "viewer"} onChange={(e) => set("role", e.target.value)}>
-                    {ROLES.map((r) => (
+                <Field
+                  label="Perfil"
+                  hint="Selecione um perfil-base. Você pode personalizar as permissões abaixo e salvar do mesmo jeito."
+                >
+                  <select
+                    className="input"
+                    value={form.role || "viewer"}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      setForm((p) => ({ ...p, role: nextRole, permissions: presetPermissions(nextRole) }));
+                      setPermCustom(false);
+                    }}
+                  >
+                    {ROLE_PRESETS.map((r) => (
                       <option key={r.key} value={r.key}>
                         {r.label}
                       </option>
@@ -222,12 +333,47 @@ export default function EditarUsuarioPage() {
                 </Field>
 
                 <div className="card" style={{ background: "var(--panel)", border: "1px solid var(--border)", marginBottom: 12 }}>
-                  <div className="h2" style={{ marginBottom: 6 }}>Resumo das permissões</div>
-                  <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-                    <li><b>Admin / Consultor / Designer</b>: edita tudo (imersões, tarefas, materiais, custos, etc.).</li>
-                    <li><b>Eventos / Produção / Mentoria / Outros</b>: vê imersões e painel; <b>não vê custos</b> e edita apenas <b>PDCA</b>.</li>
-                    <li><b>Visualização</b>: apenas leitura (dashboard + imersões).</li>
-                  </ul>
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <div className="h2" style={{ marginBottom: 4 }}>Permissões</div>
+                      <div className="small">Marque/desmarque para criar um acesso personalizado.</div>
+                    </div>
+                    <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          const roleKey = form.role || "viewer";
+                          setForm((p) => ({ ...p, permissions: presetPermissions(roleKey) }));
+                          setPermCustom(false);
+                        }}
+                        disabled={saving || removing}
+                      >
+                        Restaurar padrão
+                      </button>
+                      <span className="pill" title="Indica se você personalizou os checkboxes">
+                        {permCustom ? "Personalizado" : "Padrão"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid2" style={{ gap: 10 }}>
+                    {PERMISSIONS.map((perm) => (
+                      <label key={perm.key} className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!(form.permissions || {})[perm.key]}
+                          onChange={(e) => setPerm(perm.key, e.target.checked)}
+                        />
+                        {perm.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="small" style={{ marginBottom: 12 }}>
+                  Observação: o sistema continua utilizando o <b>perfil</b> como base de filtragem de listas (ex.: Consultor/Designer/Produção/Eventos).
+                  As permissões personalizadas refinam o acesso e podem evoluir junto das próximas telas.
                 </div>
               </>
             ) : null}
