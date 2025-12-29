@@ -215,8 +215,13 @@ export default function EditarUsuarioPage() {
     }
     try {
       setPwdBusy(true);
-      await setUserPassword(form.id, pwd);
+      const out = await setUserPassword(form.id, pwd);
       setNewPassword("");
+      if (out?.new_id && out.new_id !== form.id) {
+        alert("Senha atualizada. Este usuário ganhou login e foi migrado. Você será redirecionado.");
+        router.replace(`/usuarios/${out.new_id}`);
+        return;
+      }
       alert("Senha atualizada.");
     } catch (e) {
       setError(e?.message || "Falha ao atualizar senha.");
