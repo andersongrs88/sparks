@@ -179,18 +179,17 @@ export default function EditarUsuarioPage() {
 
     try {
       setSaving(true);
-      await updateProfile(form.id, {
+      const saved = await updateProfile(form.id, {
         name: form.name.trim(),
         email: (form.email || "").trim() || null,
         role: form.role || "viewer",
-        // Se o usuário mexeu nas permissões, persistimos o objeto.
-        // Caso contrário, gravamos o preset do role (garante consistência e facilita debug).
+        // Personalizado: salva objeto. Preset: envia null para limpar "override" e deixar o role governar.
         permissions: permCustom ? (form.permissions || presetPermissions(form.role)) : null,
         is_active: !!form.is_active
       });
 
-      // Recarrega o profile na tela para refletir mudanças imediatamente.
-      const refreshed = await getProfile(form.id);
+      // Usa retorno do servidor (evita qualquer inconsistência) e recalcula permissões da UI
+      const refreshed = saved || (await getProfile(form.id));
       const roleKey = refreshed?.role || (form.role || "viewer");
       const perms = refreshed?.permissions && typeof refreshed.permissions === "object"
         ? refreshed.permissions

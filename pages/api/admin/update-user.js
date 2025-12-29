@@ -50,10 +50,8 @@ export default async function handler(req, res) {
   const gate = await requireAdmin({ url, anon, token });
   if (!gate.ok) return json(res, gate.status, { error: gate.error });
 
-  const { id, name, email, role, is_active } = body;
-  const body = req.body || {};
-  const permissions = body.permissions;
-  const hasPermissionsKey = Object.prototype.hasOwnProperty.call(body, "permissions");
+  const { id, name, email, role, is_active } = req.body || {};
+  const permissions = req.body?.permissions;
   const userId = String(id || "").trim();
   if (!userId) return json(res, 400, { error: "id é obrigatório." });
 
@@ -64,37 +62,52 @@ export default async function handler(req, res) {
   if (!cleanName) return json(res, 400, { error: "Nome é obrigatório." });
 
   // permissions: aceita objeto simples (mapa de booleanos). Qualquer outro tipo vira null.
-  const cleanPermissions = permissions && typeof permissions === "object" && !Array.isArray(permissions)
+// Importante: se a chave `permissions` veio no body, salvamos explicitamente (inclusive null para "limpar").
+  const hasPermissionsKey = Object.prototype.hasOwnProperty.call((req.body || {}), "permissions");
+  const cleanPermissions = (permissions && typeof permissions === "object" && !Array.isArray(permissions))
     ? permissions
     : null;
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-  // 1) Update Auth email (optional)
+  // 1) Update Auth email (optional). Se falhar, não bloqueia o update do profile.
+  let authEmailWarning = null;
   if (cleanEmail) {
     const { error: upAuthErr } = await admin.auth.admin.updateUserById(userId, { email: cleanEmail });
-    if (upAuthErr) {
-      // Do not block profile update if email update fails (e.g., email already in use)
-      return json(res, 400, { error: upAuthErr.message || "Falha ao atualizar e-mail do Auth." });
-    }
+    if (upAuthErr) authEmailWarning = upAuthErr.message || "Falha ao atualizar e-mail do Auth.";
   }
 
-  // 2) Upsert profile
-  const { error: upsertErr } = await admin
+  // 2) Update/Insert profile (confirmando retorno)
+  const profilePatch = {
+    id: userId,
+    name: cleanName,
+    email: cleanEmail,
+    role: cleanRole,
+    is_active: cleanActive,
+    ...(hasPermissionsKey ? { permissions: cleanPermissions } : {})
+  };
+
+  // tenta update primeiro; se não existir, faz insert
+  const { data: updated, error: updateErr } = await admin
     .from("profiles")
-    .upsert(
-      {
-        id: userId,
-        name: cleanName,
-        email: cleanEmail,
-        role: cleanRole,
-        ...(hasPermissionsKey ? { permissions: cleanPermissions } : {}),
-        is_active: cleanActive
-      },
-      { onConflict: "id" }
-    );
+    .update(profilePatch)
+    .eq("id", userId)
+    .select("id, name, email, role, permissions, is_active, created_at")
+    .maybeSingle();
 
-  if (upsertErr) return json(res, 500, { error: upsertErr.message || "Falha ao salvar profile." });
+  if (updateErr) return json(res, 500, { error: updateErr.message || "Falha ao salvar profile." });
 
-  return json(res, 200, { ok: true });
+  let finalProfile = updated;
+  if (!finalProfile) {
+    const { data: inserted, error: insErr } = await admin
+      .from("profiles")
+      .insert([profilePatch])
+      .select("id, name, email, role, permissions, is_active, created_at")
+      .single();
+    if (insErr) return json(res, 500, { error: insErr.message || "Falha ao salvar profile." });
+    finalProfile = inserted;
+  }
+
+  return json(res, 200, { ok: true, profile: finalProfile, ...(authEmailWarning ? { warning: authEmailWarning } : {}) });
+
 }

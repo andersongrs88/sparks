@@ -634,23 +634,7 @@ a:hover { text-decoration: underline; }
 .btn.primary{
   background: linear-gradient(135deg, #5b6cff, #7b5cff);
   color: #fff;
-  border: 1px solid rgba(91,108,255,0.35);
-  box-shadow: 0 10px 22px rgba(91,108,255,0.18);
-}
-
-.btn.primary:hover{
-  filter: brightness(1.04);
-  transform: translateY(-1px);
-}
-
-.btn.primary:active{
-  transform: translateY(0);
-  filter: brightness(0.98);
-}
-
-.btn.primary:focus-visible{
-  outline: 3px solid rgba(91,108,255,0.35);
-  outline-offset: 2px;
+  border: none;
 }
 .btn.primary:hover{ filter: brightness(1.05); transform: translateY(-1px); }
 .btn.primary:active{ filter: brightness(0.95); transform: translateY(0); }
@@ -1294,4 +1278,25 @@ a:hover { text-decoration: underline; }
   background: rgba(100,116,139,0.10);
   border-color: rgba(100,116,139,0.25);
   color: var(--muted);
+}
+
+
+
+/* ===== Fix: botões "Dados" / "Permissões" e "Salvar" visíveis (páginas de Usuários) ===== */
+.card .btn{
+  background: #fff;
+  color: var(--text);
+}
+.card .btn:hover{
+  background: rgba(96,165,250,0.10);
+}
+.card .btn.primary{
+  background: linear-gradient(135deg, #5b6cff, #7b5cff);
+  color: #fff;
+  border: none;
+}
+.card .btn.primary:focus,
+.card .btn:focus{
+  outline: 2px solid rgba(96,165,250,0.45);
+  outline-offset: 2px;
 }
