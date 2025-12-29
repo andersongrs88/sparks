@@ -82,7 +82,7 @@ export default function LoginPage() {
               <div className="brand">
                 <div className="mark" />
                 <div className="brandText">
-                  <div className="brandTitle"></div>
+                  <div className="brandTitle">Sparks</div>
                   <div className="brandSub">
                     Sistema Inteligênte de Planejamento e Gestão do Conhecimento
                   </div>
