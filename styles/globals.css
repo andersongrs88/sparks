@@ -634,7 +634,23 @@ a:hover { text-decoration: underline; }
 .btn.primary{
   background: linear-gradient(135deg, #5b6cff, #7b5cff);
   color: #fff;
-  border: none;
+  border: 1px solid rgba(91,108,255,0.35);
+  box-shadow: 0 10px 22px rgba(91,108,255,0.18);
+}
+
+.btn.primary:hover{
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.btn.primary:active{
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+.btn.primary:focus-visible{
+  outline: 3px solid rgba(91,108,255,0.35);
+  outline-offset: 2px;
 }
 .btn.primary:hover{ filter: brightness(1.05); transform: translateY(-1px); }
 .btn.primary:active{ filter: brightness(0.95); transform: translateY(0); }

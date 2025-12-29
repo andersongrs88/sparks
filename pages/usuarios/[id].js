@@ -185,7 +185,7 @@ export default function EditarUsuarioPage() {
         role: form.role || "viewer",
         // Se o usuário mexeu nas permissões, persistimos o objeto.
         // Caso contrário, gravamos o preset do role (garante consistência e facilita debug).
-        permissions: permCustom ? (form.permissions || presetPermissions(form.role)) : presetPermissions(form.role),
+        permissions: permCustom ? (form.permissions || presetPermissions(form.role)) : null,
         is_active: !!form.is_active
       });
 

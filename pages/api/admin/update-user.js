@@ -50,8 +50,10 @@ export default async function handler(req, res) {
   const gate = await requireAdmin({ url, anon, token });
   if (!gate.ok) return json(res, gate.status, { error: gate.error });
 
-  const { id, name, email, role, is_active } = req.body || {};
-  const permissions = req.body?.permissions;
+  const { id, name, email, role, is_active } = body;
+  const body = req.body || {};
+  const permissions = body.permissions;
+  const hasPermissionsKey = Object.prototype.hasOwnProperty.call(body, "permissions");
   const userId = String(id || "").trim();
   if (!userId) return json(res, 400, { error: "id é obrigatório." });
 
@@ -86,7 +88,7 @@ export default async function handler(req, res) {
         name: cleanName,
         email: cleanEmail,
         role: cleanRole,
-        permissions: cleanPermissions,
+        ...(hasPermissionsKey ? { permissions: cleanPermissions } : {}),
         is_active: cleanActive
       },
       { onConflict: "id" }
