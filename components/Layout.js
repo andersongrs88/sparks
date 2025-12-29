@@ -8,7 +8,7 @@ import { getNotificationSummary } from "../lib/notifications";
 import { pollAndNotify } from "../lib/browserNotifications";
 // Notificações removidas por opção de produto (tela não utilizada).
 
-const SYSTEM_FULL_NAME = "Sparks by Educagrama, Sistema Inteligente de Planejamento e Gestão do Conhecimento";
+const SYSTEM_FULL_NAME = "Sistema Inteligente de Planejamento e Gestão do Conhecimento";
 const DEVELOPED_BY = "Desenvolvido pela Wizze Tecnologia Inteligente";
 
 function NavItem({ href, label, icon }) {
@@ -106,7 +106,8 @@ export default function Layout({ title, children, hideNav = false }) {
         <aside className={mobileOpen ? "sidebar open" : "sidebar"}>
         <div className="sidebarHeader">
           <div>
-            <div className="brand">Sparks by Educagrama</div>
+            <div className="brand">Sparks</div>
+            <div> by Educagrama</div>
             <div className="brandSub muted" aria-label={SYSTEM_FULL_NAME}>{SYSTEM_FULL_NAME}</div>
           </div>
           <button type="button" className="btn icon mobileOnly" onClick={() => setMobileOpen(false)} aria-label="Fechar menu">
