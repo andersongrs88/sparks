@@ -1116,3 +1116,98 @@ a:hover { text-decoration: underline; }
 .tag.warn { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.28); }
 .tag.danger { background: rgba(248, 113, 113, 0.14); border-color: rgba(248, 113, 113, 0.28); }
 .tag.neutral { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.28); }
+
+
+/* ===== Tags / Pills / Badges (UX refinement) ===== */
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 10px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size:12px;
+  line-height:18px;
+  white-space:nowrap;
+}
+.pill.soft{
+  background: var(--bg);
+  color: var(--muted);
+}
+.pill.due{
+  background: rgba(31,79,153,0.10);
+  border-color: rgba(31,79,153,0.25);
+  color: var(--text);
+}
+
+/* Badge base */
+.badge{
+  position: static;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:4px 10px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size:12px;
+  line-height:18px;
+  white-space:nowrap;
+}
+.badge.success{
+  background: rgba(27,107,54,0.12);
+  border-color: rgba(27,107,54,0.25);
+}
+.badge.danger{
+  background: rgba(185,28,28,0.10);
+  border-color: rgba(185,28,28,0.25);
+  color: #b91c1c;
+}
+.badge.warn{
+  background: rgba(184,107,0,0.12);
+  border-color: rgba(184,107,0,0.25);
+}
+.badge.muted{
+  background: var(--bg);
+  color: var(--muted);
+}
+
+/* Countdown badge on Editar imersão (lighter, readable) */
+.badge.countdown{
+  font-weight:600;
+}
+.badge.countdown.far{
+  background: rgba(27,107,54,0.12);
+  border-color: rgba(27,107,54,0.25);
+}
+.badge.countdown.mid{
+  background: rgba(31,79,153,0.10);
+  border-color: rgba(31,79,153,0.25);
+}
+.badge.countdown.near{
+  background: rgba(184,107,0,0.12);
+  border-color: rgba(184,107,0,0.25);
+}
+.badge.countdown.soon{
+  background: rgba(239,68,68,0.08);
+  border-color: rgba(239,68,68,0.22);
+  color: #b91c1c;
+}
+.badge.countdown.urgent{
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.30);
+  color: #b91c1c;
+}
+.badge.countdown.today{
+  background: rgba(239,68,68,0.10);
+  border-color: rgba(239,68,68,0.25);
+  color: #b91c1c;
+}
+.badge.countdown.past{
+  background: rgba(100,116,139,0.10);
+  border-color: rgba(100,116,139,0.25);
+  color: var(--muted);
+}

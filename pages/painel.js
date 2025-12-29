@@ -755,13 +755,13 @@ export default function PainelPage() {
             <span className="pill soft">{immLabel}</span>
             <span className="pill soft">{phaseLabel}</span>
             <span className="pill soft">{ownerLabel}</span>
-            <span className={t.due_date ? "pill" : "pill soft"}>{dueLabel}</span>
+            <span className={t.due_date ? "pill due" : "pill soft"}>{dueLabel}</span>
           </div>
         </button>
 
         <div className="planTaskAside">
           <span className={sla.className}>{sla.label}</span>
-          <span className={isTaskDone(t) ? "badge success" : "badge muted"}>{isTaskDone(t) ? "Concluída" : "Aberta"}</span>
+          {isTaskDone(t) ? <span className="badge success">Concluída</span> : null}
           <div className="row" style={{ gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
             <button
               type="button"

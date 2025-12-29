@@ -146,23 +146,20 @@ function parseCurrencyBRL(input) {
 
 
 // Farol por dias
+// Farol por dias
 function getCountdownSignal(days) {
   if (days === null) return null;
 
-  // Hoje ou passado => crítico
-  if (days <= 0) {
-    return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
-  }
+  if (days < 0) return { label: `Há ${Math.abs(days)}d`, className: "countdown past" };
+  if (days === 0) return { label: "Hoje", className: "countdown today" };
 
   // Faixas (ajustáveis)
-  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
-  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
-  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
-  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
-  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
+  if (days >= 60) return { label: `Faltam ${days}d`, className: "countdown far" };
+  if (days >= 40) return { label: `Faltam ${days}d`, className: "countdown mid" };
+  if (days >= 20) return { label: `Faltam ${days}d`, className: "countdown near" };
+  if (days >= 10) return { label: `Faltam ${days}d`, className: "countdown soon" };
 
-  // 1 a 9 dias => bordo
-  return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
+  return { label: `Faltam ${days}d`, className: "countdown urgent" };
 }
 
 function isLate(dueDateStr, status) {
@@ -1340,17 +1337,8 @@ function normalizeTemplatesForClone(items) {
 
             <div className="row">
               {signal ? (
-                <span
-                  className="badge"
-                  style={{
-                    ...signal.style,
-                    border: "1px solid",
-                    padding: "6px 10px",
-                    borderRadius: 999
-                  }}
-                  title="Dias até a data de início"
-                >
-                  {signal.label} até
+                <span className={`badge ${signal.className}`} title="Dias até a data de início">
+                  {signal.label}
                 </span>
               ) : null}
 
