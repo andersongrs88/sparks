@@ -358,21 +358,11 @@ a:hover { text-decoration: underline; }
   position: relative;
 }
 
-.badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--danger);
-  color: white;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 800;
-  border: 2px solid var(--bg);
-}
+/*
+  IMPORTANTE: não use `.badge` como contador absoluto.
+  O sistema usa `.badge` como "pill" inline em tabelas/linhas.
+  Para contadores em ícones, use `.badgeDot`.
+*/
 
 .mobileOnly { display: none; }
 .backdrop { display: none; }
