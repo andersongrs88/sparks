@@ -358,11 +358,21 @@ a:hover { text-decoration: underline; }
   position: relative;
 }
 
-/*
-  IMPORTANTE: não use `.badge` como contador absoluto.
-  O sistema usa `.badge` como "pill" inline em tabelas/linhas.
-  Para contadores em ícones, use `.badgeDot`.
-*/
+.badgeDot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 800;
+  border: 2px solid var(--bg);
+}
 
 .mobileOnly { display: none; }
 .backdrop { display: none; }
@@ -1086,3 +1096,23 @@ a:hover { text-decoration: underline; }
   }
   .planTaskTitle { -webkit-line-clamp: 3; }
 }
+
+
+/* === Tags (countdown/status) === */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.tag.ok { background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.28); }
+.tag.info { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.28); }
+.tag.warn { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.28); }
+.tag.danger { background: rgba(248, 113, 113, 0.14); border-color: rgba(248, 113, 113, 0.28); }
+.tag.neutral { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.28); }

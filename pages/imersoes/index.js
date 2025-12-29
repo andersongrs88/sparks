@@ -11,27 +11,43 @@ function badgeClass(status) {
   return "badge";
 }
 
-function daysUntil(startDateStr) {
-  if (!startDateStr) return "-";
-  const start = new Date(startDateStr + "T00:00:00");
-  const today = new Date();
-  const diffMs = start - today;
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  return diffDays;
+function toDateOnly(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr + "T00:00:00");
+  // Normalize to local date-only
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function countdownTag(days) {
-  if (days === "-" || days === null || typeof days !== "number" || Number.isNaN(days)) {
-    return { label: "Sem data", cls: "tag neutral" };
+function scheduleTag(startDateStr, endDateStr) {
+  const start = toDateOnly(startDateStr);
+  const end = toDateOnly(endDateStr);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // If we have an end date and it's in the past, it's finished
+  if (end && today > end) return { label: "Encerrada", cls: "tag neutral" };
+
+  // If we have a start date and we're between start and end (or end is missing), it's ongoing
+  if (start && today >= start && (!end || today <= end)) return { label: "Em andamento", cls: "tag info" };
+
+  // If it hasn't started yet, show countdown
+  if (start && today < start) {
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const days = Math.ceil((start.getTime() - today.getTime()) / msPerDay);
+
+    if (days === 0) return { label: "Começa hoje", cls: "tag danger" };
+    if (days === 1) return { label: "Falta 1 dia", cls: "tag danger" };
+    if (days <= 7) return { label: `Faltam ${days}d`, cls: "tag danger" };
+    if (days <= 20) return { label: `Faltam ${days}d`, cls: "tag warn" };
+    if (days <= 59) return { label: `Faltam ${days}d`, cls: "tag info" };
+    return { label: `Faltam ${days}d`, cls: "tag ok" };
   }
-  if (days === 0) return { label: "Começa hoje", cls: "tag danger" };
-  if (days === 1) return { label: "Falta 1 dia", cls: "tag danger" };
-  if (days < 0) return { label: `Começou há ${Math.abs(days)}d`, cls: "tag neutral" };
-  if (days <= 7) return { label: `Faltam ${days}d`, cls: "tag danger" };
-  if (days <= 20) return { label: `Faltam ${days}d`, cls: "tag warn" };
-  if (days <= 59) return { label: `Faltam ${days}d`, cls: "tag info" };
-  return { label: `Faltam ${days}d`, cls: "tag ok" };
+
+  return { label: "Sem data", cls: "tag neutral" };
 }
+
 
 export default function ImmersionsListPage() {
   const router = useRouter();
@@ -144,8 +160,7 @@ export default function ImmersionsListPage() {
                       <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
                       <div className="listItemMeta">
                         {(() => {
-                          const d = daysUntil(it.start_date);
-                          const t = countdownTag(d);
+                          const t = scheduleTag(it.start_date, it.end_date);
                           return (
                             <>
                               {it.start_date} → {it.end_date} • <span className={t.cls}>{t.label}</span>
