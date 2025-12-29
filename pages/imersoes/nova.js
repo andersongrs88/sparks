@@ -263,7 +263,7 @@ export default function NovaImersaoPage() {
           <div className="section">
             <div className="sectionTitle">Informações básicas</div>
             <div className="sectionBody">
-              <Field label="Nome da imersão">
+              <Field label="Nome da imersão" hint="Obrigatório">
                 <input className="input" value={form.immersion_name} onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))} placeholder="Ex.: Imersão Gestão MKT Digital" required />
               </Field>
 
@@ -326,7 +326,7 @@ export default function NovaImersaoPage() {
             <div className="sectionTitle">Time de educação</div>
             <div className="sectionBody">
               <div className="grid2">
-                <Field label="Consultor (Educação)" hint="Obrigatório">
+                <Field label="Consultor" hint="Obrigatório">
                   <select className="input" value={form.educational_consultant} onChange={(e) => setForm((p) => ({ ...p, educational_consultant: e.target.value }))}>
                     <option value="">Selecione</option>
                     {people.map((p) => (
@@ -336,7 +336,7 @@ export default function NovaImersaoPage() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Designer instrucional" hint="Obrigatório">
+                <Field label="Designer" hint="Obrigatório">
                   <select className="input" value={form.instructional_designer} onChange={(e) => setForm((p) => ({ ...p, instructional_designer: e.target.value }))}>
                     <option value="">Selecione</option>
                     {people.map((p) => (
@@ -349,7 +349,7 @@ export default function NovaImersaoPage() {
               </div>
 
               <div className="grid2">
-                <Field label="Produção (Responsável)">
+                <Field label="Produção">
                   <select className="input" value={form.production_responsible} onChange={(e) => setForm((p) => ({ ...p, production_responsible: e.target.value }))}>
                     <option value="">—</option>
                     {people.map((p) => (
@@ -359,7 +359,7 @@ export default function NovaImersaoPage() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Eventos (opcional)">
+                <Field label="Eventos">
                   <select className="input" value={form.events_responsible} onChange={(e) => setForm((p) => ({ ...p, events_responsible: e.target.value }))}>
                     <option value="">—</option>
                     {people.map((p) => (
