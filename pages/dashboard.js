@@ -402,7 +402,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="dashBottom">
-          <details className="card compact" open={false}>
+          <details className="card compact" open={true}>
             <summary className="summaryRow">
               <span style={{ fontWeight: 750 }}>Carga por responsável</span>
               <span className="muted small">Visão de gargalos</span>
