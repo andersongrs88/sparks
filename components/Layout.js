@@ -192,7 +192,11 @@ export default function Layout({ title, children, hideNav = false }) {
               title="Notificações"
             >
               🔔
-              {notifCount > 0 ? <span className="badge" aria-label={`${notifCount} notificações`}>{notifCount}</span> : null}
+              {notifCount > 0 ? (
+                <span className="badgeDot" aria-label={`${notifCount} notificações`}>
+                  {notifCount}
+                </span>
+              ) : null}
             </button>
             <ThemeToggle />
           </div>
