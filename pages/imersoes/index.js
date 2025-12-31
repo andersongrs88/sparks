@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { listImmersions } from "../../lib/immersions";
+import { listProfiles } from "../../lib/profiles";
 
 function badgeClass(status) {
   if (status === "Concluída") return "badge ok";
@@ -54,9 +55,11 @@ export default function ImmersionsListPage() {
   const { loading: authLoading, user, isFullAccess } = useAuth();
 
   const [items, setItems] = useState([]);
+  const [profilesById, setProfilesById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [collapsedConcluded, setCollapsedConcluded] = useState(true);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -71,9 +74,23 @@ export default function ImmersionsListPage() {
       try {
         setError("");
         setLoading(true);
-        const data = await listImmersions();
+        const [data, profs] = await Promise.all([
+          listImmersions(),
+          // Perfis: usado apenas para exibir nomes (Consultor/Designer) na listagem.
+          // Mantém o UX mais confiável sem exigir abrir cada imersão.
+          listProfiles().catch(() => []),
+        ]);
         if (!mounted) return;
         setItems(data || []);
+
+        const map = {};
+        for (const p of profs || []) {
+          if (!p?.id) continue;
+          const name = p.name ? String(p.name).trim() : "";
+          const email = p.email ? String(p.email).trim() : "";
+          map[p.id] = name ? name : (email || "-");
+        }
+        setProfilesById(map);
       } catch (e) {
         if (!mounted) return;
         setError(e?.message || "Falha ao carregar imersões.");
@@ -104,6 +121,17 @@ export default function ImmersionsListPage() {
     return byStatus;
   }, [items, search]);
 
+  const statusOrder = useMemo(() => {
+    const known = ["Em execução", "Planejamento", "Concluída"];
+    const other = Object.keys(grouped || {}).filter((k) => !known.includes(k));
+    return [...known.filter((k) => (grouped || {})[k]?.length), ...other];
+  }, [grouped]);
+
+  function displayNameById(id) {
+    if (!id) return "-";
+    return profilesById?.[id] || "-";
+  }
+
   if (authLoading) return null;
   if (!user) return null;
 
@@ -116,7 +144,7 @@ export default function ImmersionsListPage() {
             <div className="small muted">Crie, acesse e acompanhe o andamento das imersões.</div>
           </div>
           {isFullAccess ? (
-            <button class="btn primary" type="button" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
+            <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
           ) : null}
         </div>
 
@@ -141,13 +169,28 @@ export default function ImmersionsListPage() {
         ) : null}
 
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-          {Object.keys(grouped).map((status) => (
+          {statusOrder.map((status) => (
             <div className="card" key={status}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ margin: 0 }}>{status}</h3>
-                <span className={badgeClass(status)}>{(grouped[status] || []).length}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <h3 style={{ margin: 0 }}>{status}</h3>
+                  <span className={badgeClass(status)}>{(grouped[status] || []).length}</span>
+                </div>
+
+                {status === "Concluída" ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setCollapsedConcluded((v) => !v)}
+                    title={collapsedConcluded ? "Expandir concluídas" : "Recolher concluídas"}
+                    style={{ height: 36 }}
+                  >
+                    {collapsedConcluded ? "Expandir" : "Recolher"}
+                  </button>
+                ) : null}
               </div>
 
+              {status === "Concluída" && collapsedConcluded ? null : (
               <div style={{ marginTop: 8 }}>
                 {(grouped[status] || []).map((it) => (
                   <button
@@ -167,6 +210,7 @@ export default function ImmersionsListPage() {
                             </>
                           );
                         })()}
+                        {` • Consultor: ${displayNameById(it.educational_consultant)} • Designer: ${displayNameById(it.instructional_designer)}`}
                         {it.next_action?.title ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}` : ""}
                       </div>
                     </div>
@@ -177,6 +221,7 @@ export default function ImmersionsListPage() {
                   </button>
                 ))}
               </div>
+              )}
             </div>
           ))}
         </div>
