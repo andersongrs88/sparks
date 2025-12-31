@@ -10,154 +10,145 @@ function json(res, status, payload) {
   res.status(status).json(payload);
 }
 
-function stableRules() {
-  return [
-    { rule_key: "task_overdue_daily", label: "Tarefas atrasadas (diário)", is_enabled: true },
-    { rule_key: "task_due_soon_weekly", label: "Vencendo em até 7 dias (semanal)", is_enabled: true },
-    { rule_key: "immersion_risk_daily", label: "Risco de imersão (diário)", is_enabled: true },
-  ];
+async function requireAdmin({ url, anonKey, token }) {
+  const anon = createClient(url, anonKey, { auth: { persistSession: false } });
+
+  const { data: u, error: uErr } = await anon.auth.getUser(token);
+  if (uErr) throw uErr;
+  const userId = u?.user?.id;
+  if (!userId) throw new Error("Sessão inválida.");
+
+  const { data: profile, error: pErr } = await anon
+    .from("profiles")
+    .select("id, role, is_active")
+    .eq("id", userId)
+    .maybeSingle();
+  if (pErr) throw pErr;
+
+  if (!profile?.is_active || profile?.role !== "admin") {
+    const e = new Error("Apenas ADMIN pode acessar esta configuração.");
+    e.statusCode = 403;
+    throw e;
+  }
+
+  return { userId };
 }
 
+/**
+ * GET  /api/admin/email-notification-config
+ * POST /api/admin/email-notification-config
+ *
+ * Banco (compatível com base atual):
+ * - email_notification_rules: id, is_enabled, kind, cadence, lookback_minutes
+ * - email_notification_settings: from_email, from_name, reply_to
+ * - email_notification_templates: kind (pk), subject, intro, footer
+ * - email_notification_log: created_at, kind, to_email, subject, item_count, mode, status, error
+ */
 export default async function handler(req, res) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !anon) return json(res, 500, { error: "Supabase não configurado." });
+  if (!url || !anonKey) return json(res, 500, { error: "Supabase não configurado." });
   if (!serviceKey) return json(res, 500, { error: "SUPABASE_SERVICE_ROLE_KEY não configurada no servidor." });
 
   const token = getBearerToken(req);
   if (!token) return json(res, 401, { error: "Token ausente." });
 
-  const requesterClient = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
+  try {
+    await requireAdmin({ url, anonKey, token });
 
-  const { data: userData, error: userErr } = await requesterClient.auth.getUser();
-  if (userErr || !userData?.user) return json(res, 401, { error: "Sessão inválida." });
+    const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-  const requesterId = userData.user.id;
-
-  const { data: requesterProfile, error: profErr } = await requesterClient
-    .from("profiles")
-    .select("id, role, is_active")
-    .eq("id", requesterId)
-    .single();
-
-  if (profErr) return json(res, 403, { error: "Não foi possível validar permissões." });
-  if (!requesterProfile?.is_active) return json(res, 403, { error: "Usuário inativo." });
-  if (requesterProfile?.role !== "admin") return json(res, 403, { error: "Apenas ADMIN pode gerenciar notificações." });
-
-  const admin = createClient(url, serviceKey);
-
-  // Helper: detect table existence (best-effort)
-  async function tableExists(name) {
-    try {
-      const { error } = await admin.from(name).select("*").limit(1);
-      return !error;
-    } catch {
-      return false;
-    }
-  }
-
-  const hasRules = await tableExists("email_notification_rules");
-  const hasSettings = await tableExists("email_notification_settings");
-  const hasTemplates = await tableExists("email_notification_templates");
-  const hasLogs = await tableExists("email_notification_log");
-
-  if (req.method === "GET") {
-    const baseRules = stableRules();
-
-    let rules = baseRules;
-    if (hasRules) {
-      const { data } = await admin
+    if (req.method === "GET") {
+      const { data: rules, error: rErr } = await admin
         .from("email_notification_rules")
-        .select("rule_key,label,is_enabled")
-        .in("rule_key", baseRules.map((r) => r.rule_key));
-      if (Array.isArray(data) && data.length) {
-        // merge with defaults (ensures new rules appear)
-        const map = new Map(data.map((r) => [r.rule_key, r]));
-        rules = baseRules.map((r) => ({ ...r, ...(map.get(r.rule_key) || {}) }));
-      }
-    }
+        .select("id,kind,is_enabled,cadence,lookback_minutes,created_at")
+        .order("kind", { ascending: true });
+      if (rErr) throw rErr;
 
-    let settings = { from_email: "", from_name: "", reply_to: "" };
-    if (hasSettings) {
-      const { data } = await admin.from("email_notification_settings").select("from_email,from_name,reply_to,updated_at").order("updated_at", { ascending: false }).limit(1);
-      if (data?.[0]) settings = data[0];
-    }
+      const { data: settings, error: sErr } = await admin
+        .from("email_notification_settings")
+        .select("id,from_email,from_name,reply_to,updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sErr) throw sErr;
 
-    let templatesObj = {};
-    if (hasTemplates) {
-      const { data } = await admin.from("email_notification_templates").select("rule_key,subject,intro,footer,updated_at");
-      for (const t of (data || [])) templatesObj[t.rule_key] = t;
-    }
+      const { data: templates, error: tErr } = await admin
+        .from("email_notification_templates")
+        .select("kind,subject,intro,footer,updated_at");
+      if (tErr) throw tErr;
 
-    let logs = [];
-    if (hasLogs) {
-      const { data } = await admin
+      const { data: logs, error: lErr } = await admin
         .from("email_notification_log")
-        .select("id,created_at,rule_key,mode,to_email,item_count,status")
+        .select("id,created_at,kind,to_email,subject,item_count,mode,status,error")
         .order("created_at", { ascending: false })
         .limit(50);
-      logs = data || [];
+      if (lErr) throw lErr;
+
+      return json(res, 200, { ok: true, rules: rules || [], settings: settings || null, templates: templates || [], logs: logs || [] });
     }
 
-    return json(res, 200, { ok: true, rules, settings, templates: templatesObj, logs });
-  }
+    if (req.method === "POST") {
+      const body = req.body || {};
+      const clean = (v) => (v == null ? null : String(v));
 
-  if (req.method === "POST") {
-    const payload = req.body || {};
-    const incomingSettings = payload.settings || {};
-    const incomingRules = Array.isArray(payload.rules) ? payload.rules : [];
-    const incomingTemplates = payload.templates || {};
+      const settingsIn = body.settings || {};
+      const rulesIn = Array.isArray(body.rules) ? body.rules : [];
+      const templatesIn = Array.isArray(body.templates) ? body.templates : [];
 
-    // 1) upsert rules (if table exists)
-    if (hasRules) {
-      const rows = stableRules().map((base) => {
-        const found = incomingRules.find((r) => r.rule_key === base.rule_key);
-        return {
-          rule_key: base.rule_key,
-          label: base.label,
-          is_enabled: found?.is_enabled !== false,
-          updated_at: new Date().toISOString(),
+      // 1) upsert settings (singleton)
+      if (settingsIn && (settingsIn.from_email || settingsIn.from_name || settingsIn.reply_to)) {
+        const payload = {
+          from_email: clean(settingsIn.from_email)?.trim() || null,
+          from_name: clean(settingsIn.from_name)?.trim() || null,
+          reply_to: clean(settingsIn.reply_to)?.trim() || null,
+          updated_at: new Date().toISOString()
         };
-      });
-      const { error } = await admin.from("email_notification_rules").upsert(rows, { onConflict: "rule_key" });
-      if (error) return json(res, 500, { error: error.message });
-    }
 
-    // 2) upsert settings (singleton last row)
-    if (hasSettings) {
-      const row = {
-        from_email: String(incomingSettings.from_email || "").trim() || null,
-        from_name: String(incomingSettings.from_name || "").trim() || null,
-        reply_to: String(incomingSettings.reply_to || "").trim() || null,
-        updated_at: new Date().toISOString(),
-      };
-      const { error } = await admin.from("email_notification_settings").insert([row]);
-      if (error) return json(res, 500, { error: error.message });
-    }
+        const { error: upErr } = await admin
+          .from("email_notification_settings")
+          .upsert(payload, { onConflict: "id" }); // se não existir, insere; se existir, cria novo row (ok)
+        if (upErr) throw upErr;
+      }
 
-    // 3) upsert templates
-    if (hasTemplates) {
-      const baseRules = stableRules();
-      const rows = baseRules.map((r) => {
-        const t = incomingTemplates?.[r.rule_key] || {};
-        return {
-          rule_key: r.rule_key,
-          subject: String(t.subject || "").trim() || null,
-          intro: String(t.intro || "").trim() || null,
-          footer: String(t.footer || "").trim() || null,
-          updated_at: new Date().toISOString(),
+      // 2) update rules enabled/cadence/lookback
+      for (const r of rulesIn) {
+        const kind = String(r?.kind || "").trim();
+        if (!kind) continue;
+        const patch = {};
+        if (typeof r.is_enabled === "boolean") patch.is_enabled = r.is_enabled;
+        if (r.cadence) patch.cadence = String(r.cadence);
+        if (r.lookback_minutes != null && !Number.isNaN(Number(r.lookback_minutes))) patch.lookback_minutes = Number(r.lookback_minutes);
+
+        if (Object.keys(patch).length) {
+          const { error: uErr } = await admin.from("email_notification_rules").update(patch).eq("kind", kind);
+          if (uErr) throw uErr;
+        }
+      }
+
+      // 3) upsert templates (by kind)
+      for (const t of templatesIn) {
+        const kind = String(t?.kind || "").trim();
+        if (!kind) continue;
+        const payload = {
+          kind,
+          subject: clean(t.subject) || null,
+          intro: clean(t.intro) || null,
+          footer: clean(t.footer) || null,
+          updated_at: new Date().toISOString()
         };
-      });
-      const { error } = await admin.from("email_notification_templates").upsert(rows, { onConflict: "rule_key" });
-      if (error) return json(res, 500, { error: error.message });
+        const { error: te } = await admin.from("email_notification_templates").upsert(payload, { onConflict: "kind" });
+        if (te) throw te;
+      }
+
+      return json(res, 200, { ok: true });
     }
 
-    return json(res, 200, { ok: true });
+    return json(res, 405, { error: "Method not allowed" });
+  } catch (e) {
+    const status = e?.statusCode || 500;
+    return json(res, status, { ok: false, error: e?.message || "Erro" });
   }
-
-  return json(res, 405, { error: "Method not allowed" });
 }
