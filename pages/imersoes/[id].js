@@ -182,6 +182,16 @@ export default function ImmersionDetailEditPage() {
 
   const [tab, setTab] = useState("informacoes");
 
+  // Deep-link: /imersoes/:id?tab=tarefas abre diretamente a aba Tarefas (checklist)
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qtab = String(router.query?.tab || "");
+    if (qtab === "tarefas") {
+      setTab("checklist");
+    }
+  }, [router.isReady, router.query?.tab]);
+
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -288,6 +298,7 @@ export default function ImmersionDetailEditPage() {
       { key: "ferramentas", label: "Ferramentas" },
       { key: "materiais", label: "Materiais" },
       { key: "videos", label: "Vídeos" },
+      { key: "checklist", label: "Tarefas" },
       { key: "pdca", label: "PDCA" },
       { key: "trainer", label: "Trainer/Palestrante" },
     ];
@@ -1345,7 +1356,11 @@ function normalizeTemplatesForClone(items) {
               <button
                 type="button"
                 className="btn"
-                onClick={() => router.push(`/painel?immersionId=${encodeURIComponent(id || "")}`)}
+                onClick={() => {
+                  if (!id) return;
+                  setTab("checklist");
+                  router.push({ pathname: `/imersoes/${id}`, query: { tab: "tarefas" } }, undefined, { shallow: true });
+                }}
                 disabled={!id}
                 title="Visualizar todas as tarefas desta imersão"
               >
@@ -2432,7 +2447,7 @@ function normalizeTemplatesForClone(items) {
 
         {form && tab === "checklist" ? (
           <>
-            <div className="h2">Checklist</div>
+            <div className="h2">Tarefas</div>
 
             <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
@@ -3399,7 +3414,7 @@ function normalizeTemplatesForClone(items) {
                         setTab("checklist");
                       }}
                     >
-                      Ir para Checklist
+                      Ir para Tarefas
                     </button>
                   </div>
                 </>
@@ -3408,7 +3423,7 @@ function normalizeTemplatesForClone(items) {
               {!closeFlow.loading && closeFlow.summary && closeFlow.canClose ? (
                 <>
                   <div className="small" style={{ marginBottom: 12 }}>
-                    Checklist validado. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
+                    Tarefas validadas. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
                   </div>
                   <label className="row" style={{ gap: 10, alignItems: "center" }}>
                     <input
@@ -3625,7 +3640,7 @@ function normalizeTemplatesForClone(items) {
                   setTab("checklist");
                 }}
               >
-                Ir para Checklist
+                Ir para Tarefas
               </button>
             </div>
           </div>
