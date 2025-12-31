@@ -164,7 +164,7 @@ export default function ImmersionsListPage() {
         {!loading && (items || []).length === 0 ? (
           <div className="card">
             <p style={{ opacity: 0.85 }}>Nenhuma imersão cadastrada.</p>
-            {isFullAccess ? <button className="btn" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
+            {isFullAccess ? <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
           </div>
         ) : null}
 
