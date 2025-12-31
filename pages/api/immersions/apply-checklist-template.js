@@ -37,7 +37,8 @@ export default async function handler(req, res) {
 
     const { data: imm, error: eImm } = await admin
       .from("immersions")
-      .select("id, start_date, end_date")
+      // Regra do produto (2025-12): todas as tarefas devem ser atribuídas ao Consultor da imersão.
+      .select("id, start_date, end_date, educational_consultant")
       .eq("id", immersionId)
       .single();
     if (eImm) throw eImm;
@@ -83,7 +84,7 @@ export default async function handler(req, res) {
         title,
         phase: it.phase || null,
         area: it.area || null,
-        responsible_id: it.responsible_id || null,
+        responsible_id: imm?.educational_consultant || null,
         due_date: toYmd(due),
         status: "Programada",
         sort_order: Number.isFinite(it.sort_order) ? it.sort_order : 0,
