@@ -103,7 +103,12 @@ function Tabs({ tabs, active, onChange }) {
           className={active === t.key ? "tabBtn active" : "tabBtn"}
           onClick={() => onChange(t.key)}
         >
-          {t.label}
+          <span className="tabLabelWrap">
+            {t.label}
+            {typeof t.badge !== "undefined" && t.badge !== null && t.badge !== "" ? (
+              <span className="tabBadge" aria-label={`Pendências: ${t.badge}`}>{t.badge}</span>
+            ) : null}
+          </span>
         </button>
       ))}
     </div>
@@ -238,6 +243,11 @@ export default function ImmersionDetailEditPage() {
   const [speakers, setSpeakers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+
+  // Badge de pendências para a aba "Tarefas" (exibe apenas abertas)
+  const openTasksCount = useMemo(() => {
+    return (tasks || []).filter((t) => String(t?.status || "") !== "Concluída").length;
+  }, [tasks]);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
 
@@ -298,7 +308,7 @@ export default function ImmersionDetailEditPage() {
       { key: "ferramentas", label: "Ferramentas" },
       { key: "materiais", label: "Materiais" },
       { key: "videos", label: "Vídeos" },
-      { key: "checklist", label: "Tarefas" },
+      { key: "checklist", label: "Tarefas", badge: openTasksCount > 0 ? String(openTasksCount) : null },
       { key: "pdca", label: "PDCA" },
       { key: "trainer", label: "Trainer/Palestrante" },
     ];
@@ -307,7 +317,7 @@ export default function ImmersionDetailEditPage() {
       base.splice(6, 0, { key: "custos", label: "Custos" });
     }
     return base;
-  }, [role]);
+  }, [role, openTasksCount]);
 
   // Protege a rota (MVP)
   useEffect(() => {
@@ -2449,7 +2459,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="h2">Tarefas</div>
 
-            <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div className="row tasksHeader" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
                 Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas: <b>{checklistSummary.late}</b>
               </div>
@@ -2477,11 +2487,10 @@ function normalizeTemplatesForClone(items) {
             <div className="toolbar" style={{ marginBottom: 12 }}>
               <div className="toolbarLeft">
                 <input
-                  className="input"
+                  className="input taskSearch"
                   placeholder="Buscar por tarefa, responsável ou observação..."
                   value={taskUi.q}
                   onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
-                  style={{ minWidth: 260 }}
                 />
                 <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
                   <option value="ALL">Todas as fases</option>

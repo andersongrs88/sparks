@@ -300,6 +300,19 @@ export default function DashboardPage() {
               >
                 Abrir Painel filtrado
               </button>
+
+              <button
+                className="btn small"
+                type="button"
+                disabled={immersionFilter === "all"}
+                title={immersionFilter === "all" ? "Selecione uma imersão para abrir suas tarefas." : "Abrir tarefas da imersão"}
+                onClick={() => {
+                  if (immersionFilter === "all") return;
+                  router.push(`/imersoes/${immersionFilter}/tarefas`);
+                }}
+              >
+                Abrir Tarefas
+              </button>
             </div>
 
             <div className="divider" />
@@ -436,7 +449,7 @@ export default function DashboardPage() {
 
                       return (
                         <tr key={key} style={rowStyle}>
-                          <td data-label="Responsável">
+                          <td>
                             <div style={{ fontWeight: 800 }}>{responsible}</div>
                             {sev === "critical" ? (
                               <div className="small" style={{ marginTop: 4 }}>
@@ -450,9 +463,9 @@ export default function DashboardPage() {
                               <div className="small muted" style={{ marginTop: 4 }}>Normal</div>
                             )}
                           </td>
-                          <td data-label="Abertas"><span className={sev === "critical" ? "badge danger" : sev === "warn" ? "badge warn" : "badge"}>{open}</span></td>
-                          <td data-label="Atrasadas"><span className={overdueN ? "badge danger" : "badge muted"}>{overdueN}</span></td>
-                          <td data-label="Vencem (3d)"><span className={dueSoon ? (sev === "critical" ? "badge danger" : sev === "warn" ? "badge warn" : "badge") : "badge muted"}>{dueSoon}</span></td>
+                          <td><span className={sev === "critical" ? "badge danger" : sev === "warn" ? "badge warn" : "badge"}>{open}</span></td>
+                          <td><span className={overdueN ? "badge danger" : "badge muted"}>{overdueN}</span></td>
+                          <td><span className={dueSoon ? (sev === "critical" ? "badge danger" : sev === "warn" ? "badge warn" : "badge") : "badge muted"}>{dueSoon}</span></td>
                         </tr>
                       );
                     })}
@@ -570,80 +583,6 @@ export default function DashboardPage() {
           .kpiGridCompact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .dashGrid { grid-template-columns: 1fr; }
           .immNext { max-width: 100%; }
-        }
-
-        /* Mobile refinements (<= 560px)
-           - KPIs e cards com tipografia/padding mais compactos
-           - Tabela de "Carga por responsável" vira lista de cartões (legível no celular)
-        */
-        @media (max-width: 560px) {
-          .dashWrap { padding: 0 10px; }
-          .dashTop { align-items:flex-start; }
-          .dashTop .row { flex-wrap: wrap; justify-content:flex-end; }
-
-          .card.compact { padding: 10px; }
-
-          .kpiGridCompact { gap: 10px; }
-          .kpi { padding: 10px 12px; }
-          .kpiValue { font-size: 20px; }
-          .kpiLabel, .kpiMeta { font-size: 12px; }
-
-          .sectionHeaderCompact { flex-direction: column; align-items:flex-start; }
-          .sectionHeaderCompact .row { width: 100%; }
-
-          .immRow { padding: 10px; flex-direction: column; }
-          .immActions { width: 100%; justify-content:flex-start; }
-          .immNext { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-
-          /* Responsive table -> cards */
-          .compactTable { overflow: visible; }
-          .compactTable .table thead { display: none; }
-          .compactTable .table,
-          .compactTable .table tbody,
-          .compactTable .table tr,
-          .compactTable .table td { display: block; width: 100%; }
-
-          .compactTable .table tr {
-            border: 1px solid var(--color-border-default);
-            border-radius: 12px;
-            background: var(--color-surface-2);
-            padding: 10px;
-            margin-bottom: 10px;
-          }
-
-          .compactTable .table td {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 8px 0;
-            border: none;
-          }
-
-          .compactTable .table td::before {
-            content: attr(data-label);
-            font-size: 12px;
-            font-weight: 800;
-            opacity: .72;
-            flex: 0 0 auto;
-          }
-
-          .compactTable .table td:first-child {
-            align-items: flex-start;
-          }
-
-          .compactTable .table td:first-child::before {
-            align-self: center;
-          }
-        }
-
-        /* Extra-small phones (<= 420px): reduce visual bulk */
-        @media (max-width: 420px) {
-          .kpi { padding: 9px 10px; }
-          .kpiValue { font-size: 18px; }
-          .kpiLabel, .kpiMeta { font-size: 11px; }
-          .btn.small { padding-left: 10px; padding-right: 10px; }
-          .inputSmall { max-width: 100%; }
         }
       `}</style>
     </Layout>

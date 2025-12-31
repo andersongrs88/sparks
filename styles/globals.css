@@ -362,7 +362,6 @@ a:hover { text-decoration: underline; }
   position: absolute;
   top: -4px;
   right: -4px;
-  z-index: 5;
   min-width: 18px;
   height: 18px;
   padding: 0 6px;
@@ -451,6 +450,36 @@ a:hover { text-decoration: underline; }
   .toolbar > * {
     flex: 1 1 100%;
   }
+
+  .toolbarLeft,
+  .toolbarRight{
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .toolbarLeft .input,
+  .toolbarRight .input,
+  .toolbarRight .btn,
+  .toolbarLeft .btn{
+    width: 100%;
+  }
+}
+
+/* Tarefas (Imersão) - Header responsivo */
+@media (max-width: 560px){
+  .tasksHeader{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .tasksHeader .row{ width: 100%; flex-wrap: wrap; }
+  .tasksHeader .btn{ width: 100%; }
+}
+
+/* Ajuste do campo de busca para não estourar layouts */
+.taskSearch{ min-width: 260px; }
+@media (max-width: 560px){
+  .taskSearch{ min-width: 0; }
 }
 
 /* Toolbar layout helpers (used in Imersões > Checklist/Cronograma) */
@@ -638,7 +667,6 @@ a:hover { text-decoration: underline; }
   position: absolute;
   top: -6px;
   right: -6px;
-  z-index: 5;
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
@@ -650,8 +678,6 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  line-height: 1;
-  pointer-events: none;
   border: 2px solid var(--card);
 }
 
@@ -851,6 +877,26 @@ a:hover { text-decoration: underline; }
 
 .tabBtn:hover { background: rgba(96,165,250,0.10); border-color: rgba(96,165,250,0.16); }
 .tabBtn.active { background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.28); }
+
+.tabLabelWrap{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tabBadge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  border: 1px solid var(--line);
+  background: rgba(248,113,113,0.16);
+}
 
 /* legacy sectionTitle removed (replaced above) */
 
