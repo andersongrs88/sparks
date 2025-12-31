@@ -103,7 +103,12 @@ function Tabs({ tabs, active, onChange }) {
           className={active === t.key ? "tabBtn active" : "tabBtn"}
           onClick={() => onChange(t.key)}
         >
-          {t.label}
+          <span className="tabLabelWrap">
+            {t.label}
+            {typeof t.badge !== "undefined" && t.badge !== null && t.badge !== "" ? (
+              <span className="tabBadge" aria-label={`Pendências: ${t.badge}`}>{t.badge}</span>
+            ) : null}
+          </span>
         </button>
       ))}
     </div>
@@ -182,13 +187,22 @@ export default function ImmersionDetailEditPage() {
 
   const [tab, setTab] = useState("informacoes");
 
+  // Deep-link: /imersoes/:id?tab=tarefas abre diretamente a aba Tarefas (checklist)
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qtab = String(router.query?.tab || "");
+    if (qtab === "tarefas") {
+      setTab("checklist");
+    }
+  }, [router.isReady, router.query?.tab]);
+
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
 
   const errorRef = useRef(null);
-  const kanbanDragRef = useRef(null);
 
   useEffect(() => {
     if (error && errorRef.current) {
@@ -229,6 +243,11 @@ export default function ImmersionDetailEditPage() {
   const [speakers, setSpeakers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+
+  // Badge de pendências para a aba "Tarefas" (exibe apenas abertas)
+  const openTasksCount = useMemo(() => {
+    return (tasks || []).filter((t) => String(t?.status || "") !== "Concluída").length;
+  }, [tasks]);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
 
@@ -289,6 +308,7 @@ export default function ImmersionDetailEditPage() {
       { key: "ferramentas", label: "Ferramentas" },
       { key: "materiais", label: "Materiais" },
       { key: "videos", label: "Vídeos" },
+      { key: "checklist", label: "Tarefas", badge: openTasksCount > 0 ? String(openTasksCount) : null },
       { key: "pdca", label: "PDCA" },
       { key: "trainer", label: "Trainer/Palestrante" },
     ];
@@ -297,7 +317,7 @@ export default function ImmersionDetailEditPage() {
       base.splice(6, 0, { key: "custos", label: "Custos" });
     }
     return base;
-  }, [role]);
+  }, [role, openTasksCount]);
 
   // Protege a rota (MVP)
   useEffect(() => {
@@ -454,25 +474,7 @@ export default function ImmersionDetailEditPage() {
   async function saveEdit() {
     if (!id || typeof id !== "string") return;
     const type = editModal?.type;
-
-try {
-  if (type === "task") {
-    const payload = {
-      immersion_id: id,
-      title: (editDraft.title || "").trim(),
-      phase: editDraft.phase || null,
-      responsible_id: editDraft.responsible_id || null,
-      due_date: editDraft.due_date || null,
-      status: editDraft.status || "Programada",
-      notes: typeof editDraft.notes === "string" ? (editDraft.notes.trim() || null) : (editDraft.notes || null),
-    };
-    if (!payload.title) return setError("Preencha o título da tarefa.");
-    if (editModal.item?.id) await updateTask(editModal.item.id, payload);
-    await loadTasks(id);
-    closeEdit();
-    return;
-  }
-
+    try {
       if (type === "cost") {
         const payload = {
           immersion_id: id,
@@ -571,15 +573,7 @@ try {
     const type = editModal?.type;
     const itemId = editModal?.item?.id;
     if (!itemId) return;
-
-try {
-  if (type === "task") {
-    await deleteTask(itemId);
-    await loadTasks(id);
-    closeEdit();
-    return;
-  }
-
+    try {
       if (type === "cost") await deleteCost(itemId);
       if (type === "schedule") await deleteScheduleItem(itemId);
       if (type === "tool") await deleteTool(itemId);
@@ -1206,22 +1200,7 @@ function normalizeTemplatesForClone(items) {
         return;
       }
 
-
-// Defesa extra contra duplicação: revalida no banco antes de inserir (evita duplicar por concorrência/abas).
-const { data: currentTasks, error: curErr } = await supabase
-  .from("immersion_tasks")
-  .select("title,phase")
-  .eq("immersion_id", id)
-  .limit(5000);
-if (curErr) throw curErr;
-const currentKey = new Set((currentTasks || []).map((r) => `${(r.phase || "PA-PRE").toString().trim()}::${String(r.title || "").trim().toLowerCase()}`));
-const chosenSafe = chosen.filter((t) => !currentKey.has(t.key));
-if (chosenSafe.length === 0) {
-  setTemplatesError("Nenhuma tarefa nova para carregar (todas já existem nesta imersão)." );
-  return;
-}
-
-      const rows = chosenSafe.map((t) => ({
+      const rows = chosen.map((t) => ({
         immersion_id: id,
         title: t.title,
         phase: t.phase,
@@ -1387,7 +1366,11 @@ if (chosenSafe.length === 0) {
               <button
                 type="button"
                 className="btn"
-                onClick={() => router.push(`/painel?immersionId=${encodeURIComponent(id || "")}`)}
+                onClick={() => {
+                  if (!id) return;
+                  setTab("checklist");
+                  router.push({ pathname: `/imersoes/${id}`, query: { tab: "tarefas" } }, undefined, { shallow: true });
+                }}
                 disabled={!id}
                 title="Visualizar todas as tarefas desta imersão"
               >
@@ -2474,9 +2457,9 @@ if (chosenSafe.length === 0) {
 
         {form && tab === "checklist" ? (
           <>
-            <div className="h2">Checklist</div>
+            <div className="h2">Tarefas</div>
 
-            <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div className="row tasksHeader" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
                 Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas: <b>{checklistSummary.late}</b>
               </div>
@@ -2492,7 +2475,7 @@ if (chosenSafe.length === 0) {
                   disabled={tasksLoading || !full}
                   title={!full ? "Apenas administradores podem carregar tarefas predefinidas." : ""}
                 >
-                  Carregar Template
+                  Carregar predefinidas
                 </button>
                 <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={!full}>
                   {newTaskOpen ? "Fechar" : "Nova tarefa"}
@@ -2504,11 +2487,10 @@ if (chosenSafe.length === 0) {
             <div className="toolbar" style={{ marginBottom: 12 }}>
               <div className="toolbarLeft">
                 <input
-                  className="input"
+                  className="input taskSearch"
                   placeholder="Buscar por tarefa, responsável ou observação..."
                   value={taskUi.q}
                   onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
-                  style={{ minWidth: 260 }}
                 />
                 <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
                   <option value="ALL">Todas as fases</option>
@@ -2607,48 +2589,6 @@ if (chosenSafe.length === 0) {
                   </div>
 
                   <div className="dialogBody">
-
-{editModal.type === "task" ? (
-  <div className="grid2">
-    <Field label="Título">
-      <input className="input" value={editDraft.title || ""} onChange={(e) => onDraft("title", e.target.value)} />
-    </Field>
-    <Field label="Fase">
-      <select className="input" value={editDraft.phase || "PA-PRE"} onChange={(e) => onDraft("phase", e.target.value)}>
-        {PHASES.map((p) => (
-          <option key={p.key} value={p.key}>{p.label}</option>
-        ))}
-      </select>
-    </Field>
-    <Field label="Responsável">
-      <select className="input" value={editDraft.responsible_id || ""} onChange={(e) => onDraft("responsible_id", e.target.value || null)}>
-        <option value="">—</option>
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>{p.name} ({roleLabel(p.role)})</option>
-        ))}
-      </select>
-      {editModal?.item?.status === "Concluída" || editModal?.item?.status === "Concluida" || editModal?.item?.done_at ? (
-        <div className="small muted" style={{ marginTop: 6 }}>
-          Observação: tarefas concluídas não alteram responsável (governança).
-        </div>
-      ) : null}
-    </Field>
-    <Field label="Prazo">
-      <input className="input" type="date" value={editDraft.due_date || ""} onChange={(e) => onDraft("due_date", e.target.value)} />
-    </Field>
-    <Field label="Status">
-      <select className="input" value={editDraft.status || "Programada"} onChange={(e) => onDraft("status", e.target.value)}>
-        {TASK_STATUSES.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
-    </Field>
-    <Field label="Observações">
-      <textarea className="input" rows={4} value={editDraft.notes || ""} onChange={(e) => onDraft("notes", e.target.value)} />
-    </Field>
-  </div>
-) : null}
-
                     {templatesError ? (
                       <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{templatesError}</div>
                     ) : null}
@@ -2855,22 +2795,7 @@ if (chosenSafe.length === 0) {
                         <div className="small muted" style={{ marginTop: 4 }}>Arraste visual (simples) por fase.</div>
                       </div>
 
-                      <div className="kanbanColBody"
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const dragged = kanbanDragRef.current;
-                          if (!dragged) return;
-                          const allowed = full || canEditTask({ role, userId: user?.id, taskResponsibleId: dragged?.responsible_id });
-                          if (!allowed) return;
-                          if (dragged.phase === ph.key) return;
-                          onQuickUpdateTask(dragged, { phase: ph.key });
-                          kanbanDragRef.current = null;
-                        }}
-                      >
+                      <div className="kanbanColBody">
                         {tasksLoading ? (
                           <div className="small muted">Carregando...</div>
                         ) : list.length === 0 ? (
@@ -2882,15 +2807,7 @@ if (chosenSafe.length === 0) {
                               const canEdit = full || canEditTask({ role, userId: user?.id, taskResponsibleId: t?.responsible_id });
                               const s = deadlineStatus(t);
                               return (
-                                <div key={t.id} className="kanbanCard"
-                                  draggable={canEdit}
-                                  onDragStart={(e) => {
-                                    if (!canEdit) return;
-                                    kanbanDragRef.current = t;
-                                    try { e.dataTransfer?.setData("text/plain", String(t.id)); } catch (err) {}
-                                    e.dataTransfer.effectAllowed = "move";
-                                  }}
-                                >
+                                <div key={t.id} className="kanbanCard">
                                   <div className="row" style={{ justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                                     <div style={{ minWidth: 0 }}>
                                       <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
@@ -2908,7 +2825,7 @@ if (chosenSafe.length === 0) {
                                         Concluir
                                       </button>
                                     ) : null}
-                                    <button type="button" className="btn sm" onClick={() => openEdit("task", t)}>
+                                    <button type="button" className="btn sm" onClick={() => setEditModal({ open: true, kind: "task", item: t })}>
                                       Editar
                                     </button>
                                   </div>
@@ -3206,7 +3123,6 @@ if (chosenSafe.length === 0) {
                 {editModal.type === "material" ? "Material" : null}
                 {editModal.type === "video" ? "Vídeo" : null}
                 {editModal.type === "pdca" ? "PDCA" : null}
-                {editModal.type === "task" ? "Tarefa" : null}
               </div>
               <button type="button" className="btn" onClick={closeEdit}>Fechar</button>
             </div>
@@ -3507,7 +3423,7 @@ if (chosenSafe.length === 0) {
                         setTab("checklist");
                       }}
                     >
-                      Ir para Checklist
+                      Ir para Tarefas
                     </button>
                   </div>
                 </>
@@ -3516,7 +3432,7 @@ if (chosenSafe.length === 0) {
               {!closeFlow.loading && closeFlow.summary && closeFlow.canClose ? (
                 <>
                   <div className="small" style={{ marginBottom: 12 }}>
-                    Checklist validado. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
+                    Tarefas validadas. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
                   </div>
                   <label className="row" style={{ gap: 10, alignItems: "center" }}>
                     <input
@@ -3733,7 +3649,7 @@ if (chosenSafe.length === 0) {
                   setTab("checklist");
                 }}
               >
-                Ir para Checklist
+                Ir para Tarefas
               </button>
             </div>
           </div>
