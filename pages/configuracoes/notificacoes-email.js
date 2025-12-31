@@ -192,7 +192,7 @@ export default function NotificacoesEmailPage() {
         <div className="card" style={{ padding: 16 }}>
           <h2>Templates</h2>
           <div className="muted" style={{ marginBottom: 12 }}>
-            Placeholders: <code>{{"{{count}}"}}</code> <code>{{"{{date}}"}}</code> <code>{{"{{name}}"}}</code> <code>{{"{{app}}"}}</code> <code>{{"{{immersion}}"}}</code>
+            Placeholders: <code>{"{{count}}"}</code> <code>{"{{date}}"}</code> <code>{"{{name}}"}</code> <code>{"{{app}}"}</code> <code>{"{{immersion}}"}</code>
           </div>
 
           <div style={{ display: "grid", gap: 16 }}>
