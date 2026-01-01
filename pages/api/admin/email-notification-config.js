@@ -52,27 +52,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
-    const [{ data: rules, error: rulesErr }, { data: settings, error: setErr }, { data: templates, error: tplErr }, { data: logs, error: logErr }] =
-      await Promise.all([
-        admin
-          .from("email_notification_rules")
-          .select("kind,is_enabled,cadence,lookback_minutes")
-          .order("kind", { ascending: true }),
-        admin
-          .from("email_notification_settings")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(1),
-        admin
-          .from("email_notification_templates")
-          .select("*")
-          .order("kind", { ascending: true }),
-        admin
-          .from("email_notification_log")
-          .select("created_at,kind,to_email,subject,item_count,mode,status,error")
-          .order("created_at", { ascending: false })
-          .limit(50),
-      ]);
+    const { data: rules, error: rulesErr } = await admin
+        .from("email_notification_rules")
+        .select("kind,is_enabled,cadence,lookback_minutes")
+        .order("kind", { ascending: true });
+
+      // Ordena client-side quando kind existir
+      templates = (templates || []).slice().sort((a, b) => String(a?.kind || "").localeCompare(String(b?.kind || "")));
+
 
     if (rulesErr) return json(res, 500, { error: rulesErr.message });
     if (setErr) return json(res, 500, { error: setErr.message });
@@ -162,7 +149,19 @@ export default async function handler(req, res) {
 
       if (rows.length) {
         const { error } = await admin.from("email_notification_templates").upsert(rows, { onConflict: "kind" });
-        if (error) return json(res, 500, { error: error.message });
+        if (error) {
+          const msg = String(error.message || "");
+          if (msg.includes("email_notification_templates.kind") || msg.includes("column") && msg.includes("kind")) {
+            return json(res, 400, {
+              error:
+                "Sua tabela email_notification_templates não possui a coluna 'kind'. Rode a migração para adicionar 'kind' e o UNIQUE, depois tente novamente.",
+              hint_sql:
+                "alter table public.email_notification_templates add column if not exists kind text;\n" +
+                "do $$ begin if not exists (select 1 from pg_constraint con join pg_class rel on rel.oid=con.conrelid join pg_namespace nsp on nsp.oid=rel.relnamespace where nsp.nspname='public' and rel.relname='email_notification_templates' and con.conname='email_notification_templates_kind_key') then alter table public.email_notification_templates add constraint email_notification_templates_kind_key unique (kind); end if; end $$;",
+            });
+          }
+          return json(res, 500, { error: msg });
+        }
       }
     }
 
