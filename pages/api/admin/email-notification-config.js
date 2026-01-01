@@ -1,8 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import {
-  EMAIL_RULES_DEFAULTS,
-  EMAIL_TEMPLATES_DEFAULTS,
-} from "../../../lib/emailNotificationDefaults";
 
 function getBearerToken(req) {
   const h = req.headers?.authorization || "";
@@ -14,17 +10,97 @@ function json(res, status, payload) {
   res.status(status).json(payload);
 }
 
+/**
+ * Catálogo estável (ordem importa).
+ * rule_key é o identificador lógico; no banco pode estar salvo em `kind` (legacy) ou `rule_key` (novo).
+ */
 function stableRules() {
-  // Mantém compatibilidade com bases antigas (não depende de migrations).
-  return EMAIL_RULES_DEFAULTS.map((r) => ({
-    rule_key: r.key,
-    label: r.label,
-    description: r.description,
-    is_enabled: r.is_enabled,
-    cadence: r.cadence,
-    lookback_minutes: r.lookback_minutes,
-    config: r.config,
-  }));
+  return [
+    {
+      rule_key: "immersion_created",
+      label: "Imersão criada",
+      description: "Dispara quando uma nova imersão é criada e possui Consultor definido.",
+      rule: "Evento: nova imersão criada (janela por lookback).",
+      defaults: {
+        cadence: "event",
+        lookback_minutes: 120,
+        is_enabled: true,
+      },
+    },
+    {
+      rule_key: "task_overdue_daily",
+      label: "Tarefas atrasadas",
+      description: "Resumo diário com tarefas vencidas e ainda não concluídas.",
+      rule: "Diário: tasks com due_date < hoje e status != Concluída.",
+      defaults: {
+        cadence: "daily",
+        lookback_minutes: 60,
+        is_enabled: true,
+      },
+    },
+    {
+      rule_key: "task_due_soon_weekly",
+      label: "Vencendo em até 7 dias",
+      description: "Resumo semanal com tarefas que vencem nos próximos 7 dias.",
+      rule: "Semanal: roda às segundas (ou force=1) listando due_date entre hoje e hoje+7.",
+      defaults: {
+        cadence: "weekly",
+        lookback_minutes: 10080,
+        is_enabled: true,
+      },
+    },
+    {
+      rule_key: "immersion_risk_daily",
+      label: "Risco de imersão",
+      description: "Alerta diário quando uma imersão acumula atrasos e entra em risco.",
+      rule: "Diário: dispara para Consultor da imersão quando atrasadas >=5 (ou >=3 em execução).",
+      defaults: {
+        cadence: "daily",
+        lookback_minutes: 60,
+        is_enabled: true,
+      },
+    },
+  ];
+}
+
+async function tableExists(admin, name) {
+  try {
+    const { error } = await admin.from(name).select("*").limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+async function getRequesterProfile(admin, requesterId) {
+  // Usa service-role para evitar RLS em profiles
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id,role,is_active")
+    .eq("id", requesterId)
+    .single();
+  if (error) return { error: error.message };
+  return { data };
+}
+
+// Upsert “sem constraint”: select -> update/insert.
+async function upsertByKey(admin, table, keyCol, keyVal, row) {
+  const { data: existing, error: selErr } = await admin
+    .from(table)
+    .select("id")
+    .eq(keyCol, keyVal)
+    .limit(1);
+
+  if (selErr) throw new Error(selErr.message);
+
+  if (Array.isArray(existing) && existing.length) {
+    const { error: updErr } = await admin.from(table).update(row).eq(keyCol, keyVal);
+    if (updErr) throw new Error(updErr.message);
+    return;
+  }
+
+  const { error: insErr } = await admin.from(table).insert([{ ...row, [keyCol]: keyVal }]);
+  if (insErr) throw new Error(insErr.message);
 }
 
 export default async function handler(req, res) {
@@ -46,164 +122,92 @@ export default async function handler(req, res) {
   if (userErr || !userData?.user) return json(res, 401, { error: "Sessão inválida." });
 
   const requesterId = userData.user.id;
+  const admin = createClient(url, serviceKey);
 
-  const { data: requesterProfile, error: profErr } = await requesterClient
-    .from("profiles")
-    .select("id, role, is_active")
-    .eq("id", requesterId)
-    .single();
-
-  if (profErr) return json(res, 403, { error: "Não foi possível validar permissões." });
+  const { data: requesterProfile, error: requesterProfError } = await getRequesterProfile(admin, requesterId);
+  if (requesterProfError) return json(res, 403, { error: "Não foi possível validar permissões." });
   if (!requesterProfile?.is_active) return json(res, 403, { error: "Usuário inativo." });
   if (requesterProfile?.role !== "admin") return json(res, 403, { error: "Apenas ADMIN pode gerenciar notificações." });
 
-  const admin = createClient(url, serviceKey);
+  const baseRules = stableRules();
 
-  // Helper: detect table existence (best-effort)
-  async function tableExists(name) {
-    try {
-      const { error } = await admin.from(name).select("*").limit(1);
-      return !error;
-    } catch {
-      return false;
-    }
-  }
-
-  const hasRules = await tableExists("email_notification_rules");
-  const hasSettings = await tableExists("email_notification_settings");
-  const hasTemplates = await tableExists("email_notification_templates");
-  const hasLogs = await tableExists("email_notification_log");
-
-  // Detecta o "id" da regra no schema atual (rule_key vs kind) e se existem colunas opcionais.
-  async function detectColumns(table, cols) {
-    // tenta em bloco; se falhar por colunas faltantes, devolve as que deram certo.
-    const ok = {};
-    for (const c of cols) {
-      try {
-        const { error } = await admin.from(table).select(c).limit(1);
-        ok[c] = !error;
-      } catch {
-        ok[c] = false;
-      }
-    }
-    return ok;
-  }
+  const hasRules = await tableExists(admin, "email_notification_rules");
+  const hasSettings = await tableExists(admin, "email_notification_settings");
+  const hasTemplates = await tableExists(admin, "email_notification_templates");
+  const hasLogs = await tableExists(admin, "email_notification_log");
 
   if (req.method === "GET") {
-    const baseRules = stableRules();
-    let rules = baseRules;
+    // 1) Rules
+    let rules = baseRules.map((r) => ({
+      rule_key: r.rule_key,
+      label: r.label,
+      description: r.description,
+      rule: r.rule,
+      ...r.defaults,
+    }));
+
     if (hasRules) {
-      const col = await detectColumns("email_notification_rules", [
-        "rule_key",
-        "kind",
-        "label",
-        "description",
-        "is_enabled",
-        "cadence",
-        "lookback_minutes",
-        "config",
-        "updated_at",
-      ]);
-
-      const idCol = col.rule_key ? "rule_key" : col.kind ? "kind" : null;
-
-      if (idCol) {
-        const selectCols = [
-          idCol,
-          col.label ? "label" : null,
-          col.description ? "description" : null,
-          col.is_enabled ? "is_enabled" : null,
-          col.cadence ? "cadence" : null,
-          col.lookback_minutes ? "lookback_minutes" : null,
-          col.config ? "config" : null,
-        ]
-          .filter(Boolean)
-          .join(",");
-
-        const { data } = await admin.from("email_notification_rules").select(selectCols);
-
-        if (Array.isArray(data) && data.length) {
-          const map = new Map(data.map((r) => [r[idCol], r]));
-          rules = baseRules.map((r) => {
-            const hit = map.get(r.rule_key);
-            if (!hit) return r;
-            const merged = { ...r, ...hit };
-            // normaliza quando o schema usa kind
-            merged.rule_key = r.rule_key;
-            return merged;
-          });
+      // Suporta schema legado: kind = identificador.
+      const { data, error } = await admin
+        .from("email_notification_rules")
+        .select("kind,rule_key,label,description,cadence,lookback_minutes,is_enabled,updated_at")
+        .or(
+          baseRules
+            .map((r) => `kind.eq.${r.rule_key},rule_key.eq.${r.rule_key}`)
+            .join(",")
+        );
+      if (!error && Array.isArray(data) && data.length) {
+        const map = new Map();
+        for (const row of data) {
+          const key = row.rule_key || row.kind;
+          if (key) map.set(key, row);
         }
+        rules = rules.map((r) => ({
+          ...r,
+          ...(map.get(r.rule_key) || {}),
+          // Normaliza de volta:
+          rule_key: r.rule_key,
+          cadence: (map.get(r.rule_key)?.cadence || r.cadence || r.defaults?.cadence),
+          lookback_minutes: Number(map.get(r.rule_key)?.lookback_minutes ?? r.lookback_minutes ?? r.defaults?.lookback_minutes ?? 60),
+          is_enabled: map.get(r.rule_key)?.is_enabled !== false,
+        }));
       }
     }
 
+    // 2) Settings (último registro)
     let settings = { from_email: "", from_name: "", reply_to: "" };
     if (hasSettings) {
       const { data } = await admin
         .from("email_notification_settings")
-        .select("from_email,from_name,reply_to,updated_at,id")
-        .order("updated_at", { ascending: false, nullsFirst: false })
-        .order("id", { ascending: false })
+        .select("from_email,from_name,reply_to,updated_at")
+        .order("updated_at", { ascending: false })
         .limit(1);
       if (data?.[0]) settings = data[0];
     }
 
-    let templatesObj = {};
+    // 3) Templates
+    const templatesObj = {};
     if (hasTemplates) {
-      const col = await detectColumns("email_notification_templates", [
-        "rule_key",
-        "kind",
-        "subject",
-        "intro",
-        "footer",
-        "updated_at",
-      ]);
-      const idCol = col.rule_key ? "rule_key" : col.kind ? "kind" : null;
-      if (idCol) {
-        const selectCols = [
-          idCol,
-          col.subject ? "subject" : null,
-          col.intro ? "intro" : null,
-          col.footer ? "footer" : null,
-          col.updated_at ? "updated_at" : null,
-        ]
-          .filter(Boolean)
-          .join(",");
-        const { data } = await admin.from("email_notification_templates").select(selectCols);
-        for (const t of data || []) {
-          templatesObj[t[idCol]] = { ...t, rule_key: t[idCol] };
+      const { data, error } = await admin
+        .from("email_notification_templates")
+        .select("rule_key,kind,label,description,rule_text,subject,intro,footer,updated_at");
+      if (!error) {
+        for (const t of (data || [])) {
+          const key = t.rule_key || t.kind;
+          if (key) templatesObj[key] = { ...t, rule_key: key };
         }
       }
     }
 
-    // Defaults de templates: garante que todos aparecem na tela, mesmo que o banco esteja vazio.
-    for (const r of baseRules) {
-      if (!templatesObj[r.rule_key]) {
-        const def = EMAIL_TEMPLATES_DEFAULTS?.[r.rule_key];
-        if (def) templatesObj[r.rule_key] = { rule_key: r.rule_key, ...def };
-      }
-    }
-
+    // 4) Logs
     let logs = [];
     if (hasLogs) {
-      const logCols = await detectColumns("email_notification_log", [
-        "id",
-        "created_at",
-        "rule_key",
-        "kind",
-        "mode",
-        "to_email",
-        "item_count",
-        "status",
-      ]);
       const { data } = await admin
         .from("email_notification_log")
-        .select(logCols.join(","))
+        .select("id,created_at,rule_key,mode,to_email,item_count,status")
         .order("created_at", { ascending: false })
         .limit(50);
-      logs = (data || []).map((l) => ({
-        ...l,
-        rule_key: l.rule_key || l.kind,
-      }));
+      logs = data || [];
     }
 
     return json(res, 200, { ok: true, rules, settings, templates: templatesObj, logs });
@@ -215,60 +219,25 @@ export default async function handler(req, res) {
     const incomingRules = Array.isArray(payload.rules) ? payload.rules : [];
     const incomingTemplates = payload.templates || {};
 
-    // 1) upsert rules (if table exists)
+    // 1) Rules
     if (hasRules) {
-      const col = await detectColumns("email_notification_rules", [
-        "rule_key",
-        "kind",
-        "label",
-        "description",
-        "is_enabled",
-        "cadence",
-        "lookback_minutes",
-        "config",
-        "updated_at",
-      ]);
-      const idCol = col.rule_key ? "rule_key" : col.kind ? "kind" : null;
-      const onConflict = col.rule_key ? "rule_key" : null;
+      for (const base of baseRules) {
+        const incoming = incomingRules.find((r) => (r.rule_key || r.kind) === base.rule_key) || {};
+        const next = {
+          label: String(incoming.label || base.label),
+          description: String(incoming.description || base.description),
+          cadence: String(incoming.cadence || base.defaults.cadence || "event"),
+          lookback_minutes: Number(incoming.lookback_minutes ?? base.defaults.lookback_minutes ?? 60),
+          is_enabled: incoming.is_enabled !== false,
+          updated_at: new Date().toISOString(),
+        };
 
-      if (idCol) {
-        const rows = stableRules().map((base) => {
-          const found = incomingRules.find((r) => r.rule_key === base.rule_key) || {};
-          const row = {
-            [idCol]: base.rule_key,
-            updated_at: new Date().toISOString(),
-          };
-          if (col.rule_key && col.kind) row.kind = base.rule_key;
-          if (col.label) row.label = String(found.label ?? base.label);
-          if (col.description) row.description = String(found.description ?? base.description);
-          if (col.is_enabled) row.is_enabled = found.is_enabled !== false;
-          if (col.cadence) row.cadence = String(found.cadence ?? base.cadence);
-          if (col.lookback_minutes) row.lookback_minutes = Number(found.lookback_minutes ?? base.lookback_minutes) || base.lookback_minutes;
-          if (col.config) row.config = found.config ?? base.config ?? {};
-          return row;
-        });
-
-        let upsertRes;
-        if (onConflict) {
-          upsertRes = await admin.from("email_notification_rules").upsert(rows, { onConflict });
-        } else {
-          // sem unique/constraint -> faz insert if not exists com update por chave
-          for (const r of rows) {
-            const key = r[idCol];
-            const { data: existing } = await admin.from("email_notification_rules").select("id").eq(idCol, key).limit(1);
-            if (existing?.[0]?.id) {
-              await admin.from("email_notification_rules").update(r).eq("id", existing[0].id);
-            } else {
-              await admin.from("email_notification_rules").insert([r]);
-            }
-          }
-          upsertRes = { error: null };
-        }
-        if (upsertRes?.error) return json(res, 500, { error: upsertRes.error.message });
+        // Prefer schema legado (kind).
+        await upsertByKey(admin, "email_notification_rules", "kind", base.rule_key, next);
       }
     }
 
-    // 2) upsert settings (singleton last row)
+    // 2) Settings
     if (hasSettings) {
       const row = {
         from_email: String(incomingSettings.from_email || "").trim() || null,
@@ -280,54 +249,26 @@ export default async function handler(req, res) {
       if (error) return json(res, 500, { error: error.message });
     }
 
-    // 3) upsert templates
+    // 3) Templates
     if (hasTemplates) {
-      const col = await detectColumns("email_notification_templates", [
-        "rule_key",
-        "kind",
-        "subject",
-        "intro",
-        "footer",
-        "updated_at",
-      ]);
-      const idCol = col.rule_key ? "rule_key" : col.kind ? "kind" : null;
-      const onConflict = col.rule_key ? "rule_key" : null;
-      if (idCol) {
-        const baseRules = stableRules();
-        const rows = baseRules.map((r) => {
-          const t = incomingTemplates?.[r.rule_key] || {};
-          const row = {
-            [idCol]: r.rule_key,
-            updated_at: new Date().toISOString(),
-          };
-          if (col.rule_key && col.kind) row.kind = r.rule_key;
-          if (col.rule_key && !col.kind) {
-            // nada
-          }
-          if (col.subject) row.subject = String(t.subject || EMAIL_TEMPLATES_DEFAULTS?.[r.rule_key]?.subject || "").trim() || null;
-          if (col.intro) row.intro = String(t.intro || EMAIL_TEMPLATES_DEFAULTS?.[r.rule_key]?.intro || "").trim() || null;
-          if (col.footer) row.footer = String(t.footer || EMAIL_TEMPLATES_DEFAULTS?.[r.rule_key]?.footer || "").trim() || null;
-          // garante rule_key não nulo quando existir
-          if (col.rule_key) row.rule_key = r.rule_key;
-          return row;
-        });
+      for (const base of baseRules) {
+        const t = incomingTemplates?.[base.rule_key] || {};
+        const row = {
+          label: String(t.label || base.label),
+          description: String(t.description || base.description),
+          rule_text: String(t.rule_text || base.rule),
+          subject: String(t.subject || "").trim() || null,
+          intro: String(t.intro || "").trim() || null,
+          footer: String(t.footer || "").trim() || null,
+          updated_at: new Date().toISOString(),
+        };
 
-        let upsertRes;
-        if (onConflict) {
-          upsertRes = await admin.from("email_notification_templates").upsert(rows, { onConflict });
-        } else {
-          for (const r of rows) {
-            const key = r[idCol];
-            const { data: existing } = await admin.from("email_notification_templates").select("id").eq(idCol, key).limit(1);
-            if (existing?.[0]?.id) {
-              await admin.from("email_notification_templates").update(r).eq("id", existing[0].id);
-            } else {
-              await admin.from("email_notification_templates").insert([r]);
-            }
-          }
-          upsertRes = { error: null };
+        // Prefer schema novo (rule_key). Se não existir, usamos `kind`.
+        try {
+          await upsertByKey(admin, "email_notification_templates", "rule_key", base.rule_key, row);
+        } catch {
+          await upsertByKey(admin, "email_notification_templates", "kind", base.rule_key, row);
         }
-        if (upsertRes?.error) return json(res, 500, { error: upsertRes.error.message });
       }
     }
 

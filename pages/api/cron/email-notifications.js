@@ -1,6 +1,5 @@
 import { getServerSupabase } from "../../../lib/serverSupabase";
 import { getSmtpTransport, getFromAddress, appUrl } from "../../../lib/emailSmtp";
-import { EMAIL_RULES_DEFAULTS, EMAIL_TEMPLATES_DEFAULTS } from "../../../lib/emailNotificationDefaults";
 
 function isoDate(d) { return d.toISOString().slice(0, 10); }
 
@@ -11,16 +10,12 @@ function addDays(date, days) {
 }
 
 function stableRules() {
-  return EMAIL_RULES_DEFAULTS
-    .filter((r) => r.key !== "immersion_created")
-    .map((r) => ({
-      rule_key: r.key,
-      label: r.label,
-      is_enabled: r.is_enabled !== false,
-      cadence: r.cadence,
-      lookback_minutes: r.lookback_minutes,
-      config: r.config || {},
-    }));
+  return [
+    { rule_key: "immersion_created", label: "Nova imersão criada (evento)", is_enabled: true, cadence: "event", lookback_minutes: 60 },
+    { rule_key: "task_overdue_daily", label: "Tarefas atrasadas (diário)", is_enabled: true },
+    { rule_key: "task_due_soon_weekly", label: "Vencendo em até 7 dias (semanal)", is_enabled: true },
+    { rule_key: "immersion_risk_daily", label: "Risco de imersão (diário)", is_enabled: true },
+  ];
 }
 
 function applyPlaceholders(str, vars) {
@@ -72,22 +67,27 @@ async function loadConfig(supabaseAdmin) {
   let rules = baseRules;
 
   if (hasRules) {
-    const { data } = await supabaseAdmin.from("email_notification_rules").select("*");
+    // Compat: algumas bases usam coluna "kind" como chave primária da regra.
+    let data = null;
+    {
+      const r = await supabaseAdmin
+        .from("email_notification_rules")
+        .select("rule_key,label,description,rule_text,is_enabled,cadence,lookback_minutes")
+        .in("rule_key", baseRules.map((r) => r.rule_key));
+      if (!r.error) data = r.data;
+    }
+    if (!data) {
+      const r = await supabaseAdmin
+        .from("email_notification_rules")
+        .select("kind,label,description,rule_text,is_enabled,cadence,lookback_minutes")
+        .in("kind", baseRules.map((r) => r.rule_key));
+      if (!r.error) {
+        data = (r.data || []).map((row) => ({ ...row, rule_key: row.kind }));
+      }
+    }
     if (Array.isArray(data) && data.length) {
-      const map = new Map(data.map((r) => [r.rule_key || r.kind, r]));
-      rules = baseRules.map((r) => {
-        const db = map.get(r.rule_key) || {};
-        return {
-          ...r,
-          ...db,
-          rule_key: r.rule_key,
-          config: db.config || r.config || {},
-          cadence: db.cadence || r.cadence,
-          lookback_minutes: db.lookback_minutes ?? r.lookback_minutes,
-          label: db.label || r.label,
-          description: db.description || r.description,
-        };
-      });
+      const map = new Map(data.map((r) => [r.rule_key, r]));
+      rules = baseRules.map((r) => ({ ...r, ...(map.get(r.rule_key) || {}) }));
     }
   }
 
@@ -103,16 +103,10 @@ async function loadConfig(supabaseAdmin) {
 
   let templates = {};
   if (hasTemplates) {
-    const { data } = await supabaseAdmin.from("email_notification_templates").select("*");
-    for (const t of (data || [])) {
-      const k = t.rule_key || t.kind;
-      if (k) templates[k] = { ...t, rule_key: k };
-    }
-  }
-
-  // fallback defaults (caso ainda não exista no banco)
-  for (const [k, v] of Object.entries(EMAIL_TEMPLATES_DEFAULTS)) {
-    if (!templates[k]) templates[k] = { rule_key: k, ...v };
+    const { data } = await supabaseAdmin
+      .from("email_notification_templates")
+      .select("rule_key,subject,intro,footer,updated_at");
+    for (const t of (data || [])) templates[t.rule_key] = t;
   }
 
   return { rules, settings, templates };
@@ -167,6 +161,28 @@ export default async function handler(req, res) {
 
     const rulesMap = new Map((rules || []).map((r) => [r.rule_key, r]));
 
+    const ruleImmersionCreated = rulesMap.get("immersion_created");
+    const ruleOverdue = rulesMap.get("task_overdue_daily");
+    const ruleDueSoon = rulesMap.get("task_due_soon_weekly");
+    const ruleRisk = rulesMap.get("immersion_risk_daily");
+
+    const hasLog = await tableExists(supabaseAdmin, "email_notification_log");
+
+    async function alreadySent({ rule_key, to, subject }) {
+      if (!hasLog) return false;
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const q = await supabaseAdmin
+        .from("email_notification_log")
+        .select("id")
+        .eq("rule_key", rule_key)
+        .eq("to_email", to)
+        .eq("subject", subject)
+        .gte("created_at", since)
+        .limit(1);
+      if (q.error) return false;
+      return (q.data || []).length > 0;
+    }
+
     // Helper to send + log
     async function sendEmail({ rule_key, to, subject, html, item_count }) {
       const mode = enableSend ? "send" : "preview";
@@ -204,6 +220,59 @@ export default async function handler(req, res) {
       } catch (e) {
         failures += 1;
         await logSend(supabaseAdmin, { ...payloadBase, status: "failed", error: e?.message || "Erro" });
+      }
+    }
+
+    // RULE 0: immersion_created (event)
+    if (ruleImmersionCreated?.is_enabled !== false) {
+      const lookback = Number(ruleImmersionCreated?.lookback_minutes || 60);
+      const sinceIso = new Date(Date.now() - lookback * 60 * 1000).toISOString();
+      const tpl = templates?.immersion_created || {};
+
+      // Best-effort: se sua tabela 'immersions' não tiver created_at, esta regra simplesmente não dispara.
+      const { data: newImmersions, error: imErr } = await supabaseAdmin
+        .from("immersions")
+        .select("id,immersion_name,created_at,educational_consultant,instructional_designer")
+        .gte("created_at", sinceIso)
+        .order("created_at", { ascending: false })
+        .limit(25);
+
+      if (!imErr && Array.isArray(newImmersions) && newImmersions.length) {
+        for (const im of newImmersions) {
+          const consultant = await getProfile(im?.educational_consultant);
+          const designer = await getProfile(im?.instructional_designer);
+          const recipients = [consultant, designer].filter((p, idx, arr) => p?.email && arr.findIndex((x) => x?.email === p.email) === idx);
+
+          for (const p of recipients) {
+            const subject = renderTemplate(tpl?.subject || "Sparks • Nova imersão criada: \"{{immersion}}\" — {{date}}", {
+              count: 1,
+              date: todayStr,
+              name: p?.name || "",
+              app: process.env.APP_URL || "",
+              immersion: im?.immersion_name || "",
+            });
+
+            if (await alreadySent({ rule_key: "immersion_created", to: p.email, subject })) continue;
+
+            const intro = renderTemplate(tpl?.intro || "Olá {{name}}, uma nova imersão foi criada e já está disponível.", {
+              count: 1,
+              date: todayStr,
+              name: p?.name || "",
+              app: process.env.APP_URL || "",
+              immersion: im?.immersion_name || "",
+            });
+            const footer = renderTemplate(tpl?.footer || "Acesse o sistema: {{app}}", {
+              count: 1,
+              date: todayStr,
+              name: p?.name || "",
+              app: process.env.APP_URL || "",
+              immersion: im?.immersion_name || "",
+            });
+
+            const html = makeEmailHtml({ title: subject, intro, rows: [], footer });
+            await sendEmail({ rule_key: "immersion_created", to: p.email, subject, html, item_count: 1 });
+          }
+        }
       }
     }
 

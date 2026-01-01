@@ -7,25 +7,19 @@ function clampText(v) {
   return String(v ?? "").replace(/\r\n/g, "\n");
 }
 
-function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
+function RuleCard({ rule, template, onChangeRule, onChangeTemplate, canEdit, onResetTemplate }) {
   const key = rule.rule_key;
-  const cfg = rule.config || {};
-
-  const setConfig = (patch) => {
-    onChangeRule(key, { config: { ...cfg, ...patch } });
-  };
-
-  const cadenceOptions = [
-    { v: "event", l: "Evento" },
-    { v: "daily", l: "Diário" },
-    { v: "weekly", l: "Semanal" },
-  ];
   return (
     <div className="card" style={{ marginTop: 12 }}>
       <div className="row" style={{ alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div>
           <div style={{ fontWeight: 800 }}>{rule.label || key}</div>
           <div className="muted" style={{ fontSize: 13 }}>{key}</div>
+          {rule.description ? (
+            <div className="muted" style={{ fontSize: 13, marginTop: 6, lineHeight: 1.35 }}>
+              {rule.description}
+            </div>
+          ) : null}
         </div>
 
         <label className="chip" style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -33,30 +27,24 @@ function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
             type="checkbox"
             checked={rule.is_enabled !== false}
             onChange={(e) => onChangeRule(key, { is_enabled: e.target.checked })}
+            disabled={!canEdit}
           />
           <span>Ativa</span>
         </label>
       </div>
-
-      {rule.description ? (
-        <div className="muted" style={{ marginTop: 10, fontSize: 13, lineHeight: 1.4 }}>
-          {rule.description}
-        </div>
-      ) : null}
 
       <div className="grid2" style={{ marginTop: 12 }}>
         <div>
           <label className="label">Cadência</label>
           <select
             className="input"
-            value={rule.cadence || "daily"}
+            value={rule.cadence || "event"}
             onChange={(e) => onChangeRule(key, { cadence: e.target.value })}
+            disabled={!canEdit}
           >
-            {cadenceOptions.map((o) => (
-              <option key={o.v} value={o.v}>
-                {o.l}
-              </option>
-            ))}
+            <option value="event">Evento (quando ocorrer)</option>
+            <option value="daily">Diária</option>
+            <option value="weekly">Semanal</option>
           </select>
         </div>
         <div>
@@ -64,65 +52,17 @@ function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
           <input
             className="input"
             type="number"
-            min={0}
-            value={Number.isFinite(rule.lookback_minutes) ? rule.lookback_minutes : ""}
+            min={1}
+            step={1}
+            value={Number(rule.lookback_minutes ?? 60)}
             onChange={(e) => onChangeRule(key, { lookback_minutes: Number(e.target.value || 0) })}
-            placeholder="ex: 60"
+            disabled={!canEdit}
           />
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            {rule.rule ? `Regra: ${rule.rule}` : ""}
+          </div>
         </div>
       </div>
-
-      {key === "task_due_soon_weekly" ? (
-        <div className="grid2" style={{ marginTop: 12 }}>
-          <div>
-            <label className="label">Dia da semana (1=Seg ... 7=Dom)</label>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={7}
-              value={cfg.weekly_day ?? 1}
-              onChange={(e) => setConfig({ weekly_day: Number(e.target.value || 1) })}
-            />
-          </div>
-          <div>
-            <label className="label">Janela (dias)</label>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={30}
-              value={cfg.due_days ?? 7}
-              onChange={(e) => setConfig({ due_days: Number(e.target.value || 7) })}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {key === "immersion_risk_daily" ? (
-        <div className="grid2" style={{ marginTop: 12 }}>
-          <div>
-            <label className="label">Limiar (atrasadas) — Planejamento</label>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              value={cfg.min_overdue ?? 5}
-              onChange={(e) => setConfig({ min_overdue: Number(e.target.value || 5) })}
-            />
-          </div>
-          <div>
-            <label className="label">Limiar (atrasadas) — Execução</label>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              value={cfg.min_overdue_exec ?? 3}
-              onChange={(e) => setConfig({ min_overdue_exec: Number(e.target.value || 3) })}
-            />
-          </div>
-        </div>
-      ) : null}
 
       <div className="grid2" style={{ marginTop: 12 }}>
         <div>
@@ -132,6 +72,7 @@ function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
             value={clampText(template?.subject)}
             onChange={(e) => onChangeTemplate(key, { subject: e.target.value })}
             placeholder="Ex: Sparks • {{count}} pendências — {{date}}"
+            disabled={!canEdit}
           />
         </div>
         <div>
@@ -151,6 +92,7 @@ function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
             value={clampText(template?.intro)}
             onChange={(e) => onChangeTemplate(key, { intro: e.target.value })}
             placeholder="Ex: Olá {{name}}, aqui estão suas pendências…"
+            disabled={!canEdit}
           />
         </div>
         <div>
@@ -161,8 +103,15 @@ function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
             value={clampText(template?.footer)}
             onChange={(e) => onChangeTemplate(key, { footer: e.target.value })}
             placeholder="Ex: Acesse: {{app}}"
+            disabled={!canEdit}
           />
         </div>
+      </div>
+
+      <div className="row" style={{ marginTop: 12, justifyContent: "flex-end" }}>
+        <button className="btn" type="button" onClick={() => onResetTemplate?.(key)} disabled={!canEdit}>
+          Reset padrão
+        </button>
       </div>
     </div>
   );
@@ -178,8 +127,39 @@ export default function NotificacoesEmailPage() {
   const [rules, setRules] = useState([]);
   const [templates, setTemplates] = useState({});
   const [logs, setLogs] = useState([]);
+  const [defaults, setDefaults] = useState({});
 
   const isAdmin = profile?.role === "admin";
+
+  const defaultTemplates = useMemo(
+    () => ({
+      immersion_created: {
+        subject: 'Sparks • Nova imersão criada: "{{immersion}}" — {{date}}',
+        intro:
+          'Olá {{name}}, uma nova imersão foi criada e já está disponível para acompanhamento.\n\nImersão: "{{immersion}}".',
+        footer: 'Acesse o sistema para conferir detalhes e tarefas: {{app}}',
+      },
+      task_overdue_daily: {
+        subject: "Sparks • {{count}} tarefa(s) atrasada(s) — {{date}}",
+        intro:
+          "Olá {{name}}, identificamos {{count}} tarefa(s) atrasada(s). Priorize as entregas abaixo para normalizar o plano.",
+        footer: "Acesse o painel para atualizar o status e replanejar prazos: {{app}}",
+      },
+      task_due_soon_weekly: {
+        subject: "Sparks • {{count}} tarefa(s) vencendo em até 7 dias — {{date}}",
+        intro:
+          "Olá {{name}}, estas tarefas vencem nos próximos 7 dias. Revise prazos e garanta as entregas com antecedência.",
+        footer: "Abra suas tarefas e organize o Kanban: {{app}}",
+      },
+      immersion_risk_daily: {
+        subject: 'Sparks • Atenção: risco na imersão "{{immersion}}" — {{count}} atrasadas',
+        intro:
+          'Olá {{name}}, a imersão "{{immersion}}" entrou em status de risco por acúmulo de atrasos ({{count}} tarefa(s)). Recomendo priorizar as pendências críticas hoje.',
+        footer: "Acesse a imersão e trate as pendências: {{app}}",
+      },
+    }),
+    []
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -197,6 +177,7 @@ export default function NotificacoesEmailPage() {
         setRules(data?.rules || []);
         setTemplates(data?.templates || {});
         setLogs(data?.logs || []);
+        setDefaults(data?.templates || {});
       } catch (e) {
         if (!mounted) return;
         setErr(e?.message || "Erro ao carregar configurações.");
@@ -217,6 +198,12 @@ export default function NotificacoesEmailPage() {
     setTemplates((prev) => ({ ...prev, [rule_key]: { ...(prev?.[rule_key] || {}), ...patch } }));
   };
 
+  const onResetTemplate = (rule_key) => {
+    const def = defaultTemplates?.[rule_key];
+    if (!def) return;
+    setTemplates((prev) => ({ ...prev, [rule_key]: { ...(prev?.[rule_key] || {}), ...def } }));
+  };
+
   const onSave = async () => {
     try {
       setErr("");
@@ -228,6 +215,9 @@ export default function NotificacoesEmailPage() {
       });
       const refreshed = await loadEmailNotificationConfig();
       setLogs(refreshed?.logs || []);
+      setRules(refreshed?.rules || []);
+      setTemplates(refreshed?.templates || {});
+      setDefaults(refreshed?.templates || {});
     } catch (e) {
       setErr(e?.message || "Erro ao salvar.");
     } finally {
@@ -315,6 +305,8 @@ export default function NotificacoesEmailPage() {
               template={templates?.[r.rule_key] || {}}
               onChangeRule={onChangeRule}
               onChangeTemplate={onChangeTemplate}
+              canEdit={canEdit}
+              onResetTemplate={onResetTemplate}
             />
           ))}
         </div>
@@ -336,22 +328,16 @@ export default function NotificacoesEmailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {logs.map((l) => {
-                      const rr = (rules || []).find((x) => x.rule_key === l.rule_key);
-                      return (
+                    {logs.map((l) => (
                       <tr key={l.id}>
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString()}</td>
-                        <td>
-                          {rr?.label || l.rule_key}
-                          <div className="muted" style={{ fontSize: 12 }}>{l.rule_key}</div>
-                        </td>
+                        <td>{l.rule_key}</td>
                         <td>{l.mode}</td>
                         <td>{l.to_email}</td>
                         <td>{l.item_count}</td>
                         <td>{l.status}</td>
                       </tr>
-                      );
-                    })}
+                    ))}
                   </tbody>
                 </table>
               </div>
