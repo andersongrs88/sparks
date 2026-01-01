@@ -1,292 +1,365 @@
 import { useEffect, useMemo, useState } from "react";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
-import { adminFetch } from "../../lib/adminFetch";
+import { loadEmailNotificationConfig, saveEmailNotificationConfig } from "../../lib/emailNotificationAdminApi";
 
-const DEFAULTS = {
-  task_overdue_daily: {
-    subject: "Sparks • {{count}} tarefa(s) atrasada(s) — {{date}}",
-    intro: "Olá {{name}}, você tem tarefas atrasadas. Priorize as entregas listadas abaixo:",
-    footer: "Acesse: {{app}}"
-  },
-  task_due_soon_weekly: {
-    subject: "Sparks • {{count}} tarefa(s) vencem em até 7 dias — {{date}}",
-    intro: "Olá {{name}}, estas tarefas vencem em breve (próximos 7 dias):",
-    footer: "Acesse: {{app}}"
-  },
-  immersion_risk_daily: {
-    subject: "Sparks • Risco na imersão \"{{immersion}}\" — {{count}} atrasadas",
-    intro: "Olá {{name}}, a imersão está com atrasos relevantes. Priorize as entregas abaixo:",
-    footer: "Acesse: {{app}}"
-  }
-};
+function clampText(v) {
+  return String(v ?? "").replace(/\r\n/g, "\n");
+}
 
-function normTemplate(kind, t) {
-  const d = DEFAULTS[kind] || {};
-  return {
-    kind,
-    subject: t?.subject ?? d.subject ?? "",
-    intro: t?.intro ?? d.intro ?? "",
-    footer: t?.footer ?? d.footer ?? ""
+function RuleCard({ rule, template, onChangeRule, onChangeTemplate }) {
+  const key = rule.rule_key;
+  const cfg = rule.config || {};
+
+  const setConfig = (patch) => {
+    onChangeRule(key, { config: { ...cfg, ...patch } });
   };
+
+  const cadenceOptions = [
+    { v: "event", l: "Evento" },
+    { v: "daily", l: "Diário" },
+    { v: "weekly", l: "Semanal" },
+  ];
+  return (
+    <div className="card" style={{ marginTop: 12 }}>
+      <div className="row" style={{ alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 800 }}>{rule.label || key}</div>
+          <div className="muted" style={{ fontSize: 13 }}>{key}</div>
+        </div>
+
+        <label className="chip" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={rule.is_enabled !== false}
+            onChange={(e) => onChangeRule(key, { is_enabled: e.target.checked })}
+          />
+          <span>Ativa</span>
+        </label>
+      </div>
+
+      {rule.description ? (
+        <div className="muted" style={{ marginTop: 10, fontSize: 13, lineHeight: 1.4 }}>
+          {rule.description}
+        </div>
+      ) : null}
+
+      <div className="grid2" style={{ marginTop: 12 }}>
+        <div>
+          <label className="label">Cadência</label>
+          <select
+            className="input"
+            value={rule.cadence || "daily"}
+            onChange={(e) => onChangeRule(key, { cadence: e.target.value })}
+          >
+            {cadenceOptions.map((o) => (
+              <option key={o.v} value={o.v}>
+                {o.l}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Lookback (minutos)</label>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            value={Number.isFinite(rule.lookback_minutes) ? rule.lookback_minutes : ""}
+            onChange={(e) => onChangeRule(key, { lookback_minutes: Number(e.target.value || 0) })}
+            placeholder="ex: 60"
+          />
+        </div>
+      </div>
+
+      {key === "task_due_soon_weekly" ? (
+        <div className="grid2" style={{ marginTop: 12 }}>
+          <div>
+            <label className="label">Dia da semana (1=Seg ... 7=Dom)</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={7}
+              value={cfg.weekly_day ?? 1}
+              onChange={(e) => setConfig({ weekly_day: Number(e.target.value || 1) })}
+            />
+          </div>
+          <div>
+            <label className="label">Janela (dias)</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={30}
+              value={cfg.due_days ?? 7}
+              onChange={(e) => setConfig({ due_days: Number(e.target.value || 7) })}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {key === "immersion_risk_daily" ? (
+        <div className="grid2" style={{ marginTop: 12 }}>
+          <div>
+            <label className="label">Limiar (atrasadas) — Planejamento</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={cfg.min_overdue ?? 5}
+              onChange={(e) => setConfig({ min_overdue: Number(e.target.value || 5) })}
+            />
+          </div>
+          <div>
+            <label className="label">Limiar (atrasadas) — Execução</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={cfg.min_overdue_exec ?? 3}
+              onChange={(e) => setConfig({ min_overdue_exec: Number(e.target.value || 3) })}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid2" style={{ marginTop: 12 }}>
+        <div>
+          <label className="label">Assunto</label>
+          <input
+            className="input"
+            value={clampText(template?.subject)}
+            onChange={(e) => onChangeTemplate(key, { subject: e.target.value })}
+            placeholder="Ex: Sparks • {{count}} pendências — {{date}}"
+          />
+        </div>
+        <div>
+          <label className="label">Placeholders</label>
+          <div className="muted" style={{ fontSize: 13, lineHeight: 1.4 }}>
+            {`{{count}}  {{date}}  {{name}}  {{app}}  {{immersion}}`}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid2" style={{ marginTop: 12 }}>
+        <div>
+          <label className="label">Texto inicial</label>
+          <textarea
+            className="textarea"
+            rows={4}
+            value={clampText(template?.intro)}
+            onChange={(e) => onChangeTemplate(key, { intro: e.target.value })}
+            placeholder="Ex: Olá {{name}}, aqui estão suas pendências…"
+          />
+        </div>
+        <div>
+          <label className="label">Rodapé</label>
+          <textarea
+            className="textarea"
+            rows={4}
+            value={clampText(template?.footer)}
+            onChange={(e) => onChangeTemplate(key, { footer: e.target.value })}
+            placeholder="Ex: Acesse: {{app}}"
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function NotificacoesEmailPage() {
-  const { user, profile, role } = useAuth();
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [err, setErr] = useState("");
 
   const [settings, setSettings] = useState({ from_email: "", from_name: "", reply_to: "" });
   const [rules, setRules] = useState([]);
-  const [templates, setTemplates] = useState([]);
+  const [templates, setTemplates] = useState({});
   const [logs, setLogs] = useState([]);
 
-  const isAdmin = String(role || profile?.role || "").toLowerCase() === "admin";
-
-  async function load() {
-    setError("");
-    setLoading(true);
-    try {
-      const data = await adminFetch("/api/admin/email-notification-config");
-      setRules(data.rules || []);
-      setLogs(data.logs || []);
-      setSettings({
-        from_email: data.settings?.from_email || "",
-        from_name: data.settings?.from_name || "",
-        reply_to: data.settings?.reply_to || ""
-      });
-
-      const byKind = new Map((data.templates || []).map((t) => [t.kind, t]));
-      const merged = (data.rules || []).map((r) => normTemplate(r.kind, byKind.get(r.kind)));
-      setTemplates(merged);
-    } catch (e) {
-      setError(e?.message || "Falha ao carregar configurações.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const isAdmin = profile?.role === "admin";
 
   useEffect(() => {
-    if (!user?.id || user.id === "noauth") return;
-    if (!isAdmin) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, isAdmin]);
+    let mounted = true;
+    (async () => {
+      try {
+        setErr("");
+        setLoading(true);
+        const data = await loadEmailNotificationConfig();
+        if (!mounted) return;
+        setSettings({
+          from_email: data?.settings?.from_email || "",
+          from_name: data?.settings?.from_name || "",
+          reply_to: data?.settings?.reply_to || "",
+        });
+        setRules(data?.rules || []);
+        setTemplates(data?.templates || {});
+        setLogs(data?.logs || []);
+      } catch (e) {
+        if (!mounted) return;
+        setErr(e?.message || "Erro ao carregar configurações.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
-  const templatesByKind = useMemo(() => {
-    const m = new Map();
-    for (const t of templates) m.set(t.kind, t);
-    return m;
-  }, [templates]);
+  const canEdit = isAdmin;
 
-  async function onSave() {
-    setError("");
-    setSaving(true);
+  const onChangeRule = (rule_key, patch) => {
+    setRules((prev) => prev.map((r) => (r.rule_key === rule_key ? { ...r, ...patch } : r)));
+  };
+
+  const onChangeTemplate = (rule_key, patch) => {
+    setTemplates((prev) => ({ ...prev, [rule_key]: { ...(prev?.[rule_key] || {}), ...patch } }));
+  };
+
+  const onSave = async () => {
     try {
-      await adminFetch("/api/admin/email-notification-config", {
-        method: "POST",
-        body: { settings, rules, templates }
+      setErr("");
+      setSaving(true);
+      await saveEmailNotificationConfig({
+        settings,
+        rules,
+        templates,
       });
-      await load();
+      const refreshed = await loadEmailNotificationConfig();
+      setLogs(refreshed?.logs || []);
     } catch (e) {
-      setError(e?.message || "Falha ao salvar.");
+      setErr(e?.message || "Erro ao salvar.");
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  if (!user?.id || user.id === "noauth") {
-    return (
-      <Layout title="Notificações (E-mail)">
-        <div className="card" style={{ padding: 16 }}>
-          <h2>Notificações (E-mail)</h2>
-          <p>Você precisa estar logado para acessar esta página.</p>
-        </div>
-      </Layout>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <Layout title="Notificações (E-mail)">
-        <div className="card" style={{ padding: 16 }}>
-          <h2>Notificações (E-mail)</h2>
-          <p>Apenas ADMIN pode acessar esta página.</p>
-        </div>
-      </Layout>
-    );
-  }
+  const headerRight = (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button className="btn" type="button" onClick={() => location.reload()} disabled={loading || saving}>
+        Recarregar
+      </button>
+      <button className="btn primary" type="button" onClick={onSave} disabled={!canEdit || loading || saving}>
+        {saving ? "Salvando..." : "Salvar"}
+      </button>
+    </div>
+  );
 
   return (
-    <Layout title="Notificações (E-mail)">
+    <Layout title="Notificações (E-mail)" headerRight={headerRight}>
       <div className="page">
-        <div className="pageHeader">
-          <div>
-            <h1>Notificações (E-mail)</h1>
-            <div className="muted">Configure remetente e templates. As regras são controladas pelo banco (kind/cadence/lookback).</div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn" type="button" onClick={load} disabled={loading || saving}>Atualizar</button>
-            <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
-              {saving ? "Salvando..." : "Salvar"}
-            </button>
-          </div>
+        <h1 style={{ marginTop: 0 }}>Notificações (E-mail)</h1>
+        <div className="muted" style={{ marginTop: 4 }}>
+          Configure remetente e modelos de e-mail para notificações automáticas. Somente ADMIN.
         </div>
 
-        {error ? (
-          <div className="card" style={{ padding: 12, borderColor: "#ffb4b4" }}>
-            <b>Erro:</b> {error}
+        {err ? <div className="alert" style={{ marginTop: 12 }}>{err}</div> : null}
+
+        {!isAdmin ? (
+          <div className="card" style={{ marginTop: 12 }}>
+            <b>Acesso restrito.</b>
+            <div className="muted">Apenas ADMIN pode acessar esta tela.</div>
           </div>
         ) : null}
 
-        <div className="grid2">
-          <div className="card" style={{ padding: 16 }}>
-            <h2>Remetente</h2>
-            <div className="formGrid">
-              <label className="label">
-                From e-mail
-                <input className="input" value={settings.from_email} onChange={(e) => setSettings((s) => ({ ...s, from_email: e.target.value }))} placeholder="ex: notificacoes@seudominio.com" />
-              </label>
-              <label className="label">
-                From nome
-                <input className="input" value={settings.from_name} onChange={(e) => setSettings((s) => ({ ...s, from_name: e.target.value }))} placeholder="ex: Sparks" />
-              </label>
-              <label className="label">
-                Reply-to
-                <input className="input" value={settings.reply_to} onChange={(e) => setSettings((s) => ({ ...s, reply_to: e.target.value }))} placeholder="ex: suporte@seudominio.com" />
-              </label>
+        <div className="card" style={{ marginTop: 12, opacity: loading ? 0.7 : 1 }}>
+          <h2 style={{ marginTop: 0 }}>Remetente</h2>
+          <div className="grid2">
+            <div>
+              <label className="label">From e-mail</label>
+              <input
+                className="input"
+                value={settings.from_email}
+                onChange={(e) => setSettings((p) => ({ ...p, from_email: e.target.value }))}
+                placeholder="ex: notificacoes@suaempresa.com"
+                disabled={!canEdit}
+              />
             </div>
-            <div className="muted" style={{ marginTop: 8 }}>
-              Se vazio, o sistema usa fallback via ENV <code>EMAIL_FROM</code> / <code>SMTP_USER</code>.
+            <div>
+              <label className="label">From nome</label>
+              <input
+                className="input"
+                value={settings.from_name}
+                onChange={(e) => setSettings((p) => ({ ...p, from_name: e.target.value }))}
+                placeholder="ex: Sparks"
+                disabled={!canEdit}
+              />
             </div>
           </div>
 
-          <div className="card" style={{ padding: 16 }}>
-            <h2>Regras</h2>
-            {loading ? <div className="muted">Carregando...</div> : null}
-            <div style={{ display: "grid", gap: 10 }}>
-              {(rules || []).map((r) => (
-                <div key={r.kind} className="ruleRow">
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{r.kind}</div>
-                    <div className="muted">cadence: {r.cadence} · lookback: {r.lookback_minutes} min</div>
-                  </div>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={!!r.is_enabled}
-                      onChange={(e) => {
-                        const v = e.target.checked;
-                        setRules((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, is_enabled: v } : x)));
-                      }}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              ))}
-            </div>
+          <div style={{ marginTop: 12 }}>
+            <label className="label">Reply-to (opcional)</label>
+            <input
+              className="input"
+              value={settings.reply_to}
+              onChange={(e) => setSettings((p) => ({ ...p, reply_to: e.target.value }))}
+              placeholder="ex: suporte@suaempresa.com"
+              disabled={!canEdit}
+            />
+          </div>
+
+          <div className="muted" style={{ marginTop: 10, fontSize: 13 }}>
+            Se estiver vazio, o sistema usa EMAIL_FROM ou SMTP_USER do ambiente.
           </div>
         </div>
 
-        <div className="card" style={{ padding: 16 }}>
-          <h2>Templates</h2>
-          <div className="muted" style={{ marginBottom: 12 }}>
-            Placeholders: <code>{"{{count}}"}</code> <code>{"{{date}}"}</code> <code>{"{{name}}"}</code> <code>{"{{app}}"}</code> <code>{"{{immersion}}"}</code>
-          </div>
+        <div style={{ marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Regras e templates</h2>
+          {loading ? <div className="muted">Carregando...</div> : null}
 
-          <div style={{ display: "grid", gap: 16 }}>
-            {(rules || []).map((r) => {
-              const t = templatesByKind.get(r.kind) || normTemplate(r.kind, null);
-              return (
-                <div key={r.kind} className="card" style={{ padding: 12, borderStyle: "dashed" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                    <div style={{ fontWeight: 800 }}>{r.kind}</div>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => {
-                        const d = DEFAULTS[r.kind];
-                        if (!d) return;
-                        setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, ...d } : x)));
-                      }}
-                    >
-                      Reset padrão
-                    </button>
-                  </div>
-
-                  <label className="label" style={{ marginTop: 10 }}>
-                    Assunto
-                    <input
-                      className="input"
-                      value={t.subject}
-                      onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, subject: e.target.value } : x)))}
-                    />
-                  </label>
-
-                  <label className="label" style={{ marginTop: 10 }}>
-                    Intro (texto)
-                    <textarea
-                      className="textarea"
-                      value={t.intro}
-                      onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, intro: e.target.value } : x)))}
-                      rows={3}
-                    />
-                  </label>
-
-                  <label className="label" style={{ marginTop: 10 }}>
-                    Rodapé (texto)
-                    <textarea
-                      className="textarea"
-                      value={t.footer}
-                      onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, footer: e.target.value } : x)))}
-                      rows={2}
-                    />
-                  </label>
-                </div>
-              );
-            })}
-          </div>
+          {(rules || []).map((r) => (
+            <RuleCard
+              key={r.rule_key}
+              rule={r}
+              template={templates?.[r.rule_key] || {}}
+              onChangeRule={onChangeRule}
+              onChangeTemplate={onChangeTemplate}
+            />
+          ))}
         </div>
 
-        <div className="card" style={{ padding: 16 }}>
-          <h2>Logs recentes</h2>
-          <div className="muted" style={{ marginBottom: 12 }}>Últimos 50 registros do disparo do cron (preview/send).</div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Kind</th>
-                  <th>Para</th>
-                  <th>Itens</th>
-                  <th>Modo</th>
-                  <th>Status</th>
-                  <th>Erro</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(logs || []).map((l) => (
-                  <tr key={l.id}>
-                    <td style={{ whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString()}</td>
-                    <td>{l.kind}</td>
-                    <td>{l.to_email || "-"}</td>
-                    <td>{l.item_count}</td>
-                    <td>{l.mode}</td>
-                    <td>{l.status}</td>
-                    <td style={{ maxWidth: 360, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.error || ""}</td>
-                  </tr>
-                ))}
-                {!logs?.length ? (
-                  <tr>
-                    <td colSpan={7} className="muted">Sem logs.</td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+        <div style={{ marginTop: 18 }}>
+          <h2 style={{ marginTop: 0 }}>Logs recentes</h2>
+          <div className="card">
+            {(logs || []).length ? (
+              <div style={{ overflowX: "auto" }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Quando</th>
+                      <th>Regra</th>
+                      <th>Modo</th>
+                      <th>Destinatário</th>
+                      <th>Itens</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((l) => {
+                      const rr = (rules || []).find((x) => x.rule_key === l.rule_key);
+                      return (
+                      <tr key={l.id}>
+                        <td style={{ whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString()}</td>
+                        <td>
+                          {rr?.label || l.rule_key}
+                          <div className="muted" style={{ fontSize: 12 }}>{l.rule_key}</div>
+                        </td>
+                        <td>{l.mode}</td>
+                        <td>{l.to_email}</td>
+                        <td>{l.item_count}</td>
+                        <td>{l.status}</td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="muted">Nenhum log ainda.</div>
+            )}
           </div>
         </div>
-
       </div>
     </Layout>
   );
