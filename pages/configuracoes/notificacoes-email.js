@@ -377,7 +377,10 @@ export default function NotificacoesEmailPage() {
               })}
             </div>
           </div>
-<div className="card" style={{ padding: 16 }}>
+
+          </div>
+
+          <div className="card" style={{ padding: 16 }}>
           <h2>Logs recentes</h2>
           <div className="muted" style={{ marginBottom: 12 }}>Últimos 50 registros do disparo do cron (preview/send).</div>
           <div style={{ overflowX: "auto" }}>
