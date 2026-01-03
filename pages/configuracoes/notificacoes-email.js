@@ -95,13 +95,13 @@ export default function NotificacoesEmailPage() {
   const { user, profile, role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [senderOpen, setSenderOpen] = useState(true);
   const [error, setError] = useState("");
 
   const [settings, setSettings] = useState({ from_email: "", from_name: "", reply_to: "" });
   const [rules, setRules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [senderOpen, setSenderOpen] = useState(true);
 
   const isAdmin = String(role || profile?.role || "").toLowerCase() === "admin";
 
@@ -110,7 +110,14 @@ export default function NotificacoesEmailPage() {
     setLoading(true);
     try {
       const data = await adminFetch("/api/admin/email-notification-config");
-      setRules(data.rules || []);
+
+      const rulesNorm = (data.rules || []).map((r) => ({
+        ...r,
+        // compat com schema novo (rule_key) e legado (kind)
+        kind: r.kind || r.rule_key
+      }));
+
+      setRules(rulesNorm);
       setLogs(data.logs || []);
       setSettings({
         from_email: data.settings?.from_email || "",
@@ -118,8 +125,13 @@ export default function NotificacoesEmailPage() {
         reply_to: data.settings?.reply_to || ""
       });
 
-      const byKind = new Map((data.templates || []).map((t) => [t.kind, t]));
-      const merged = (data.rules || []).map((r) => normTemplate(r.kind, byKind.get(r.kind)));
+      // templates podem vir como objeto (novo) ou array (legado)
+      const templatesArr = Array.isArray(data.templates)
+        ? data.templates
+        : Object.entries(data.templates || {}).map(([kind, t]) => ({ kind, ...(t || {}) }));
+
+      const byKind = new Map((templatesArr || []).map((t) => [t.kind, t]));
+      const merged = (rulesNorm || []).map((r) => normTemplate(r.kind, byKind.get(r.kind)));
       setTemplates(merged);
     } catch (e) {
       setError(e?.message || "Falha ao carregar configurações.");
@@ -145,9 +157,18 @@ export default function NotificacoesEmailPage() {
     setError("");
     setSaving(true);
     try {
+      const templatesObj = (templates || []).reduce((acc, t) => {
+        acc[t.kind] = {
+          subject: t.subject || "",
+          intro: t.intro || "",
+          footer: t.footer || ""
+        };
+        return acc;
+      }, {});
+
       await adminFetch("/api/admin/email-notification-config", {
         method: "POST",
-        body: { settings, rules, templates }
+        body: { settings, rules, templates: templatesObj }
       });
       await load();
     } catch (e) {
@@ -201,23 +222,22 @@ export default function NotificacoesEmailPage() {
           </div>
         ) : null}
 
-        <div className="grid2" style={{ gridTemplateColumns: "1fr" }}>
+        <div style={{ display: "grid", gap: 16 }}>
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0 }}>Remetente</h2>
               <button
-                type="button"
                 className="btn"
+                type="button"
                 onClick={() => setSenderOpen((v) => !v)}
                 aria-expanded={senderOpen}
-                aria-controls="sender-panel"
+                aria-controls="sender-section"
               >
                 {senderOpen ? "Recolher" : "Expandir"}
               </button>
             </div>
-            <div id="sender-panel" hidden={!senderOpen}>
 
-            <div className="formGrid">
+            <div id="sender-section" style={{ marginTop: 12, display: senderOpen ? "grid" : "none", gap: 12 }}>
               <label className="label">
                 From e-mail
                 <input className="input" value={settings.from_email} onChange={(e) => setSettings((s) => ({ ...s, from_email: e.target.value }))} placeholder="ex: notificacoes@seudominio.com" />
@@ -233,7 +253,6 @@ export default function NotificacoesEmailPage() {
             </div>
             <div className="muted" style={{ marginTop: 8 }}>
               Se vazio, o sistema usa fallback via ENV <code>EMAIL_FROM</code> / <code>SMTP_USER</code>.
-            </div>
             </div>
           </div>
 
@@ -365,7 +384,7 @@ export default function NotificacoesEmailPage() {
                           Texto principal exibido no e-mail. Use placeholders para personalizar.
                         </div>
                         <textarea
-                          className="input" style={{ minHeight: 140, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
+                          className="input"
                           value={t.intro}
                           onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, intro: e.target.value } : x)))}
                           rows={6}
@@ -379,7 +398,7 @@ export default function NotificacoesEmailPage() {
                           Texto exibido no final do e-mail. Ideal para links e orientações finais.
                         </div>
                         <textarea
-                          className="input" style={{ minHeight: 140, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
+                          className="input"
                           value={t.footer}
                           onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, footer: e.target.value } : x)))}
                           rows={3}
