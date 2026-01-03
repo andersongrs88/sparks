@@ -1118,6 +1118,12 @@ select.input{
 /* Header actions (evita desalinhamento em telas de detalhe) */
 .pageHeaderActions { display: flex; justify-content: flex-end; width: 100%; }
 
+.pageHeaderActionsWrap { gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 520px) {
+  .pageHeaderActionsWrap .btn { width: 100%; }
+}
+
 /* Segmented control */
 .segmented {
   display: inline-flex;

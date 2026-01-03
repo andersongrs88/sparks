@@ -117,7 +117,10 @@ export default function NotificacoesEmailPage() {
         reply_to: data.settings?.reply_to || ""
       });
 
-      const byKind = new Map((data.templates || []).map((t) => [t.kind, t]));
+      const templatesArr = Array.isArray(data.templates)
+        ? data.templates
+        : (data.templates && typeof data.templates === "object" ? Object.values(data.templates) : []);
+      const byKind = new Map(templatesArr.map((t) => [t.kind, t]));
       const merged = (data.rules || []).map((r) => normTemplate(r.kind, byKind.get(r.kind)));
       setTemplates(merged);
     } catch (e) {
@@ -186,7 +189,7 @@ export default function NotificacoesEmailPage() {
             <h1>Notificações (E-mail)</h1>
             <div className="muted">Configure remetente e templates. As regras são controladas pelo banco (kind/cadence/lookback).</div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="pageHeaderActions pageHeaderActionsWrap">
             <button className="btn" type="button" onClick={load} disabled={loading || saving}>Atualizar</button>
             <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
               {saving ? "Salvando..." : "Salvar"}
@@ -243,14 +246,14 @@ export default function NotificacoesEmailPage() {
 
             {loading ? <div className="muted" style={{ marginTop: 10 }}>Carregando...</div> : null}
 
-            <div className="card" style={{ padding: 12, marginTop: 14, background: "var(--bg-soft, #f7f8fb)" }}>
+            <div className="card" style={{ padding: 12, marginTop: 14, background: "var(--card)" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Variáveis disponíveis (placeholders)</div>
               <div className="muted" style={{ marginBottom: 10 }}>
                 Use estas variáveis no assunto, no texto inicial e no rodapé para inserir informações automaticamente.
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                 {PLACEHOLDERS.map((p) => (
-                  <span key={p.key} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 999, background: "#fff" }} title={p.label}>
+                  <span key={p.key} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "6px 10px", border: "1px solid var(--line)", borderRadius: 999, background: "var(--card)" }} title={p.label}>
                     <code style={{ fontWeight: 800 }}>{p.key}</code>
                     <span className="muted" style={{ marginLeft: 8 }}>{p.label}</span>
                   </span>
