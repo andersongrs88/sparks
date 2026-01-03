@@ -95,8 +95,8 @@ export default function NotificacoesEmailPage() {
   const { user, profile, role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [senderOpen, setSenderOpen] = useState(true);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
 
   const [settings, setSettings] = useState({ from_email: "", from_name: "", reply_to: "" });
   const [rules, setRules] = useState([]);
@@ -118,10 +118,7 @@ export default function NotificacoesEmailPage() {
         reply_to: data.settings?.reply_to || ""
       });
 
-      const templatesArr = Array.isArray(data.templates)
-        ? data.templates
-        : (data.templates && typeof data.templates === "object" ? Object.values(data.templates) : []);
-      const byKind = new Map(templatesArr.map((t) => [t.kind, t]));
+      const byKind = new Map((data.templates || []).map((t) => [t.kind, t]));
       const merged = (data.rules || []).map((r) => normTemplate(r.kind, byKind.get(r.kind)));
       setTemplates(merged);
     } catch (e) {
@@ -143,16 +140,6 @@ export default function NotificacoesEmailPage() {
     for (const t of templates) m.set(t.kind, t);
     return m;
   }, [templates]);
-
-  const filteredRules = useMemo(() => {
-    const q = String(query || "").trim().toLowerCase();
-    if (!q) return rules || [];
-    return (rules || []).filter((r) => {
-      const meta = getRuleMeta(r.kind);
-      const hay = `${r.kind} ${meta.title} ${meta.feature}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [rules, query]);
 
   async function onSave() {
     setError("");
@@ -198,11 +185,9 @@ export default function NotificacoesEmailPage() {
         <div className="pageHeader">
           <div>
             <h1>Notificações (E-mail)</h1>
-            <div className="muted">
-              1) Defina o remetente. 2) Ative/desative regras. 3) Ajuste o texto dos templates. As cadências e janelas (lookback) são controladas pelo banco.
-            </div>
+            <div className="muted">Configure remetente e templates. As regras são controladas pelo banco (kind/cadence/lookback).</div>
           </div>
-          <div className="pageHeaderActions pageHeaderActionsWrap">
+          <div style={{ display: "flex", gap: 8 }}>
             <button className="btn" type="button" onClick={load} disabled={loading || saving}>Atualizar</button>
             <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
               {saving ? "Salvando..." : "Salvar"}
@@ -216,9 +201,22 @@ export default function NotificacoesEmailPage() {
           </div>
         ) : null}
 
-        <div className="grid2">
+        <div className="grid2" style={{ gridTemplateColumns: "1fr" }}>
           <div className="card" style={{ padding: 16 }}>
-            <h2>Remetente</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <h2 style={{ margin: 0 }}>Remetente</h2>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setSenderOpen((v) => !v)}
+                aria-expanded={senderOpen}
+                aria-controls="sender-panel"
+              >
+                {senderOpen ? "Recolher" : "Expandir"}
+              </button>
+            </div>
+            <div id="sender-panel" hidden={!senderOpen}>
+
             <div className="formGrid">
               <label className="label">
                 From e-mail
@@ -236,6 +234,7 @@ export default function NotificacoesEmailPage() {
             <div className="muted" style={{ marginTop: 8 }}>
               Se vazio, o sistema usa fallback via ENV <code>EMAIL_FROM</code> / <code>SMTP_USER</code>.
             </div>
+            </div>
           </div>
 
           <div className="card" style={{ padding: 16 }}>
@@ -243,33 +242,30 @@ export default function NotificacoesEmailPage() {
               <div>
                 <h2 style={{ marginBottom: 6 }}>Regras e templates</h2>
                 <div className="muted">
-                  Ative/desative notificações e edite o conteúdo do e-mail. Dica: use a busca para encontrar rapidamente uma regra.
+                  Configure quais notificações serão enviadas e edite o conteúdo do e-mail. As variáveis (placeholders) permitem personalizar o texto por usuário e imersão.
                 </div>
               </div>
 
-              <div style={{ minWidth: 240, flex: "1 1 260px", maxWidth: 420 }}>
-                <label className="label" style={{ margin: 0 }}>
-                  <span className="muted" style={{ fontSize: 12 }}>Buscar regra</span>
-                  <input
-                    className="input"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Ex.: tarefas, risco, weekly..."
-                  />
-                </label>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button className="btn" type="button" onClick={load} disabled={loading || saving}>
+                  Atualizar
+                </button>
+                <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
+                  {saving ? "Salvando..." : "Salvar alterações"}
+                </button>
               </div>
             </div>
 
             {loading ? <div className="muted" style={{ marginTop: 10 }}>Carregando...</div> : null}
 
-            <div className="card" style={{ padding: 12, marginTop: 14, background: "var(--card)" }}>
+            <div className="card" style={{ padding: 12, marginTop: 14, background: "var(--bg-soft, #f7f8fb)" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Variáveis disponíveis (placeholders)</div>
               <div className="muted" style={{ marginBottom: 10 }}>
                 Use estas variáveis no assunto, no texto inicial e no rodapé para inserir informações automaticamente.
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                 {PLACEHOLDERS.map((p) => (
-                  <span key={p.key} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "6px 10px", border: "1px solid var(--line)", borderRadius: 999, background: "var(--card)" }} title={p.label}>
+                  <span key={p.key} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 999, background: "#fff" }} title={p.label}>
                     <code style={{ fontWeight: 800 }}>{p.key}</code>
                     <span className="muted" style={{ marginLeft: 8 }}>{p.label}</span>
                   </span>
@@ -278,94 +274,78 @@ export default function NotificacoesEmailPage() {
             </div>
 
             <div style={{ display: "grid", gap: 16, marginTop: 14 }}>
-              {(filteredRules || []).map((r) => {
+              {(rules || []).map((r) => {
                 const meta = getRuleMeta(r.kind);
                 const t = templatesByKind.get(r.kind) || normTemplate(r.kind, null);
 
-                const statusLabel = r.is_enabled ? "Ativa" : "Desativada";
-                const statusStyle = {
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 10px",
-                  border: "1px solid var(--line)",
-                  borderRadius: 999,
-                  background: "var(--card)",
-                  fontWeight: 800,
-                  fontSize: 12
-                };
-
                 return (
-                  <details key={r.kind} className="card" style={{ padding: 16 }}>
-                    <summary style={{ listStyle: "none", cursor: "pointer" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                        <div>
-                          <div style={{ fontSize: 18, fontWeight: 900, lineHeight: 1.1 }}>{meta.title}</div>
-                          <div className="muted" style={{ marginTop: 4 }}>
-                            <code>{r.kind}</code>
-                          </div>
+                  <div key={r.kind} className="card" style={{ padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 900, lineHeight: 1.1 }}>{meta.title}</div>
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          <code>{r.kind}</code>
                         </div>
+                      </div>
 
-                        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                          <span style={statusStyle} aria-label={`Status: ${statusLabel}`}>{statusLabel}</span>
-
-                          <label className="switch" title="Ativar/Desativar regra">
-                            <input
-                              type="checkbox"
-                              checked={!!r.is_enabled}
-                              onChange={(e) => {
-                                const v = e.target.checked;
-                                setRules((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, is_enabled: v } : x)));
-                              }}
-                            />
-                            <span className="slider" />
-                          </label>
-
-                          <button
-                            className="btn"
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              const d = DEFAULTS[r.kind];
-                              if (!d) return;
-                              setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, ...d } : x)));
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <label className="switch" title="Ativar/Desativar regra">
+                          <input
+                            type="checkbox"
+                            checked={!!r.is_enabled}
+                            onChange={(e) => {
+                              const v = e.target.checked;
+                              setRules((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, is_enabled: v } : x)));
                             }}
-                          >
-                            Reset padrão
-                          </button>
+                          />
+                          <span className="slider" />
+                        </label>
 
-                          <span className="muted" style={{ fontSize: 12 }}>Clique para editar</span>
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => {
+                            const d = DEFAULTS[r.kind];
+                            if (!d) return;
+                            setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, ...d } : x)));
+                          }}
+                        >
+                          Reset padrão
+                        </button>
+
+                        <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
+                          {saving ? "Salvando..." : "Salvar"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 10 }} className="muted">
+                      {meta.feature}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginTop: 12 }}>
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Cadência</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{meta.cadenceLabel}</div>
+                        {meta.cadenceExample ? <div className="muted" style={{ marginTop: 6 }}>{meta.cadenceExample}</div> : null}
+                      </div>
+
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Janela de verificação (minutos)</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{Number(r.lookback_minutes ?? 0)}</div>
+                        <div className="muted" style={{ marginTop: 6 }}>{meta.lookbackHelp}</div>
+                      </div>
+
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Status</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{r.is_enabled ? "Ativa" : "Desativada"}</div>
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          Dica: desative temporariamente para pausar envios sem perder o modelo.
                         </div>
                       </div>
-
-                      <div style={{ marginTop: 10 }} className="muted">
-                        {meta.feature}
-                      </div>
-                    </summary>
+                    </div>
 
                     <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
-                        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "var(--card)" }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Cadência</div>
-                          <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{meta.cadenceLabel}</div>
-                          {meta.cadenceExample ? <div className="muted" style={{ marginTop: 6 }}>{meta.cadenceExample}</div> : null}
-                        </div>
-
-                        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "var(--card)" }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Janela de verificação (minutos)</div>
-                          <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{Number(r.lookback_minutes ?? 0)}</div>
-                          <div className="muted" style={{ marginTop: 6 }}>{meta.lookbackHelp}</div>
-                        </div>
-
-                        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "var(--card)" }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Status</div>
-                          <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{statusLabel}</div>
-                          <div className="muted" style={{ marginTop: 6 }}>
-                            Dica: desative temporariamente para pausar envios sem perder o modelo.
-                          </div>
-                        </div>
-                      </div>
-
                       <label className="label">
                         Assunto do e-mail
                         <div className="muted" style={{ marginTop: 4 }}>
@@ -385,7 +365,7 @@ export default function NotificacoesEmailPage() {
                           Texto principal exibido no e-mail. Use placeholders para personalizar.
                         </div>
                         <textarea
-                          className="textarea"
+                          className="input" style={{ minHeight: 140, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
                           value={t.intro}
                           onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, intro: e.target.value } : x)))}
                           rows={6}
@@ -399,7 +379,7 @@ export default function NotificacoesEmailPage() {
                           Texto exibido no final do e-mail. Ideal para links e orientações finais.
                         </div>
                         <textarea
-                          className="textarea"
+                          className="input" style={{ minHeight: 140, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
                           value={t.footer}
                           onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, footer: e.target.value } : x)))}
                           rows={3}
@@ -407,15 +387,9 @@ export default function NotificacoesEmailPage() {
                         />
                       </label>
                     </div>
-                  </details>
+                  </div>
                 );
               })}
-
-              {!filteredRules?.length ? (
-                <div className="muted" style={{ padding: 12 }}>
-                  Nenhuma regra encontrada para <code>{query}</code>.
-                </div>
-              ) : null}
             </div>
           </div>
 
