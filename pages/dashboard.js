@@ -116,12 +116,32 @@ export default function DashboardPage() {
         }
         if (!supabase) return;
 
-        const { data, error } = await supabase
-          .from("immersion_tasks")
-          .select("id,title,phase,due_date,immersion_id,status,done_at")
-          .eq("responsible_id", user.id)
-          .order("due_date", { ascending: true, nullsFirst: false })
-          .limit(200);
+        let data = null;
+        let error = null;
+
+        // "Minhas" = tarefas em aberto onde eu sou o responsável OR (se não houver responsável) eu fui quem originou (created_by).
+        // Nem todas as bases possuem created_by; então tentamos com OR e fazemos fallback.
+        try {
+          const r = await supabase
+            .from("immersion_tasks")
+            .select("id,title,phase,due_date,immersion_id,status,done_at,created_by,responsible_id")
+            .or(`responsible_id.eq.${user.id},and(responsible_id.is.null,created_by.eq.${user.id})`)
+            .order("due_date", { ascending: true, nullsFirst: false })
+            .limit(200);
+          data = r.data;
+          error = r.error;
+          if (error) throw error;
+        } catch (e) {
+          // Fallback para bases legadas sem created_by
+          const r = await supabase
+            .from("immersion_tasks")
+            .select("id,title,phase,due_date,immersion_id,status,done_at,responsible_id")
+            .eq("responsible_id", user.id)
+            .order("due_date", { ascending: true, nullsFirst: false })
+            .limit(200);
+          data = r.data;
+          error = r.error;
+        }
 
         if (error) throw error;
         if (!mounted) return;

@@ -1,4 +1,29 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
+async function fetchTasks(supabaseAdmin) {
+  // Algumas bases legadas não possuem colunas de auditoria (ex.: created_by).
+  // Tentamos com created_by e, se falhar, fazemos fallback para o select mínimo.
+  const baseSelect = "id, immersion_id, title, status, due_date, done_at, phase, responsible_id";
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("immersion_tasks")
+      .select(baseSelect + ", created_by")
+      .limit(20000);
+    if (error) throw error;
+    return data ?? [];
+  } catch (e) {
+    const msg = (e?.message || "").toLowerCase();
+    // fallback apenas se o erro for compatível com coluna inexistente / schema cache
+    if (msg.includes("created_by") || msg.includes("column") || msg.includes("schema")) {
+      const { data, error } = await supabaseAdmin
+        .from("immersion_tasks")
+        .select(baseSelect)
+        .limit(20000);
+      if (error) throw error;
+      return data ?? [];
+    }
+    throw e;
+  }
+}
 
 function toLocalDateOnly(d) {
   if (!d) return null;
@@ -62,11 +87,7 @@ export default async function handler(req, res) {
     if (errImm) throw errImm;
 
     // Tarefas (colunas mínimas para cálculos)
-    const { data: tasks, error: errTasks } = await supabaseAdmin
-      .from("immersion_tasks")
-      .select("id, immersion_id, title, status, due_date, done_at, phase, responsible_id")
-      .limit(20000);
-    if (errTasks) throw errTasks;
+    const tasks = await fetchTasks(supabaseAdmin);
 
     const totalImmersions = immersions?.length || 0;
 
@@ -86,11 +107,13 @@ export default async function handler(req, res) {
 
     const lateTasks = overdueTasks;
 
-    const myOpen = userId ? openTasks.filter((t) => t?.responsible_id === userId).length : 0;
+    const myOpen = userId
+      ? openTasks.filter((t) => (t?.responsible_id === userId) || (!t?.responsible_id && t?.created_by === userId)).length
+      : 0;
 
     const myOverdue = userId
       ? openTasks
-          .filter((t) => t?.responsible_id === userId && t?.due_date)
+          .filter((t) => ((t?.responsible_id === userId) || (!t?.responsible_id && t?.created_by === userId)) && t?.due_date)
           .map((t) => ({ ...t, due_only: toLocalDateOnly(t.due_date) }))
           .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime()).length
       : 0;
