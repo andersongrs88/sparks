@@ -144,7 +144,7 @@ export default function ImmersionsListPage() {
             <div className="small muted">Crie, acesse e acompanhe o andamento das imersões.</div>
           </div>
           {isFullAccess ? (
-            <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
+            <button className="btn" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
           ) : null}
         </div>
 
@@ -164,7 +164,7 @@ export default function ImmersionsListPage() {
         {!loading && (items || []).length === 0 ? (
           <div className="card">
             <p style={{ opacity: 0.85 }}>Nenhuma imersão cadastrada.</p>
-            {isFullAccess ? <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
+            {isFullAccess ? <button className="btn" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
           </div>
         ) : null}
 
