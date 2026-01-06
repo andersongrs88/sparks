@@ -1,29 +1,4 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-async function fetchTasks(supabaseAdmin) {
-  // Algumas bases legadas não possuem colunas de auditoria (ex.: created_by).
-  // Tentamos com created_by e, se falhar, fazemos fallback para o select mínimo.
-  const baseSelect = "id, immersion_id, title, status, due_date, done_at, phase, responsible_id";
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("immersion_tasks")
-      .select(baseSelect + ", created_by")
-      .limit(20000);
-    if (error) throw error;
-    return data ?? [];
-  } catch (e) {
-    const msg = (e?.message || "").toLowerCase();
-    // fallback apenas se o erro for compatível com coluna inexistente / schema cache
-    if (msg.includes("created_by") || msg.includes("column") || msg.includes("schema")) {
-      const { data, error } = await supabaseAdmin
-        .from("immersion_tasks")
-        .select(baseSelect)
-        .limit(20000);
-      if (error) throw error;
-      return data ?? [];
-    }
-    throw e;
-  }
-}
 
 function toLocalDateOnly(d) {
   if (!d) return null;
@@ -39,8 +14,13 @@ function daysBetween(a, b) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
+function normalizeRole(role) {
+  const r = String(role || "").trim().toLowerCase();
+  if (r === "consultor_educacao") return "consultor";
+  return r;
+}
+
 function normalizeStatus(v) {
-  // Robust normalizer: trim, lowercase and remove accents (works in Node 18+).
   return String(v || "")
     .trim()
     .toLowerCase()
@@ -50,7 +30,6 @@ function normalizeStatus(v) {
 
 function isTaskDone(t) {
   const s = normalizeStatus(t?.status);
-  // Accept multiple status conventions (legacy + modern)
   return (
     s === "concluida" ||
     s === "concluido" ||
@@ -64,6 +43,46 @@ function isTaskDone(t) {
   );
 }
 
+// Regra de "atribuição" para o Dashboard:
+// - "Atribuída ao usuário" se:
+//   (1) responsible_id = userId
+//   OU
+//   (2) responsible_id é NULL E o usuário é dono (checklist_owner_id) da imersão
+function taskIsMine({ task, userId, ownerImmersionIdSet }) {
+  if (!userId) return false;
+  if (task?.responsible_id && task.responsible_id === userId) return true;
+  if (!task?.responsible_id && ownerImmersionIdSet?.has(task?.immersion_id)) return true;
+  return false;
+}
+
+function taskIsOpen(task) {
+  return !isTaskDone(task);
+}
+
+function taskIsOverdue(task, today) {
+  if (!taskIsOpen(task)) return false;
+  if (!task?.due_date) return false;
+  const due = toLocalDateOnly(task.due_date);
+  return !!(due && today && due.getTime() < today.getTime());
+}
+
+function buildImmersionScopeOr({ role, userId }) {
+  // Observação: mantemos checklist_owner_id como fallback, pois é o "dono" que você definiu.
+  if (!userId) return null;
+  switch (normalizeRole(role)) {
+    case "consultor":
+      return `educational_consultant.eq.${userId},checklist_owner_id.eq.${userId}`;
+    case "designer":
+      return `instructional_designer.eq.${userId},checklist_owner_id.eq.${userId}`;
+    case "producao":
+      return `production_responsible.eq.${userId},checklist_owner_id.eq.${userId}`;
+    case "eventos":
+      return `events_responsible.eq.${userId},checklist_owner_id.eq.${userId}`;
+    default:
+      return `checklist_owner_id.eq.${userId}`;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -72,159 +91,211 @@ export default async function handler(req, res) {
 
   try {
     const supabaseAdmin = getSupabaseAdmin();
-
     const userId = typeof req.query?.userId === "string" ? req.query.userId : null;
 
-    // Cache no edge da Vercel (reduz muito a latência do dashboard)
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
 
-    // Imersões (limit razoável p/ filtros e listas)
-    const { data: immersions, error: errImm } = await supabaseAdmin
-      .from("immersions")
-      .select("id, immersion_name, start_date, end_date, status")
-      .order("start_date", { ascending: false })
-      .limit(400);
-    if (errImm) throw errImm;
+    // Perfil/role do usuário (fonte da verdade)
+    let role = "viewer";
+    if (userId) {
+      const { data: prof, error: profErr } = await supabaseAdmin
+        .from("profiles")
+        .select("id, role")
+        .eq("id", userId)
+        .single();
+      if (!profErr && prof?.role) role = normalizeRole(prof.role);
+    }
+    const isAdmin = role === "admin";
 
-    // Tarefas (colunas mínimas para cálculos)
-    const tasks = await fetchTasks(supabaseAdmin);
+    const today = toLocalDateOnly(new Date());
+    const dueSoonDays = 3;
+
+    // ---------------------------
+    // 1) IMERSÕES — escopo por perfil
+    // ---------------------------
+    let immersions = [];
+    if (isAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from("immersions")
+        .select(
+          "id, name, immersion_name, start_date, end_date, status, checklist_owner_id, educational_consultant, instructional_designer, production_responsible, events_responsible"
+        )
+        .order("start_date", { ascending: false })
+        .limit(600);
+      if (error) throw error;
+      immersions = data || [];
+    } else {
+      const or = buildImmersionScopeOr({ role, userId });
+      const { data, error } = await supabaseAdmin
+        .from("immersions")
+        .select(
+          "id, name, immersion_name, start_date, end_date, status, checklist_owner_id, educational_consultant, instructional_designer, production_responsible, events_responsible"
+        )
+        .or(or)
+        .order("start_date", { ascending: false })
+        .limit(600);
+      if (error) throw error;
+      immersions = data || [];
+    }
 
     const totalImmersions = immersions?.length || 0;
 
-    const today = toLocalDateOnly(new Date());
+    // Set com imersões onde o usuário é dono (checklist_owner_id)
+    const ownerImmersionIdSet = new Set(
+      (immersions || [])
+        .filter((i) => userId && i?.checklist_owner_id === userId)
+        .map((i) => i.id)
+        .filter(Boolean)
+    );
 
-    // Dashboard KPIs:
-    // - totalTasks: tarefas em aberto (não concluídas)
-    // - overdueTasks/lateTasks: tarefas em aberto com vencimento < hoje
-    // - doneTasks: tarefas concluídas
-    const openTasks = (tasks || []).filter((t) => !isTaskDone(t));
-    const totalTasks = openTasks.length;
+    // ---------------------------
+    // 2) TAREFAS — escopo por perfil
+    // ---------------------------
+    let tasks = [];
 
-    const overdueTasks = openTasks
-      .filter((t) => t?.due_date)
-      .map((t) => ({ ...t, due_only: toLocalDateOnly(t.due_date) }))
-      .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime()).length;
+    if (isAdmin) {
+      const { data, error } = await supabaseAdmin
+        .from("immersion_tasks")
+        .select("id, immersion_id, title, status, due_date, done_at, phase, responsible_id")
+        .limit(20000);
+      if (error) throw error;
+      tasks = data || [];
+    } else {
+      // tasks atribuídas diretamente ao usuário
+      const { data: assigned, error: errAssigned } = await supabaseAdmin
+        .from("immersion_tasks")
+        .select("id, immersion_id, title, status, due_date, done_at, phase, responsible_id")
+        .eq("responsible_id", userId)
+        .limit(20000);
+      if (errAssigned) throw errAssigned;
 
+      // tasks sem responsável, mas dono da imersão = usuário
+      let ownedOrphans = [];
+      const ownerIds = Array.from(ownerImmersionIdSet.values());
+      if (ownerIds.length > 0) {
+        const { data: owned, error: errOwned } = await supabaseAdmin
+          .from("immersion_tasks")
+          .select("id, immersion_id, title, status, due_date, done_at, phase, responsible_id")
+          .is("responsible_id", null)
+          .in("immersion_id", ownerIds)
+          .limit(20000);
+        if (errOwned) throw errOwned;
+        ownedOrphans = owned || [];
+      }
+
+      // união sem duplicação
+      const seen = new Set();
+      const merged = [];
+      for (const t of [...(assigned || []), ...(ownedOrphans || [])]) {
+        if (!t?.id) continue;
+        if (seen.has(t.id)) continue;
+        seen.add(t.id);
+        merged.push(t);
+      }
+      tasks = merged;
+    }
+
+    // ---------------------------
+    // 3) KPI conforme regras do produto
+    // ---------------------------
+
+    // Total de tarefas:
+    // - Admin: total geral (todas as tasks)
+    // - Consultor/Designer: total de tasks atribuídas ao usuário (responsável OU dono da imersão quando sem responsável)
+    const totalTasks = tasks?.length || 0;
+
+    // Concluídas:
+    // - Admin: total concluídas geral
+    // - Consultor/Designer: total concluídas (no escopo do usuário)
+    const doneTasks = (tasks || []).filter(isTaskDone).length;
+
+    // Atrasadas:
+    // - Admin: total atrasadas geral (no universo admin)
+    // - Consultor/Designer: total das minhas atrasadas (escopo do usuário)
+    const overdueTasks = (tasks || []).filter((t) => taskIsOverdue(t, today)).length;
     const lateTasks = overdueTasks;
 
-    const myOpen = userId
-      ? openTasks.filter((t) => (t?.responsible_id === userId) || (!t?.responsible_id && t?.created_by === userId)).length
-      : 0;
+    // Minhas / Minhas atrasadas:
+    // - Sempre: apenas atribuídas ao usuário (responsável OU dono da imersão quando sem responsável)
+    let myOpen = 0;
+    let myOverdue = 0;
 
-    const myOverdue = userId
-      ? openTasks
-          .filter((t) => ((t?.responsible_id === userId) || (!t?.responsible_id && t?.created_by === userId)) && t?.due_date)
-          .map((t) => ({ ...t, due_only: toLocalDateOnly(t.due_date) }))
-          .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime()).length
-      : 0;
-
-    const doneTasks = (tasks || []).filter((t) => isTaskDone(t)).length;
-
-    // Próxima ação por imersão
-    const nextActionByImm = new Map();
-    for (const t of tasks || []) {
-      if (isTaskDone(t)) continue;
-      const current = nextActionByImm.get(t.immersion_id);
-      const due = t.due_date ? toLocalDateOnly(t.due_date) : null;
-      const curDue = current?.due_date ? toLocalDateOnly(current.due_date) : null;
-      if (!current) {
-        nextActionByImm.set(t.immersion_id, { title: t.title, due_date: t.due_date || null, phase: t.phase || null });
-        continue;
-      }
-      if (due && (!curDue || due.getTime() < curDue.getTime())) {
-        nextActionByImm.set(t.immersion_id, { title: t.title, due_date: t.due_date || null, phase: t.phase || null });
+    if (userId) {
+      // Para admin, "tasks" é global, então precisamos filtrar o que é dele
+      const base = isAdmin ? tasks : tasks; // non-admin já é escopo do usuário
+      for (const t of base || []) {
+        const mine = isAdmin ? taskIsMine({ task: t, userId, ownerImmersionIdSet }) : true;
+        if (!mine) continue;
+        if (taskIsOpen(t)) myOpen += 1;
+        if (taskIsOverdue(t, today)) myOverdue += 1;
       }
     }
 
-    const tasksByImmersion = new Map();
-    for (const t of tasks || []) {
-      tasksByImmersion.set(t.immersion_id, (tasksByImmersion.get(t.immersion_id) || 0) + 1);
-    }
+    // ---------------------------
+    // 4) Listas do Dashboard (escopo)
+    // ---------------------------
 
     const upcoming = (immersions || [])
       .slice()
-      .sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))
-      .slice(0, 10)
+      .filter((i) => i?.start_date)
+      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+      .slice(0, 8)
       .map((i) => ({
         ...i,
-        total_tasks: tasksByImmersion.get(i.id) || 0,
-        next_action: nextActionByImm.get(i.id) || null
+        immersion_name: i?.immersion_name || i?.name || "Imersão",
       }));
 
-    // Overdue list (sem segunda query)
     const overdueList = (tasks || [])
-      .filter((t) => !isTaskDone(t) && t?.due_date)
-      .map((t) => ({
-        ...t,
-        due_only: toLocalDateOnly(t.due_date)
-      }))
-      .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime())
-      .sort((a, b) => (a.due_only?.getTime?.() || 0) - (b.due_only?.getTime?.() || 0))
-      .slice(0, 80)
-      .map((t) => {
-        const imm = (immersions || []).find((i) => i.id === t.immersion_id);
-        return {
-          id: t.id,
-          title: t.title,
-          phase: t.phase,
-          status: t.status,
-          due_date: t.due_date,
-          immersion_id: t.immersion_id,
-          immersion_name: imm?.immersion_name || "-",
-          immersion_status: imm?.status || "-",
-          days_late: daysBetween(today, t.due_date)
-        };
-      });
+      .filter((t) => taskIsOverdue(t, today))
+      .sort((a, b) => {
+        const da = a?.due_date ? new Date(a.due_date).getTime() : 0;
+        const db = b?.due_date ? new Date(b.due_date).getTime() : 0;
+        return da - db;
+      })
+      .slice(0, 80);
 
-    // --- Signals: risk & workload
-    const dueSoonDays = 3;
-    const immById = new Map((immersions || []).map((i) => [i.id, i]));
-
+    // Risco por imersão (escopo)
     const riskByImm = new Map();
     for (const t of tasks || []) {
-      const imm = immById.get(t.immersion_id);
-      if (!imm) continue;
-      if (isTaskDone(t)) continue;
-
-      const prev = riskByImm.get(t.immersion_id) || {
-        immersion_id: t.immersion_id,
-        immersion_name: imm.immersion_name || "-",
-        start_date: imm.start_date,
-        end_date: imm.end_date,
-        status: imm.status,
-        overdue: 0,
-        dueSoon: 0,
-        orphan: 0,
-        open: 0
-      };
-
-      prev.open += 1;
-
-      const due = t.due_date ? toLocalDateOnly(t.due_date) : null;
-      if (due && today && due.getTime() < today.getTime()) prev.overdue += 1;
+      const imm = t?.immersion_id || "-";
+      const row = riskByImm.get(imm) || { immersion_id: imm, open: 0, overdue: 0, dueSoon: 0, orphan: 0 };
+      if (taskIsOpen(t)) row.open += 1;
+      if (taskIsOverdue(t, today)) row.overdue += 1;
+      const due = t?.due_date ? toLocalDateOnly(t.due_date) : null;
       if (due && today) {
         const diff = daysBetween(due, today);
-        if (diff >= 0 && diff <= dueSoonDays) prev.dueSoon += 1;
+        if (diff >= 0 && diff <= dueSoonDays) row.dueSoon += 1;
       }
-
-      if (!t.responsible_id) prev.orphan += 1;
-
-      riskByImm.set(t.immersion_id, prev);
+      // Orphan = sem responsible_id
+      if (!t?.responsible_id && taskIsOpen(t)) row.orphan += 1;
+      riskByImm.set(imm, row);
     }
 
+    const immById = new Map((immersions || []).map((i) => [i.id, i]));
     function calcRisk(row) {
-      const startIn = row?.start_date ? daysBetween(toLocalDateOnly(row.start_date), today) : null;
+      const imm = immById.get(row.immersion_id);
+      const startIn = imm?.start_date ? daysBetween(toLocalDateOnly(imm.start_date), today) : null;
       const startsSoon = typeof startIn === "number" && startIn >= 0 && startIn <= 7;
-      const score = (row.overdue * 5) + (row.dueSoon * 3) + (row.orphan * 2) + (startsSoon && row.open > 0 ? 2 : 0);
+      const score = row.overdue * 5 + row.dueSoon * 3 + row.orphan * 2 + (startsSoon && row.open > 0 ? 2 : 0);
+
       let level = "Baixo";
       if (score >= 15) level = "Alto";
       else if (score >= 7) level = "Médio";
+
       const reasons = [];
       if (row.overdue) reasons.push(`${row.overdue} atrasada(s)`);
       if (row.dueSoon) reasons.push(`${row.dueSoon} vence(m) em até ${dueSoonDays} dias`);
       if (row.orphan) reasons.push(`${row.orphan} sem responsável`);
-      if (startsSoon && row.open) reasons.push(`começa em até 7 dias`);
-      return { ...row, score, level, reasons };
+      if (startsSoon && row.open) reasons.push("começa em até 7 dias");
+
+      return {
+        ...row,
+        immersion_name: imm?.immersion_name || imm?.name || "Imersão",
+        start_date: imm?.start_date || null,
+        score,
+        level,
+        reasons,
+      };
     }
 
     const riskImmersions = Array.from(riskByImm.values())
@@ -233,33 +304,36 @@ export default async function handler(req, res) {
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
 
-    // Workload
+    // Workload (carga por responsável) – escopo admin = global, escopo usuário = tasks atribuídas ao usuário (inclui órfãs do owner)
     const { data: profiles, error: eProf } = await supabaseAdmin
       .from("profiles")
       .select("id, name, email, is_active")
-      .limit(5000);
+      .limit(20000);
     if (eProf) throw eProf;
 
     const profMap = new Map((profiles || []).map((p) => [p.id, p]));
     const byResp = new Map();
 
     for (const t of tasks || []) {
-      if (isTaskDone(t)) continue;
-      const rid = t.responsible_id || "-";
-      const prev = byResp.get(rid) || {
-        responsible_id: rid,
-        responsible: rid === "-" ? "Sem dono" : (profMap.get(rid)?.name || profMap.get(rid)?.email || rid),
-        open: 0,
-        overdue: 0,
-        dueSoon: 0
-      };
-      prev.open += 1;
-      const due = t.due_date ? toLocalDateOnly(t.due_date) : null;
-      if (due && today && due.getTime() < today.getTime()) prev.overdue += 1;
+      const rid = t?.responsible_id || "-";
+      const prev =
+        byResp.get(rid) || {
+          responsible_id: rid === "-" ? null : rid,
+          responsible: rid === "-" ? "Sem dono" : profMap.get(rid)?.name || profMap.get(rid)?.email || rid,
+          open: 0,
+          overdue: 0,
+          dueSoon: 0,
+        };
+
+      if (taskIsOpen(t)) prev.open += 1;
+      if (taskIsOverdue(t, today)) prev.overdue += 1;
+
+      const due = t?.due_date ? toLocalDateOnly(t.due_date) : null;
       if (due && today) {
         const diff = daysBetween(due, today);
         if (diff >= 0 && diff <= dueSoonDays) prev.dueSoon += 1;
       }
+
       byResp.set(rid, prev);
     }
 
@@ -268,12 +342,24 @@ export default async function handler(req, res) {
       .slice(0, 12);
 
     return res.status(200).json({
-      stats: { totalImmersions, totalTasks, overdueTasks, lateTasks, doneTasks, myOpen, myOverdue },
+      stats: {
+        totalImmersions,
+        totalTasks,
+        overdueTasks,
+        lateTasks,
+        doneTasks,
+        myOpen,
+        myOverdue,
+      },
       upcoming,
       overdue: overdueList,
       riskImmersions,
       workload,
-      immersionOptions: (immersions || []).map((i) => ({ id: i.id, immersion_name: i.immersion_name, start_date: i.start_date }))
+      immersionOptions: (immersions || []).map((i) => ({
+        id: i.id,
+        immersion_name: i?.immersion_name || i?.name || "Imersão",
+        start_date: i.start_date,
+      })),
     });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "Falha ao carregar dashboard." });
