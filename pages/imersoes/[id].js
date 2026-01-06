@@ -212,6 +212,11 @@ export default function ImmersionDetailEditPage() {
   }, [error]);
 
   const [form, setForm] = useState(null);
+
+
+  // Regra B: toda tarefa deve ter um responsável padrão.
+  // Se a imersão estiver sem Dono (checklist_owner_id), bloqueamos a criação de tarefas no UI.
+  const ownerMissing = !!form && !form.checklist_owner_id;
   const [originalStatus, setOriginalStatus] = useState(null);
   const isLocked = originalStatus === "Concluída";
 
@@ -2472,12 +2477,12 @@ function normalizeTemplatesForClone(items) {
                   type="button"
                   className="btn"
                   onClick={onLoadPredefinedTasks}
-                  disabled={tasksLoading || !full}
-                  title={!full ? "Apenas administradores podem carregar tarefas predefinidas." : ""}
+                  disabled={tasksLoading || !full || ownerMissing}
+                  title={ownerMissing ? "Defina o Dono da imersão para carregar tarefas predefinidas." : (!full ? "Apenas administradores podem carregar tarefas predefinidas." : "")}
                 >
                   Carregar predefinidas
                 </button>
-                <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={!full}>
+                <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={!full || ownerMissing} title={ownerMissing ? "Defina o Dono da imersão para criar tarefas." : ""}>
                   {newTaskOpen ? "Fechar" : "Nova tarefa"}
                 </button>
               </div>
@@ -2774,8 +2779,8 @@ function normalizeTemplatesForClone(items) {
                   <button type="button" className="btn" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
                     Cancelar
                   </button>
-                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving || !full}>
-                    {taskSaving ? "Criando..." : "Criar tarefa"}
+                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving || !full || ownerMissing} title={ownerMissing ? "Defina o Dono da imersão para criar tarefas." : ""}>
+                    {taskSaving ? "Criando..." : (ownerMissing ? "Defina o Dono para criar" : "Criar tarefa")}
                   </button>
                 </div>
               </div>
