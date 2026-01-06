@@ -69,27 +69,33 @@ export default async function handler(req, res) {
     if (errTasks) throw errTasks;
 
     const totalImmersions = immersions?.length || 0;
-    const totalTasks = tasks?.length || 0;
-    const myOpen = userId
-      ? (tasks || []).filter((t) => t?.responsible_id === userId && !isTaskDone(t)).length
-      : 0;
+
+    const today = toLocalDateOnly(new Date());
+
+    // Dashboard KPIs:
+    // - totalTasks: tarefas em aberto (não concluídas)
+    // - overdueTasks/lateTasks: tarefas em aberto com vencimento < hoje
+    // - doneTasks: tarefas concluídas
+    const openTasks = (tasks || []).filter((t) => !isTaskDone(t));
+    const totalTasks = openTasks.length;
+
+    const overdueTasks = openTasks
+      .filter((t) => t?.due_date)
+      .map((t) => ({ ...t, due_only: toLocalDateOnly(t.due_date) }))
+      .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime()).length;
+
+    const lateTasks = overdueTasks;
+
+    const myOpen = userId ? openTasks.filter((t) => t?.responsible_id === userId).length : 0;
 
     const myOverdue = userId
-      ? (tasks || [])
-          .filter((t) => t?.responsible_id === userId && !isTaskDone(t) && t?.due_date)
+      ? openTasks
+          .filter((t) => t?.responsible_id === userId && t?.due_date)
           .map((t) => ({ ...t, due_only: toLocalDateOnly(t.due_date) }))
           .filter((t) => t.due_only && today && t.due_only.getTime() < today.getTime()).length
       : 0;
 
-    const today = toLocalDateOnly(new Date());
-
     const doneTasks = (tasks || []).filter((t) => isTaskDone(t)).length;
-    const lateTasks = (tasks || []).filter((t) => {
-      if (!t?.due_date) return false;
-      if (isTaskDone(t)) return false;
-      const due = toLocalDateOnly(t.due_date);
-      return due && today && due.getTime() < today.getTime();
-    }).length;
 
     // Próxima ação por imersão
     const nextActionByImm = new Map();
@@ -239,7 +245,7 @@ export default async function handler(req, res) {
       .slice(0, 12);
 
     return res.status(200).json({
-      stats: { totalImmersions, totalTasks, lateTasks, doneTasks, myOpen, myOverdue },
+      stats: { totalImmersions, totalTasks, overdueTasks, lateTasks, doneTasks, myOpen, myOverdue },
       upcoming,
       overdue: overdueList,
       riskImmersions,

@@ -77,7 +77,8 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
 
-        const res = await fetch("/api/dashboard/stats", { method: "GET" });
+        const url = user?.id ? `/api/dashboard/stats?userId=${encodeURIComponent(user.id)}` : "/api/dashboard/stats";
+        const res = await fetch(url, { method: "GET" });
         if (!res.ok) throw new Error("Falha ao carregar o dashboard.");
         const j = await res.json();
 

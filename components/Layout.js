@@ -4,8 +4,6 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { canSeeMenuItem, roleLabel } from "../lib/permissions";
-import { getNotificationSummary } from "../lib/notifications";
-import { pollAndNotify } from "../lib/browserNotifications";
 // Notificações removidas por opção de produto (tela não utilizada).
 
 const SYSTEM_FULL_NAME = "Sistema Inteligente de Planejamento e Gestão do Conhecimento";
@@ -52,44 +50,10 @@ export default function Layout({ title, children, hideNav = false }) {
   const role = profile?.role;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [notifCount, setNotifCount] = useState(0);
 
   const pageTitle = useMemo(() => title || "Sparks", [title]);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        if (!user || user.id === "noauth") { setNotifCount(0); return; }
-        const res = await getNotificationSummary({ user, profile, isFullAccess });
-        if (!alive) return;
-        setNotifCount(Number(res?.total || 0));
-      } catch {
-        if (!alive) return;
-        setNotifCount(0);
-      }
-    })();
-    return () => { alive = false; };
-  }, [user?.id, profile?.role, isFullAccess]);
-
-  // Browser notifications (opt-in). Polls periodically while the app is open.
-  useEffect(() => {
-    let alive = true;
-    if (!user || user.id === "noauth") return;
-
-    async function tick() {
-      if (!alive) return;
-      try {
-        await pollAndNotify({ user, profile, isFullAccess });
-      } catch {
-        // best-effort
-      }
-    }
-
-    tick();
-    const id = setInterval(tick, 120_000);
-    return () => { alive = false; clearInterval(id); };
-  }, [user?.id, profile?.role, isFullAccess]);
-  const documentTitle = useMemo(() => {
+  
+const documentTitle = useMemo(() => {
     // Discreto: mantém o nome completo do sistema no título do navegador,
     // sem poluir a UI de cada tela.
     return `${pageTitle} | ${SYSTEM_FULL_NAME}`;
@@ -178,27 +142,7 @@ export default function Layout({ title, children, hideNav = false }) {
           </div>
 
           <div className="row" style={{ gap: 10, alignItems: "center" }}>
-            <button
-              type="button"
-              className="btn icon"
-              onClick={async () => {
-                try {
-                  if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
-                    await Notification.requestPermission();
-                  }
-                } catch {}
-                router.push("/notificacoes");
-              }}
-              aria-label="Abrir notificações"
-              title="Notificações"
-            >
-              🔔
-              {notifCount > 0 ? (
-                <span className="badgeDot" aria-label={`${notifCount} notificações`}>
-                  {notifCount}
-                </span>
-              ) : null}
-            </button>
+            
             <ThemeToggle />
           </div>
         </header>
