@@ -20,42 +20,66 @@ const DEFAULTS = {
     footer: "Acesse: {{app}}"
   },
   immersion_risk_daily: {
-    subject: "Sparks • Imersão em risco — {{immersion}} — {{date}}",
-    intro: "Olá {{name}}, a imersão {{immersion}} entrou em risco (tarefas atrasadas acumuladas).",
-    footer: "Acesse para ver detalhes e agir: {{app}}"
-  },
+    subject: "Sparks • Risco na imersão \"{{immersion}}\" — {{count}} atrasadas",
+    intro: "Olá {{name}}, a imersão está com atrasos relevantes. Priorize as entregas abaixo:",
+    footer: "Acesse: {{app}}"
+  }
 };
 
-const RULES_META = {
+const PLACEHOLDERS = [
+  { key: "{{name}}", label: "Nome do destinatário" },
+  { key: "{{immersion}}", label: "Nome da imersão" },
+  { key: "{{count}}", label: "Quantidade de itens (tarefas/pendências)" },
+  { key: "{{date}}", label: "Data de referência do envio" },
+  { key: "{{app}}", label: "Link do sistema" }
+];
+
+const RULE_META = {
   immersion_created: {
     title: "Imersão criada",
-    feature: "Envia um e-mail quando uma nova imersão é criada.",
-    cadenceLabel: "Evento",
-    cadenceExample: "Exemplo: imediatamente após criação",
-    lookbackHelp: "Janela (minutos) para capturar o evento. Use 0 para apenas eventos novos."
+    feature: "Dispara um e-mail automaticamente quando uma nova imersão é criada.",
+    cadenceLabel: "Evento — quando ocorrer",
+    cadenceExample: "Exemplo: assim que uma imersão é criada",
+    lookbackHelp:
+      "Define a janela (em minutos) que o sistema considera para capturar o evento. Use 0 para apenas eventos novos."
   },
   task_overdue_daily: {
     title: "Tarefas atrasadas",
     feature: "Envia um resumo diário com tarefas vencidas do responsável.",
     cadenceLabel: "Diária",
-    cadenceExample: "Exemplo: todos os dias pela manhã (cron)",
-    lookbackHelp: "Janela (minutos) analisada para identificar tarefas vencidas."
+    cadenceExample: "Exemplo: todos os dias pela manhã (conforme agendamento do cron)",
+    lookbackHelp:
+      "Define a janela (em minutos) analisada para identificar tarefas vencidas. Em geral, 60 minutos é suficiente."
   },
   task_due_soon_weekly: {
     title: "Tarefas vencendo em até 7 dias",
     feature: "Envia um resumo semanal com tarefas que vencem nos próximos 7 dias.",
     cadenceLabel: "Semanal",
-    cadenceExample: "Exemplo: toda segunda-feira (cron)",
-    lookbackHelp: "Janela (minutos) usada para consolidar envios."
+    cadenceExample: "Exemplo: toda segunda-feira (conforme agendamento do cron)",
+    lookbackHelp:
+      "Janela (em minutos) para verificação. Para semanal, normalmente 10080 (7 dias)."
   },
   immersion_risk_daily: {
     title: "Risco na imersão",
     feature: "Alerta diário quando uma imersão acumula atrasos e entra em risco.",
     cadenceLabel: "Diária",
-    cadenceExample: "Exemplo: todos os dias (cron)",
-    lookbackHelp: "Janela (minutos) usada para consolidar envios."
+    cadenceExample: "Exemplo: todos os dias pela manhã (conforme agendamento do cron)",
+    lookbackHelp:
+      "Janela (em minutos) para verificação do risco. Em geral, 60 minutos é suficiente."
   }
 };
+
+function getRuleMeta(kind) {
+  return RULE_META[kind] || {
+    title: kind,
+    feature: "Configuração de notificação automática.",
+    cadenceLabel: "—",
+    cadenceExample: "",
+    lookbackHelp: "Janela (em minutos) de verificação."
+  };
+}
+
+
 
 function normTemplate(kind, t) {
   const d = DEFAULTS[kind] || {};
@@ -67,19 +91,8 @@ function normTemplate(kind, t) {
   };
 }
 
-function coerceTemplateList(raw) {
-  if (Array.isArray(raw)) return raw;
-  if (raw && typeof raw === "object") return Object.values(raw);
-  return [];
-}
-
-function safeKind(obj) {
-  return obj?.kind || obj?.rule_key || obj?.ruleKey || null;
-}
-
-export default function NotificacoesEmail() {
-  const { profile } = useAuth();
-
+export default function NotificacoesEmailPage() {
+  const { user, profile, role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -89,39 +102,23 @@ export default function NotificacoesEmail() {
   const [templates, setTemplates] = useState([]);
   const [logs, setLogs] = useState([]);
 
-  const [senderOpen, setSenderOpen] = useState(true);
-  const [search, setSearch] = useState("");
-
-  const isAdmin = String(profile?.role || "").toLowerCase() === "admin";
-
-  useEffect(() => {
-    if (!profile) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id]);
+  const isAdmin = String(role || profile?.role || "").toLowerCase() === "admin";
 
   async function load() {
     setError("");
     setLoading(true);
     try {
-      const data = await adminFetch("/api/admin/email-notification-config", { method: "GET" });
-
-      const incomingRules = Array.isArray(data.rules) ? data.rules : [];
-      const normalizedRules = incomingRules.map((r) => ({ ...r, kind: safeKind(r) })).filter((r) => !!r.kind);
-
-      setRules(normalizedRules);
-      setLogs(Array.isArray(data.logs) ? data.logs : []);
-
+      const data = await adminFetch("/api/admin/email-notification-config");
+      setRules(data.rules || []);
+      setLogs(data.logs || []);
       setSettings({
         from_email: data.settings?.from_email || "",
         from_name: data.settings?.from_name || "",
         reply_to: data.settings?.reply_to || ""
       });
 
-      const list = coerceTemplateList(data.templates);
-      const byKind = new Map(list.map((t) => [safeKind(t), t]).filter(([k]) => !!k));
-
-      const merged = normalizedRules.map((r) => normTemplate(r.kind, byKind.get(r.kind)));
+      const byKind = new Map((data.templates || []).map((t) => [t.kind, t]));
+      const merged = (data.rules || []).map((r) => normTemplate(r.kind, byKind.get(r.kind)));
       setTemplates(merged);
     } catch (e) {
       setError(e?.message || "Falha ao carregar configurações.");
@@ -130,29 +127,27 @@ export default function NotificacoesEmail() {
     }
   }
 
+  useEffect(() => {
+    if (!user?.id || user.id === "noauth") return;
+    if (!isAdmin) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isAdmin]);
+
+  const templatesByKind = useMemo(() => {
+    const m = new Map();
+    for (const t of templates) m.set(t.kind, t);
+    return m;
+  }, [templates]);
+
   async function onSave() {
     setError("");
     setSaving(true);
     try {
-      // templates precisam ir como objeto (por kind/rule_key) para o endpoint atual
-      const templatesObj = {};
-      for (const t of templates) {
-        templatesObj[t.kind] = { subject: t.subject, intro: t.intro, footer: t.footer };
-      }
-
-      // rules: envie o mínimo necessário para persistência
-      const outgoingRules = rules.map((r) => ({
-        rule_key: r.rule_key || r.kind,
-        enabled: !!r.enabled,
-        cadence: r.cadence ?? r.cadence_minutes ?? null,
-        lookback: r.lookback ?? r.lookback_minutes ?? null
-      }));
-
       await adminFetch("/api/admin/email-notification-config", {
         method: "POST",
-        body: { settings, rules: outgoingRules, templates: templatesObj }
+        body: { settings, rules, templates }
       });
-
       await load();
     } catch (e) {
       setError(e?.message || "Falha ao salvar.");
@@ -161,33 +156,23 @@ export default function NotificacoesEmail() {
     }
   }
 
-  const filteredTemplates = useMemo(() => {
-    const q = (search || "").trim().toLowerCase();
-    if (!q) return templates;
-    return templates.filter((t) => {
-      const meta = RULES_META[t.kind] || {};
-      return (
-        t.kind.toLowerCase().includes(q) ||
-        String(meta.title || "").toLowerCase().includes(q) ||
-        String(meta.feature || "").toLowerCase().includes(q)
-      );
-    });
-  }, [templates, search]);
-
-  function setRuleEnabled(kind, enabled) {
-    setRules((prev) => prev.map((r) => (r.kind === kind ? { ...r, enabled } : r)));
-  }
-
-  function setTemplate(kind, patch) {
-    setTemplates((prev) => prev.map((t) => (t.kind === kind ? { ...t, ...patch } : t)));
+  if (!user?.id || user.id === "noauth") {
+    return (
+      <Layout title="Notificações (E-mail)">
+        <div className="card" style={{ padding: 16 }}>
+          <h2>Notificações (E-mail)</h2>
+          <p>Você precisa estar logado para acessar esta página.</p>
+        </div>
+      </Layout>
+    );
   }
 
   if (!isAdmin) {
     return (
       <Layout title="Notificações (E-mail)">
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Acesso restrito</div>
-          <div className="muted">Apenas administradores podem configurar notificações de e-mail.</div>
+          <h2>Notificações (E-mail)</h2>
+          <p>Apenas ADMIN pode acessar esta página.</p>
         </div>
       </Layout>
     );
@@ -195,246 +180,244 @@ export default function NotificacoesEmail() {
 
   return (
     <Layout title="Notificações (E-mail)">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ marginBottom: 6 }}>Notificações (E-mail)</h1>
-          <div className="muted">
-            Configure remetente e templates. As regras são controladas pelo banco (kind/cadence/lookback).
+      <div className="page">
+        <div className="pageHeader">
+          <div>
+            <h1>Notificações (E-mail)</h1>
+            <div className="muted">Configure remetente e templates. As regras são controladas pelo banco (kind/cadence/lookback).</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" type="button" onClick={load} disabled={loading || saving}>Atualizar</button>
+            <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn" type="button" onClick={load} disabled={loading || saving}>
-            Atualizar
-          </button>
-          <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
-            {saving ? "Salvando..." : "Salvar"}
-          </button>
-        </div>
-      </div>
 
-      {error ? (
-        <div className="error" style={{ marginTop: 14 }}>
-          Erro: {error}
-        </div>
-      ) : null}
+        {error ? (
+          <div className="card" style={{ padding: 12, borderColor: "#ffb4b4" }}>
+            <b>Erro:</b> {error}
+          </div>
+        ) : null}
 
-      {/* Remetente (coluna única + recolher) */}
-      <div className="card" style={{ padding: 16, marginTop: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <h2 style={{ marginBottom: 0 }}>Remetente</h2>
-          <button
-            type="button"
-            className="btn"
-            aria-expanded={senderOpen ? "true" : "false"}
-            aria-controls="sender-panel"
-            onClick={() => setSenderOpen((v) => !v)}
-          >
-            {senderOpen ? "Recolher" : "Expandir"}
-          </button>
-        </div>
-
-        {senderOpen ? (
-          <div id="sender-panel" style={{ marginTop: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, maxWidth: 760 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span className="label">From e-mail</span>
-                <input
-                  className="input"
-                  value={settings.from_email}
-                  onChange={(e) => setSettings((s) => ({ ...s, from_email: e.target.value }))}
-                  placeholder="ex.: no-reply@seudominio.com"
-                />
+        <div className="grid2">
+          <div className="card" style={{ padding: 16 }}>
+            <h2>Remetente</h2>
+            <div className="formGrid">
+              <label className="label">
+                From e-mail
+                <input className="input" value={settings.from_email} onChange={(e) => setSettings((s) => ({ ...s, from_email: e.target.value }))} placeholder="ex: notificacoes@seudominio.com" />
               </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span className="label">From name</span>
-                <input
-                  className="input"
-                  value={settings.from_name}
-                  onChange={(e) => setSettings((s) => ({ ...s, from_name: e.target.value }))}
-                  placeholder="ex.: Educagrama"
-                />
+              <label className="label">
+                From nome
+                <input className="input" value={settings.from_name} onChange={(e) => setSettings((s) => ({ ...s, from_name: e.target.value }))} placeholder="ex: Sparks" />
               </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span className="label">Reply-to</span>
-                <input
-                  className="input"
-                  value={settings.reply_to}
-                  onChange={(e) => setSettings((s) => ({ ...s, reply_to: e.target.value }))}
-                  placeholder="ex.: suporte@seudominio.com"
-                />
+              <label className="label">
+                Reply-to
+                <input className="input" value={settings.reply_to} onChange={(e) => setSettings((s) => ({ ...s, reply_to: e.target.value }))} placeholder="ex: suporte@seudominio.com" />
               </label>
             </div>
-
-            <div className="muted" style={{ marginTop: 10 }}>
+            <div className="muted" style={{ marginTop: 8 }}>
               Se vazio, o sistema usa fallback via ENV <code>EMAIL_FROM</code> / <code>SMTP_USER</code>.
             </div>
           </div>
-        ) : (
-          <div className="muted" style={{ marginTop: 10 }}>
-            Se vazio, o sistema usa fallback via ENV <code>EMAIL_FROM</code> / <code>SMTP_USER</code>.
-          </div>
-        )}
-      </div>
 
-      {/* Regras e templates */}
-      <div className="card" style={{ padding: 16, marginTop: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h2 style={{ marginBottom: 6 }}>Regras e templates</h2>
-            <div className="muted">
-              Ative/desative notificações e edite o conteúdo do e-mail. As variáveis (placeholders) permitem personalizar o texto.
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <h2 style={{ marginBottom: 6 }}>Regras e templates</h2>
+                <div className="muted">
+                  Configure quais notificações serão enviadas e edite o conteúdo do e-mail. As variáveis (placeholders) permitem personalizar o texto por usuário e imersão.
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button className="btn" type="button" onClick={load} disabled={loading || saving}>
+                  Atualizar
+                </button>
+                <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
+                  {saving ? "Salvando..." : "Salvar alterações"}
+                </button>
+              </div>
+            </div>
+
+            {loading ? <div className="muted" style={{ marginTop: 10 }}>Carregando...</div> : null}
+
+            <div className="card" style={{ padding: 12, marginTop: 14, background: "var(--bg-soft, #f7f8fb)" }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Variáveis disponíveis (placeholders)</div>
+              <div className="muted" style={{ marginBottom: 10 }}>
+                Use estas variáveis no assunto, no texto inicial e no rodapé para inserir informações automaticamente.
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {PLACEHOLDERS.map((p) => (
+                  <span key={p.key} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 999, background: "#fff" }} title={p.label}>
+                    <code style={{ fontWeight: 800 }}>{p.key}</code>
+                    <span className="muted" style={{ marginLeft: 8 }}>{p.label}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 16, marginTop: 14 }}>
+              {(rules || []).map((r) => {
+                const meta = getRuleMeta(r.kind);
+                const t = templatesByKind.get(r.kind) || normTemplate(r.kind, null);
+
+                return (
+                  <div key={r.kind} className="card" style={{ padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 900, lineHeight: 1.1 }}>{meta.title}</div>
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          <code>{r.kind}</code>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <label className="switch" title="Ativar/Desativar regra">
+                          <input
+                            type="checkbox"
+                            checked={!!r.is_enabled}
+                            onChange={(e) => {
+                              const v = e.target.checked;
+                              setRules((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, is_enabled: v } : x)));
+                            }}
+                          />
+                          <span className="slider" />
+                        </label>
+
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => {
+                            const d = DEFAULTS[r.kind];
+                            if (!d) return;
+                            setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, ...d } : x)));
+                          }}
+                        >
+                          Reset padrão
+                        </button>
+
+                        <button className="btn primary" type="button" onClick={onSave} disabled={loading || saving}>
+                          {saving ? "Salvando..." : "Salvar"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 10 }} className="muted">
+                      {meta.feature}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginTop: 12 }}>
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Cadência</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{meta.cadenceLabel}</div>
+                        {meta.cadenceExample ? <div className="muted" style={{ marginTop: 6 }}>{meta.cadenceExample}</div> : null}
+                      </div>
+
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Janela de verificação (minutos)</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{Number(r.lookback_minutes ?? 0)}</div>
+                        <div className="muted" style={{ marginTop: 6 }}>{meta.lookbackHelp}</div>
+                      </div>
+
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.2 }}>Status</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{r.is_enabled ? "Ativa" : "Desativada"}</div>
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          Dica: desative temporariamente para pausar envios sem perder o modelo.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                      <label className="label">
+                        Assunto do e-mail
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          Exemplo: <code>{"Sparks • {{count}} pendências — {{date}}"}</code>
+                        </div>
+                        <input
+                          className="input"
+                          value={t.subject}
+                          onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, subject: e.target.value } : x)))}
+                          placeholder="Digite o assunto..."
+                        />
+                      </label>
+
+                      <label className="label">
+                        Texto inicial (corpo)
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          Texto principal exibido no e-mail. Use placeholders para personalizar.
+                        </div>
+                        <textarea
+                          className="textarea"
+                          value={t.intro}
+                          onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, intro: e.target.value } : x)))}
+                          rows={6}
+                          placeholder={'Olá {{name}},\n\nEscreva aqui a mensagem principal...'}
+                        />
+                      </label>
+
+                      <label className="label">
+                        Rodapé (opcional)
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          Texto exibido no final do e-mail. Ideal para links e orientações finais.
+                        </div>
+                        <textarea
+                          className="textarea"
+                          value={t.footer}
+                          onChange={(e) => setTemplates((prev) => prev.map((x) => (x.kind === r.kind ? { ...x, footer: e.target.value } : x)))}
+                          rows={3}
+                          placeholder={"Acesse: {{app}}"}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
 
-        <div style={{ marginTop: 12, maxWidth: 760 }}>
-          <div className="label" style={{ marginBottom: 6 }}>Buscar regra</div>
-          <input
-            className="input"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ex.: tarefas, risco, weekly..."
-          />
-        </div>
-
-        <div className="card" style={{ padding: 12, marginTop: 14, background: "var(--bg-soft, #f7f8fb)" }}>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Variáveis disponíveis (placeholders)</div>
-          <div className="muted" style={{ marginBottom: 10 }}>
-            Use estas variáveis no assunto, no texto inicial e no rodapé para inserir informações automaticamente.
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            <span className="chip">
-              <code>{"{{name}}"}</code> <span className="muted">Nome do destinatário</span>
-            </span>
-            <span className="chip">
-              <code>{"{{immersion}}"}</code> <span className="muted">Nome da imersão</span>
-            </span>
-            <span className="chip">
-              <code>{"{{count}}"}</code> <span className="muted">Quantidade de itens</span>
-            </span>
-            <span className="chip">
-              <code>{"{{date}}"}</code> <span className="muted">Data de referência</span>
-            </span>
-            <span className="chip">
-              <code>{"{{app}}"}</code> <span className="muted">Link do sistema</span>
-            </span>
-          </div>
-        </div>
 
-        {loading ? <div className="muted" style={{ marginTop: 10 }}>Carregando...</div> : null}
-
-        <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-          {filteredTemplates.map((t) => {
-            const meta = RULES_META[t.kind] || {};
-            const rule = rules.find((r) => r.kind === t.kind);
-            const enabled = !!rule?.enabled;
-
-            return (
-              <details key={t.kind} className="card" style={{ padding: 14 }}>
-                <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
-                  <div style={{ display: "grid", gap: 3 }}>
-                    <div style={{ fontWeight: 900 }}>{meta.title || t.kind}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{t.kind}</div>
-                    {meta.feature ? <div className="muted" style={{ marginTop: 2 }}>{meta.feature}</div> : null}
-                  </div>
-
-                  <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span className="badge">{enabled ? "Ativa" : "Inativa"}</span>
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={(e) => setRuleEnabled(t.kind, e.target.checked)}
-                      aria-label={`Ativar ${meta.title || t.kind}`}
-                    />
-                  </label>
-                </summary>
-
-                <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span className="label">Assunto do e-mail</span>
-                    <input
-                      className="input"
-                      value={t.subject}
-                      onChange={(e) => setTemplate(t.kind, { subject: e.target.value })}
-                    />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span className="label">Texto inicial (corpo)</span>
-                    <textarea
-                      className="input"
-                      rows={5}
-                      value={t.intro}
-                      onChange={(e) => setTemplate(t.kind, { intro: e.target.value })}
-                    />
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      Texto principal exibido no e-mail. Use placeholders para personalizar.
-                    </span>
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span className="label">Rodapé (opcional)</span>
-                    <textarea
-                      className="input"
-                      rows={4}
-                      value={t.footer}
-                      onChange={(e) => setTemplate(t.kind, { footer: e.target.value })}
-                    />
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      Texto exibido no final do e-mail. Ideal para links e orientações finais.
-                    </span>
-                  </label>
-                </div>
-              </details>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Logs */}
-      <div className="card" style={{ padding: 16, marginTop: 14 }}>
-        <h2 style={{ marginBottom: 6 }}>Logs recentes</h2>
-        <div className="muted">Últimos 50 registros do disparo do cron (preview/send).</div>
-
-        <div style={{ overflowX: "auto", marginTop: 12 }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Kind</th>
-                <th>Para</th>
-                <th>Itens</th>
-                <th>Modo</th>
-                <th>Status</th>
-                <th>Erro</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(logs || []).map((l, idx) => (
-                <tr key={idx}>
-                  <td style={{ whiteSpace: "nowrap" }}>{l.created_at ? new Date(l.created_at).toLocaleString() : "-"}</td>
-                  <td>{l.kind || "-"}</td>
-                  <td>{l.to_email || "-"}</td>
-                  <td>{typeof l.items_count === "number" ? l.items_count : "-"}</td>
-                  <td>{l.mode || "-"}</td>
-                  <td>{l.status || "-"}</td>
-                  <td style={{ maxWidth: 360 }} title={l.error || ""}>
-                    {l.error || "-"}
-                  </td>
-                </tr>
-              ))}
-              {!logs?.length ? (
+          <div className="card" style={{ padding: 16 }}>
+          <h2>Logs recentes</h2>
+          <div className="muted" style={{ marginBottom: 12 }}>Últimos 50 registros do disparo do cron (preview/send).</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="muted">
-                    Nenhum log encontrado.
-                  </td>
+                  <th>Data</th>
+                  <th>Kind</th>
+                  <th>Para</th>
+                  <th>Itens</th>
+                  <th>Modo</th>
+                  <th>Status</th>
+                  <th>Erro</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(logs || []).map((l) => (
+                  <tr key={l.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString()}</td>
+                    <td>{l.kind}</td>
+                    <td>{l.to_email || "-"}</td>
+                    <td>{l.item_count}</td>
+                    <td>{l.mode}</td>
+                    <td>{l.status}</td>
+                    <td style={{ maxWidth: 360, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.error || ""}</td>
+                  </tr>
+                ))}
+                {!logs?.length ? (
+                  <tr>
+                    <td colSpan={7} className="muted">Sem logs.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </div>
+
       </div>
     </Layout>
   );

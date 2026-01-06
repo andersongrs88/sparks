@@ -306,6 +306,50 @@ const refreshProfile = useCallback(async (u, { force = false } = {}) => {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+
+  // During Next.js static export / prerender, some pages may be rendered in an
+  // environment where the provider tree is not fully available (or when a
+  // module is evaluated in isolation). Instead of hard-failing the build, we
+  // return a safe fallback so pages can render a loading/unauthenticated state
+  // and continue with client-side auth/redirect logic.
+  if (!ctx) {
+    const fallback = {
+      hasAuthEnabled: !!supabase,
+      loading: true,
+      user: null,
+      profile: null,
+      role: null,
+
+      isAdmin: false,
+      isConsultant: false,
+      isDesigner: false,
+      isProduction: false,
+      isEvents: false,
+      isFullAccess: false,
+
+      canSeeImmersion: () => false,
+      canEditImmersion: () => false,
+      canSeeTasks: () => false,
+      canSeeCosts: () => false,
+      canEditPdca: () => false,
+      canSeeImmersionPanel: () => false,
+      canSeeImmersionTasksButton: () => false,
+
+      signIn: async () => {
+        throw new Error("AuthProvider não inicializado");
+      },
+      signOut: async () => {},
+      signOutFast: () => {},
+      refreshProfile: async () => null,
+    };
+
+    // Keep the previous behavior in the browser (helps catch wiring issues)
+    // but allow server/static build to proceed.
+    if (typeof window !== "undefined") {
+      throw new Error("useAuth must be used within AuthProvider");
+    }
+    return fallback;
+  }
+
   return ctx;
 }

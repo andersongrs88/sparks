@@ -213,7 +213,6 @@ export default function ImmersionDetailEditPage() {
 
   const [form, setForm] = useState(null);
 
-
   // Regra B: toda tarefa deve ter um responsável padrão.
   // Se a imersão estiver sem Dono (checklist_owner_id), bloqueamos a criação de tarefas no UI.
   const ownerMissing = !!form && !form.checklist_owner_id;
@@ -1383,18 +1382,18 @@ function normalizeTemplatesForClone(items) {
               </button>
 
               {form?.status !== "Concluída" ? (
-                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full || ownerMissing} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
                   Clonar
                 </button>
               ) : (
-                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full}>
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full || ownerMissing}>
                   Clonar
                 </button>
               )}
 
 
               {form?.status !== "Concluída" ? (
-                <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full}>
+                <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full || ownerMissing}>
                   Concluir imersão
                 </button>
               ) : (
@@ -1785,7 +1784,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Cronograma</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("schedule", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("schedule", null)} disabled={!full || ownerMissing}>
                 Novo item
               </button>
             </div>
@@ -1919,7 +1918,7 @@ function normalizeTemplatesForClone(items) {
                         <td className="cellWrap">{it.link ? <a href={it.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
                         <td className="cellWrap">{it.staff_notes || "—"}</td>
                         <td>
-                          <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                          <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full || ownerMissing}>Editar</button>
                         </td>
                       </tr>
                     ))}
@@ -1977,7 +1976,7 @@ function normalizeTemplatesForClone(items) {
 
                               <div className="compactActions">
                                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                  <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                                  <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full || ownerMissing}>Editar</button>
                                 </div>
                               </div>
                             </div>
@@ -2000,7 +1999,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Custos</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("cost", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("cost", null)} disabled={!full || ownerMissing}>
                 Novo custo
               </button>
             </div>
@@ -2023,7 +2022,7 @@ function normalizeTemplatesForClone(items) {
                       <td>{c.item}</td>
                       <td>{typeof c.value === "number" ? c.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</td>
                       <td className="cellWrap">{c.description || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("cost", c)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("cost", c)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(costs || []).length === 0 ? (
@@ -2048,7 +2047,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Ferramentas</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("tool", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("tool", null)} disabled={!full || ownerMissing}>
                 Nova ferramenta
               </button>
             </div>
@@ -2071,7 +2070,7 @@ function normalizeTemplatesForClone(items) {
                       <td>{t.link ? <a href={t.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
                       <td className="cellWrap">{t.print_guidance || "—"}</td>
                       <td>{typeof t.print_quantity === "number" ? t.print_quantity : "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("tool", t)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("tool", t)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(tools || []).length === 0 ? (
@@ -2087,7 +2086,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Materiais</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("material", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("material", null)} disabled={!full || ownerMissing}>
                 Novo material
               </button>
             </div>
@@ -2112,7 +2111,7 @@ function normalizeTemplatesForClone(items) {
                       <td>{m.quantity ?? "—"}</td>
                       <td className="cellWrap">{m.specification || "—"}</td>
                       <td className="cellWrap">{m.reference || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("material", m)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("material", m)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(materials || []).length === 0 ? (
@@ -2128,7 +2127,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Vídeos</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("video", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("video", null)} disabled={!full || ownerMissing}>
                 Novo vídeo
               </button>
             </div>
@@ -2150,7 +2149,7 @@ function normalizeTemplatesForClone(items) {
                       <td className="cellWrap">{v.when_to_use || "—"}</td>
                       <td>{v.link ? <a href={v.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
                       <td>{v.area || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("video", v)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("video", v)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(videos || []).length === 0 ? (
@@ -2166,7 +2165,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>PDCA</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("pdca", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("pdca", null)} disabled={!full || ownerMissing}>
                 Novo relato
               </button>
             </div>
@@ -2189,7 +2188,7 @@ function normalizeTemplatesForClone(items) {
                       <td className="cellWrap">{p.situation || "—"}</td>
                       <td>{p.reporter || "—"}</td>
                       <td className="cellWrap">{p.notes || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("pdca", p)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("pdca", p)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(pdcaItems || []).length === 0 ? (
@@ -2464,6 +2463,12 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="h2">Tarefas</div>
 
+            {ownerMissing ? (
+              <div className="alert danger" style={{ margin: "10px 0" }}>
+                Esta imersão está sem <b>Dono</b>. Para criar/atribuir tarefas, defina o Dono na aba <b>Informações</b>.
+              </div>
+            ) : null}
+
             <div className="row tasksHeader" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
                 Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas: <b>{checklistSummary.late}</b>
@@ -2478,7 +2483,7 @@ function normalizeTemplatesForClone(items) {
                   className="btn"
                   onClick={onLoadPredefinedTasks}
                   disabled={tasksLoading || !full || ownerMissing}
-                  title={ownerMissing ? "Defina o Dono da imersão para carregar tarefas predefinidas." : (!full ? "Apenas administradores podem carregar tarefas predefinidas." : "")}
+                  title={ownerMissing ? "Defina o Dono da imersão para criar tarefas." : (!full ? "Apenas administradores podem carregar tarefas predefinidas." : "")}
                 >
                   Carregar predefinidas
                 </button>
@@ -2779,7 +2784,7 @@ function normalizeTemplatesForClone(items) {
                   <button type="button" className="btn" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
                     Cancelar
                   </button>
-                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving || !full || ownerMissing} title={ownerMissing ? "Defina o Dono da imersão para criar tarefas." : ""}>
+                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving || !full || ownerMissing}>
                     {taskSaving ? "Criando..." : (ownerMissing ? "Defina o Dono para criar" : "Criar tarefa")}
                   </button>
                 </div>
