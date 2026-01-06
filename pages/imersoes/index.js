@@ -144,7 +144,7 @@ export default function ImmersionsListPage() {
             <div className="small muted">Crie, acesse e acompanhe o andamento das imersões.</div>
           </div>
           {isFullAccess ? (
-            <button className="btn" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
+            <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Nova imersão</button>
           ) : null}
         </div>
 
