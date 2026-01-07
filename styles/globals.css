@@ -596,9 +596,9 @@ textarea.input{
 /* Garantir visibilidade de TODOS os textareas (mesmo sem className) */
 textarea:not(.input){
   width: 100%;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
   padding: 10px 12px;
   border-radius: 12px;
   outline: none;
@@ -824,6 +824,9 @@ select.input{
 }
 
 .sectionTitle {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   padding: 12px 14px;
   font-size: 13px;
   font-weight: 850;
@@ -841,8 +844,20 @@ select.input{
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 10px;
+  padding: 12px 14px;
+  background: var(--color-surface-2);
   border-bottom: 1px solid var(--line);
+  border-radius: 14px 14px 0 0;
+}
+
+.sectionHeader .sectionTitle {
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.sectionHeader .sectionDesc {
+  margin-top: 4px;
 }
 
 @media (max-width: 720px) {
