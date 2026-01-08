@@ -2,6 +2,10 @@
   "name": "sparks",
   "private": true,
   "version": "0.1.0",
+  "engines": {
+    "node": "20.x"
+  },
+  "packageManager": "pnpm@9.12.3",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,9 +20,5 @@
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.10.0"
-  },
-  "engines": {
-    "node": "20.x"
-  },
-  "packageManager": "npm@9.8.1"
+  }
 }
