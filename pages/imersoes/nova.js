@@ -31,7 +31,8 @@ function Field({ label, children, hint }) {
 
 export default function NovaImersaoPage() {
   const router = useRouter();
-  const { loading: authLoading, user, isFullAccess } = useAuth();
+  const { loading: authLoading, user, isFullAccess, profile } = useAuth();
+  const userProfile = profile;
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
