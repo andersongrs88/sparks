@@ -903,7 +903,7 @@ export default function PainelPage() {
 
   return (
     <Layout title="Plano de Ação">
-      <div className="container">
+      <div className="pageWrap">
         <div className="sectionHeader">
           <div>
             <h2 style={{ margin: 0 }}>Plano de Ação</h2>
@@ -1146,6 +1146,24 @@ export default function PainelPage() {
           ) : null}
         </div>
       </div>
+
+      <style jsx>{`
+        /*
+          Esta tela (Plano de Ação) precisa usar a largura total do conteúdo,
+          sem o "container" com max-width, para evitar o aspecto de tela vazia
+          e alinhar com o padrão SaaS do restante do sistema.
+        */
+        .pageWrap {
+          width: 100%;
+          max-width: none;
+          padding: 20px;
+        }
+        @media (max-width: 720px) {
+          .pageWrap {
+            padding: 14px;
+          }
+        }
+      `}</style>
     </Layout>
   );
 }
