@@ -7,7 +7,7 @@ import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immers
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
+import { normalizeRole, canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";

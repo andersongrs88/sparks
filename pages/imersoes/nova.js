@@ -85,7 +85,8 @@ export default function NovaImersaoPage() {
     if (authLoading) return;
     if (!profile?.id) return;
     const rk = normalizeRole(profile.role);
-    if (rk !== "consultor" && rk !== "admin") return;
+    // Apenas Consultor deve entrar automaticamente. Admin mantém seleção manual.
+    if (rk !== "consultor") return;
     setForm((prev) => {
       if (prev.educational_consultant) return prev;
       return {
