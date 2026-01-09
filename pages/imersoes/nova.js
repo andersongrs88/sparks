@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
-import { listProfiles } from "../../lib/profiles";
+import { listActiveProfiles } from "../../lib/profiles";
 import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
@@ -31,7 +31,7 @@ function Field({ label, children, hint }) {
 
 export default function NovaImersaoPage() {
   const router = useRouter();
-  const { loading: authLoading, user, profile, isFullAccess } = useAuth();
+  const { loading: authLoading, user, isFullAccess } = useAuth();
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -79,24 +79,6 @@ export default function NovaImersaoPage() {
     technical_sheet_link: ""
   });
 
-  // Ao criar uma nova imersão, pré-preenche automaticamente o Consultor com o perfil logado
-  // e mantém o "Dono" sincronizado com este consultor.
-  useEffect(() => {
-    if (authLoading) return;
-    if (!profile?.id) return;
-    const rk = normalizeRole(profile.role);
-    // Apenas Consultor deve entrar automaticamente. Admin mantém seleção manual.
-    if (rk !== "consultor") return;
-    setForm((prev) => {
-      if (prev.educational_consultant) return prev;
-      return {
-        ...prev,
-        educational_consultant: profile.id,
-        checklist_owner_id: profile.id,
-      };
-    });
-  }, [authLoading, profile?.id, profile?.role]);
-
   // Clonar imersão inteira (substitui o bloco "Templates do tipo")
   const [cloneSourceId, setCloneSourceId] = useState("");
 
@@ -105,11 +87,27 @@ export default function NovaImersaoPage() {
     if (!user) router.replace("/login");
   }, [authLoading, user, router]);
 
+  // Ao criar uma nova imersão: se o usuário logado for Consultor, preenche automaticamente.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!userProfile?.id) return;
+    const r = normalizeRole(userProfile?.role);
+    if (r !== "consultor" && r !== "consultor_educacao") return;
+    setForm((prev) => {
+      if (prev.educational_consultant) return prev;
+      return {
+        ...prev,
+        educational_consultant: userProfile.id,
+        checklist_owner_id: userProfile.id
+      };
+    });
+  }, [authLoading, userProfile]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const all = await listProfiles();
+        const all = await listActiveProfiles();
         const active = (all || []).filter((p) => !!p.is_active);
         if (mounted) {
           setPeople(active);
@@ -377,7 +375,6 @@ export default function NovaImersaoPage() {
                     value={form.educational_consultant}
                     onChange={(e) => {
                       const v = e.target.value;
-                      // Dono sempre acompanha o consultor definido
                       setForm((p) => ({ ...p, educational_consultant: v, checklist_owner_id: v }));
                     }}
                   >

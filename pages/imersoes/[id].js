@@ -7,7 +7,7 @@ import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immers
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { normalizeRole, canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
+import { canEditTask, isLimitedImmersionRole, roleLabel, normalizeRole } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
@@ -245,18 +245,22 @@ export default function ImmersionDetailEditPage() {
   // Checklist
   const [profiles, setProfiles] = useState([]);
 
+  // Dropdowns por cargo (evita misturar perfis e melhora performance).
   const profilesByRole = useMemo(() => {
+    const active = (profiles || []).filter((p) => p && p.is_active);
     const by = { consultor: [], designer: [], producao: [], eventos: [] };
-    for (const p of profiles || []) {
-      const rk = normalizeRole(p?.role);
-      if (rk && by[rk]) by[rk].push(p);
-      // admin pode ser atribuído como consultor, se necessário
-      if (rk === "admin") by.consultor.push(p);
+    for (const p of active) {
+      const r = normalizeRole(p.role);
+      if (r === "consultor") by.consultor.push(p);
+      else if (r === "designer") by.designer.push(p);
+      else if (r === "producao") by.producao.push(p);
+      else if (r === "eventos") by.eventos.push(p);
     }
-    // ordenação consistente
-    for (const k of Object.keys(by)) {
-      by[k] = by[k].slice().sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
-    }
+    const sortByName = (a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "pt-BR");
+    by.consultor.sort(sortByName);
+    by.designer.sort(sortByName);
+    by.producao.sort(sortByName);
+    by.eventos.sort(sortByName);
     return by;
   }, [profiles]);
   const [speakers, setSpeakers] = useState([]);
@@ -375,8 +379,7 @@ export default function ImmersionDetailEditPage() {
   // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
     let mounted = true;
-    // Esta lista também alimenta os dropdowns de Time de educação (Consultor/Designer/Produção/Eventos).
-    // Portanto, não bloqueie o carregamento para perfis limitados.
+    if (!isFullAccess) { setProfiles([]); return () => { mounted = false; }; }
 
     async function loadProfiles() {
       try {
@@ -1564,7 +1567,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => {
                         const v = e.target.value;
                         set("educational_consultant", v);
-                        // Dono sempre acompanha o consultor definido
+                        // Regra: Dono sempre igual ao Consultor.
                         set("checklist_owner_id", v);
                       }}
                     >
