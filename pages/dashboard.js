@@ -48,7 +48,8 @@ const asId = (v) => {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, user, role } = useAuth();
+  const isAdmin = String(role || "").toLowerCase() === "admin";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -436,11 +437,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="dashBottom">
-          <details className="card compact" open={true}>
-            <summary className="summaryRow">
-              <span style={{ fontWeight: 750 }}>Carga por responsável</span>
-              <span className="muted small">Visão de gargalos</span>
-            </summary>
+          {isAdmin && (
+            <details className="card compact" open={true}>
+              <summary className="summaryRow">
+                <span style={{ fontWeight: 750 }}>Demanda por responsável</span>
+                <span className="muted small">Visão de gargalos</span>
+              </summary>
 
             {workload.length > 0 ? (
               <div className="tableWrap compactTable">
@@ -496,7 +498,8 @@ export default function DashboardPage() {
             ) : (
               <div className="muted small" style={{ marginTop: 8 }}>Sem dados de carga no momento.</div>
             )}
-          </details>
+            </details>
+          )}
 
           
 

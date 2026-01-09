@@ -822,11 +822,8 @@ select.input{
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  /* Full-width header bar inside padded .sectionBody (edge-to-edge) */
-  margin: -12px -14px 12px;
-  padding: 12px 14px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
-  background: var(--color-surface-2);
 }
 
 @media (max-width: 720px) {
