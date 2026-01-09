@@ -87,15 +87,6 @@ body {
   color: var(--text);
 }
 
-/* Typography reset (prevents default H* margins from breaking page headers/blocks) */
-h1, h2, h3, h4, h5, h6 {
-  margin: 0;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-p { margin: 0; }
-
 /* Form controls */
 input[type="checkbox"],
 input[type="radio"] {
@@ -814,12 +805,12 @@ select.input{
 }
 
 .sectionTitle {
-  padding: 0 0 10px 0;
+  padding: 12px 14px;
   font-size: 13px;
   font-weight: 850;
   letter-spacing: -0.01em;
   border-bottom: 1px solid var(--line);
-  background: transparent;
+  background: var(--color-surface-2);
 }
 
 .sectionBody {
