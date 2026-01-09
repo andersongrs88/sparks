@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
-import { listAssignableProfiles } from "../../lib/profiles";
+import { listProfiles } from "../../lib/profiles";
 import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
@@ -31,7 +31,7 @@ function Field({ label, children, hint }) {
 
 export default function NovaImersaoPage() {
   const router = useRouter();
-  const { loading: authLoading, user, isFullAccess } = useAuth();
+  const { loading: authLoading, user, profile, isFullAccess } = useAuth();
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -63,6 +63,7 @@ export default function NovaImersaoPage() {
     room_location: ROOMS[0],
     status: "Planejamento",
     educational_consultant: "",
+    checklist_owner_id: "",
     instructional_designer: "",
     production_responsible: "",
     events_responsible: "",
@@ -78,6 +79,23 @@ export default function NovaImersaoPage() {
     technical_sheet_link: ""
   });
 
+  // Ao criar uma nova imersão, pré-preenche automaticamente o Consultor com o perfil logado
+  // e mantém o "Dono" sincronizado com este consultor.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!profile?.id) return;
+    const rk = normalizeRole(profile.role);
+    if (rk !== "consultor" && rk !== "admin") return;
+    setForm((prev) => {
+      if (prev.educational_consultant) return prev;
+      return {
+        ...prev,
+        educational_consultant: profile.id,
+        checklist_owner_id: profile.id,
+      };
+    });
+  }, [authLoading, profile?.id, profile?.role]);
+
   // Clonar imersão inteira (substitui o bloco "Templates do tipo")
   const [cloneSourceId, setCloneSourceId] = useState("");
 
@@ -90,7 +108,7 @@ export default function NovaImersaoPage() {
     let mounted = true;
     (async () => {
       try {
-        const all = await listAssignableProfiles();
+        const all = await listProfiles();
         const active = (all || []).filter((p) => !!p.is_active);
         if (mounted) {
           setPeople(active);
@@ -353,7 +371,15 @@ export default function NovaImersaoPage() {
             <div className="sectionBody">
               <div className="grid2">
                 <Field label="Consultor" hint="Obrigatório">
-                  <select className="input" value={form.educational_consultant} onChange={(e) => setForm((p) => ({ ...p, educational_consultant: e.target.value }))}>
+                  <select
+                    className="input"
+                    value={form.educational_consultant}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      // Dono sempre acompanha o consultor definido
+                      setForm((p) => ({ ...p, educational_consultant: v, checklist_owner_id: v }));
+                    }}
+                  >
                     <option value="">Selecione</option>
                     {(peopleByRole.consultores || []).map((p) => (
                       <option key={p.id} value={p.id}>

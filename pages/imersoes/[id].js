@@ -244,6 +244,21 @@ export default function ImmersionDetailEditPage() {
 
   // Checklist
   const [profiles, setProfiles] = useState([]);
+
+  const profilesByRole = useMemo(() => {
+    const by = { consultor: [], designer: [], producao: [], eventos: [] };
+    for (const p of profiles || []) {
+      const rk = normalizeRole(p?.role);
+      if (rk && by[rk]) by[rk].push(p);
+      // admin pode ser atribuído como consultor, se necessário
+      if (rk === "admin") by.consultor.push(p);
+    }
+    // ordenação consistente
+    for (const k of Object.keys(by)) {
+      by[k] = by[k].slice().sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+    }
+    return by;
+  }, [profiles]);
   const [speakers, setSpeakers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -360,7 +375,8 @@ export default function ImmersionDetailEditPage() {
   // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
     let mounted = true;
-    if (!isFullAccess) { setProfiles([]); return () => { mounted = false; }; }
+    // Esta lista também alimenta os dropdowns de Time de educação (Consultor/Designer/Produção/Eventos).
+    // Portanto, não bloqueie o carregamento para perfis limitados.
 
     async function loadProfiles() {
       try {
@@ -1545,10 +1561,15 @@ function normalizeTemplatesForClone(items) {
                     <select
                       className="input"
                       value={form.educational_consultant || ""}
-                      onChange={(e) => set("educational_consultant", e.target.value)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        set("educational_consultant", v);
+                        // Dono sempre acompanha o consultor definido
+                        set("checklist_owner_id", v);
+                      }}
                     >
                       <option value="">Selecione</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.consultor.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1563,7 +1584,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => set("instructional_designer", e.target.value)}
                     >
                       <option value="">Selecione</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.designer.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1580,7 +1601,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => set("production_responsible", e.target.value)}
                     >
                       <option value="">Selecione</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.producao.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1595,7 +1616,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => set("events_responsible", e.target.value)}
                     >
                       <option value="">—</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.eventos.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
