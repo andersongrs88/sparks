@@ -77,14 +77,16 @@ function Field({ label, children, hint }) {
 function Section({ title, description, children, right }) {
   return (
     <div className="section" style={{ marginTop: 12 }}>
-      <div className="sectionHeader">
-        <div className="sectionHeaderLeft">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div>
           <div className="sectionTitle">{title}</div>
           {description ? (
-            <div className="sectionDesc">{description}</div>
+            <div className="small muted" style={{ marginTop: 4 }}>
+              {description}
+            </div>
           ) : null}
         </div>
-        {right ? <div className="sectionHeaderRight">{right}</div> : null}
+        {right ? <div>{right}</div> : null}
       </div>
       <div className="sectionBody">{children}</div>
     </div>

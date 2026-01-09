@@ -2,10 +2,6 @@
   "name": "sparks",
   "private": true,
   "version": "0.1.0",
-  "engines": {
-    "node": "20.x"
-  },
-  "packageManager": "npm@9.8.1",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -17,5 +13,8 @@
     "next": "14.2.35",
     "react": "18.2.0",
     "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.10.0"
   }
 }
