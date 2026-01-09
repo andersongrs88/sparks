@@ -1362,3 +1362,27 @@ button{ color: inherit; }
 textarea{
   border: 1px solid var(--border) !important;
 }
+/* ===== Fix CTA Topbar (Imersões) =====
+   Garante que botões primary na topbar nunca sejam sobrescritos por regras de .card .btn
+*/
+.topbar .btn.primary{
+  background: linear-gradient(135deg, #5b6cff, #7b5cff) !important;
+  color: #fff !important;
+  border: none !important;
+}
+
+/* Desktop: alinhamento correto (título + CTA) */
+.topbar{
+  align-items: center;
+}
+
+/* Mobile: CTA full-width */
+@media (max-width: 720px){
+  .topbar{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .topbar .btn.primary{
+    width: 100%;
+  }
+}
