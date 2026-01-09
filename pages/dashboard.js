@@ -506,7 +506,12 @@ export default function DashboardPage() {
       </div>
 
       <style jsx>{`
-        .dashWrap { max-width: 1280px; margin: 0 auto; }
+        /*
+          Em telas largas, o dashboard precisa usar a largura disponível
+          (especialmente nos "cards" de cabeçalho/indicadores) para evitar
+          sensação de espaço desperdiçado.
+        */
+        .dashWrap { width: 100%; max-width: none; margin: 0; }
         .dashTop { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 4px 0 12px; }
 
         .kpiGridCompact {

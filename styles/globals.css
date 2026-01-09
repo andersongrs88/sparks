@@ -276,8 +276,13 @@ a:hover { text-decoration: underline; }
 }
 
 .footerInner {
-  max-width: 1280px;
-  margin: 0 auto;
+  /*
+    Full width footer container
+    Mantém alinhamento consistente com o conteúdo (sem centralizar em 1280px),
+    evitando "faixas" vazias em telas largas.
+  */
+  max-width: none;
+  margin: 0;
   border-top: 1px solid var(--line);
   padding-top: 10px;
   display: flex;
@@ -620,6 +625,8 @@ textarea.input{
   min-height: 140px;
   line-height: 1.4;
   resize: vertical;
+  /* Borda obrigatória (modo claro/escuro) */
+  border: 1px solid var(--border);
 }
 
 /* Garantir visibilidade de TODOS os textareas (mesmo sem className) */
@@ -1412,3 +1419,11 @@ select.input{
 
 /* Baseline button text visibility */
 button{ color: inherit; }
+
+/*
+  Textarea: borda sempre visível (modo claro e escuro)
+  Mantém consistência mesmo quando algum componente aplica estilos locais.
+*/
+textarea{
+  border: 1px solid var(--border) !important;
+}
