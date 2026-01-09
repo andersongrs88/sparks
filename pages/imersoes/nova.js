@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
-import { listProfiles } from "../../lib/profiles";
+import { listAssignableProfiles } from "../../lib/profiles";
 import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
@@ -90,7 +90,7 @@ export default function NovaImersaoPage() {
     let mounted = true;
     (async () => {
       try {
-        const all = await listProfiles();
+        const all = await listAssignableProfiles();
         const active = (all || []).filter((p) => !!p.is_active);
         if (mounted) {
           setPeople(active);
