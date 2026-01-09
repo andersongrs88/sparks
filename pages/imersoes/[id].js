@@ -7,7 +7,7 @@ import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immers
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { canEditTask, isLimitedImmersionRole, roleLabel, normalizeRole } from "../../lib/permissions";
+import { normalizeRole, canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
@@ -245,22 +245,18 @@ export default function ImmersionDetailEditPage() {
   // Checklist
   const [profiles, setProfiles] = useState([]);
 
-  // Dropdowns por cargo (evita misturar perfis e melhora performance).
   const profilesByRole = useMemo(() => {
-    const active = (profiles || []).filter((p) => p && p.is_active);
     const by = { consultor: [], designer: [], producao: [], eventos: [] };
-    for (const p of active) {
-      const r = normalizeRole(p.role);
-      if (r === "consultor") by.consultor.push(p);
-      else if (r === "designer") by.designer.push(p);
-      else if (r === "producao") by.producao.push(p);
-      else if (r === "eventos") by.eventos.push(p);
+    for (const p of profiles || []) {
+      const rk = normalizeRole(p?.role);
+      if (rk && by[rk]) by[rk].push(p);
+      // admin pode ser atribuído como consultor, se necessário
+      if (rk === "admin") by.consultor.push(p);
     }
-    const sortByName = (a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "pt-BR");
-    by.consultor.sort(sortByName);
-    by.designer.sort(sortByName);
-    by.producao.sort(sortByName);
-    by.eventos.sort(sortByName);
+    // ordenação consistente
+    for (const k of Object.keys(by)) {
+      by[k] = by[k].slice().sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+    }
     return by;
   }, [profiles]);
   const [speakers, setSpeakers] = useState([]);
@@ -360,8 +356,21 @@ export default function ImmersionDetailEditPage() {
         setLoading(true);
         const data = await getImmersion(id);
         if (mounted) {
-          setForm(data);
+          // Regra de negócio: o Dono (checklist_owner_id) deve sempre ser o Consultor.
+          // Mantemos o estado sincronizado para não exibir o aviso "sem Dono" na aba Tarefas.
+          const syncedOwnerId = data?.educational_consultant || "";
+          const normalized = {
+            ...data,
+            checklist_owner_id: syncedOwnerId || data?.checklist_owner_id || "",
+          };
+
+          setForm(normalized);
           setOriginalStatus((prev) => (prev === null ? (data?.status || "") : prev));
+
+          // Se a imersão existente ainda não tinha o campo populado, persiste automaticamente.
+          if (syncedOwnerId && data?.checklist_owner_id !== syncedOwnerId) {
+            updateImmersion(id, { checklist_owner_id: syncedOwnerId }).catch(() => {});
+          }
         }
       } catch (e) {
         if (mounted) setError(e?.message || "Falha ao carregar a imersão.");
@@ -379,7 +388,8 @@ export default function ImmersionDetailEditPage() {
   // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
     let mounted = true;
-    if (!isFullAccess) { setProfiles([]); return () => { mounted = false; }; }
+    // Esta lista também alimenta os dropdowns de Time de educação (Consultor/Designer/Produção/Eventos).
+    // Portanto, não bloqueie o carregamento para perfis limitados.
 
     async function loadProfiles() {
       try {
@@ -707,6 +717,10 @@ export default function ImmersionDetailEditPage() {
         end_date: form.end_date,
         room_location: form.room_location,
         status: form.status,
+
+        // Regra: o Dono (checklist_owner_id) sempre acompanha o Consultor.
+        // Isso garante que a aba de Tarefas nunca fique "sem Dono".
+        checklist_owner_id: form.educational_consultant || null,
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
@@ -1216,10 +1230,15 @@ function normalizeTemplatesForClone(items) {
     try {
       setTasksLoading(true);
       const selected = new Set(templatesSelected);
-      const chosen = normalizedTemplates.filter((t) => selected.has(t.idKey) && !t.duplicate);
+      let chosen = normalizedTemplates.filter((t) => selected.has(t.idKey) && !t.duplicate);
+
+      // UX: se o usuário não selecionar nada, assumimos "carregar todas" (apenas as novas).
+      if (chosen.length === 0) {
+        chosen = normalizedTemplates.filter((t) => !t.duplicate);
+      }
 
       if (chosen.length === 0) {
-        setTemplatesError("Selecione pelo menos 1 tarefa nova para carregar.");
+        setTemplatesError("Nenhuma tarefa nova disponível para carregar.");
         return;
       }
 
@@ -1567,7 +1586,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => {
                         const v = e.target.value;
                         set("educational_consultant", v);
-                        // Regra: Dono sempre igual ao Consultor.
+                        // Dono sempre acompanha o consultor definido
                         set("checklist_owner_id", v);
                       }}
                     >
