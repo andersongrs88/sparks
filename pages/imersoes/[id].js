@@ -16,7 +16,6 @@ import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from ".
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
 import { listSpeakers } from "../../lib/speakers";
-import { listTaskTemplates } from "../../lib/templates";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
@@ -175,6 +174,12 @@ function isLate(dueDateStr, status) {
   return due.getTime() < today.getTime();
 }
 
+// Regra do produto: Dono da imersão = Consultor definido no campo Consultor.
+// Mantém compatibilidade caso existam bases antigas usando checklist_owner_id.
+function getEffectiveOwnerId(imm) {
+  return imm?.checklist_owner_id || imm?.educational_consultant || null;
+}
+
 export default function ImmersionDetailEditPage() {
   const router = useRouter();
   const { loading: authLoading, user, isFullAccess, canEditPdca, role, profile } = useAuth();
@@ -214,7 +219,7 @@ export default function ImmersionDetailEditPage() {
 
   // Regra B: toda tarefa deve ter um responsável padrão.
   // Se a imersão estiver sem Dono (checklist_owner_id), bloqueamos a criação de tarefas no UI.
-  const ownerMissing = !!form && !form.checklist_owner_id;
+  const ownerMissing = !!form && !getEffectiveOwnerId(form);
   const [originalStatus, setOriginalStatus] = useState(null);
   const isLocked = originalStatus === "Concluída";
 
@@ -340,7 +345,19 @@ export default function ImmersionDetailEditPage() {
         setLoading(true);
         const data = await getImmersion(id);
         if (mounted) {
-          setForm(data);
+          // Regra do produto: Dono (checklist_owner_id) deve espelhar o Consultor.
+          // Se vier vazio (bases antigas/migrações), sincroniza imediatamente.
+          const effectiveOwner = data?.checklist_owner_id || data?.educational_consultant || null;
+
+          if (!data?.checklist_owner_id && data?.educational_consultant) {
+            try {
+              await updateImmersion(id, { checklist_owner_id: data.educational_consultant });
+            } catch {
+              // best-effort; UI ainda usa effectiveOwner
+            }
+          }
+
+          setForm({ ...data, checklist_owner_id: effectiveOwner });
           setOriginalStatus((prev) => (prev === null ? (data?.status || "") : prev));
         }
       } catch (e) {
@@ -1037,6 +1054,8 @@ function normalizeTemplatesForClone(items) {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState("");
+  const [templatesList, setTemplatesList] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [templatesData, setTemplatesData] = useState([]);
   const [templatesPhase, setTemplatesPhase] = useState({ "PA-PRE": true, "DURANTE": true, "POS": true });
   const [templatesSelected, setTemplatesSelected] = useState(() => new Set());
@@ -1051,7 +1070,12 @@ function normalizeTemplatesForClone(items) {
       .map((r, idx) => {
         const title = (r.title || r.name || r.task || r.description || "").toString().trim();
         const phaseRaw = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim();
-        const phase = ["PA-PRE", "DURANTE", "POS"].includes(phaseRaw) ? phaseRaw : "PA-PRE";
+        const normalized = phaseRaw
+          .replace(/^PA-PRÉ$/i, "PA-PRE")
+          .replace(/^PÓS$/i, "POS")
+          .replace(/^POS-?$/i, "POS")
+          .replace(/^PRE$/i, "PA-PRE");
+        const phase = ["PA-PRE", "DURANTE", "POS"].includes(normalized) ? normalized : "PA-PRE";
         const statusRaw = (r.status || r.default_status || "Programada").toString().trim();
         const status = TASK_STATUSES.includes(statusRaw) ? statusRaw : "Programada";
         const key = `${phase}::${title.trim().toLowerCase()}`;
@@ -1116,20 +1140,53 @@ function normalizeTemplatesForClone(items) {
       return;
     }
     setTemplatesError("");
+    setTemplatesList([]);
+    setSelectedTemplateId("");
     setTemplatesQuery("");
     setTemplatesPhase({ "PA-PRE": true, "DURANTE": true, "POS": true });
     setTemplatesOpen(true);
   }
 
-  async function fetchTemplates() {
+  async function fetchTemplateList() {
     setTemplatesError("");
     setTemplatesLoading(true);
     try {
-      // Carrega templates de tarefas (task_templates) para o modal "Carregar tarefas predefinidas"
-      // Usar o helper evita regressões (ex.: ReferenceError: listTemplates is not defined)
-      // e padroniza a query.
-      const templates = await listTaskTemplates();
-      setTemplatesData(Array.isArray(templates) ? templates : []);
+      const { data, error } = await supabase
+        .from("checklist_templates")
+        .select("id,name")
+        .order("name", { ascending: true })
+        .limit(500);
+      if (error) throw error;
+      const list = data || [];
+      setTemplatesList(list);
+      // Auto-seleciona o primeiro para reduzir cliques
+      if (!selectedTemplateId && list.length > 0) {
+        setSelectedTemplateId(list[0].id);
+      }
+    } catch (e) {
+      setTemplatesError(e?.message || "Falha ao carregar templates.");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function fetchTemplateItems(templateId) {
+    setTemplatesError("");
+    setTemplatesLoading(true);
+    try {
+      if (!templateId) {
+        setTemplatesData([]);
+        return;
+      }
+      const { data: items, error } = await supabase
+        .from("checklist_template_items")
+        .select("id,phase,title,area,offset_days,responsible_role")
+        .eq("template_id", templateId)
+        .order("phase", { ascending: true })
+        .order("offset_days", { ascending: true })
+        .limit(2000);
+      if (error) throw error;
+      setTemplatesData(items || []);
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar templates.");
     } finally {
@@ -1139,10 +1196,17 @@ function normalizeTemplatesForClone(items) {
 
   useEffect(() => {
     if (!templatesOpen) return;
-    // Carrega templates quando o modal abrir
-    fetchTemplates();
+    // Carrega lista de templates quando o modal abrir
+    fetchTemplateList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templatesOpen]);
+
+  useEffect(() => {
+    if (!templatesOpen) return;
+    // Carrega itens do template selecionado
+    fetchTemplateItems(selectedTemplateId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templatesOpen, selectedTemplateId]);
 
   function toggleTemplate(idKey, disabled) {
     if (disabled) return;
