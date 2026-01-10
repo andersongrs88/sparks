@@ -7,7 +7,7 @@ import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immers
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
+import { normalizeRole, canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
@@ -103,7 +103,12 @@ function Tabs({ tabs, active, onChange }) {
           className={active === t.key ? "tabBtn active" : "tabBtn"}
           onClick={() => onChange(t.key)}
         >
-          {t.label}
+          <span className="tabLabelWrap">
+            {t.label}
+            {typeof t.badge !== "undefined" && t.badge !== null && t.badge !== "" ? (
+              <span className="tabBadge" aria-label={`Pendências: ${t.badge}`}>{t.badge}</span>
+            ) : null}
+          </span>
         </button>
       ))}
     </div>
@@ -146,23 +151,20 @@ function parseCurrencyBRL(input) {
 
 
 // Farol por dias
+// Farol por dias
 function getCountdownSignal(days) {
   if (days === null) return null;
 
-  // Hoje ou passado => crítico
-  if (days <= 0) {
-    return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
-  }
+  if (days < 0) return { label: `Há ${Math.abs(days)}d`, className: "countdown past" };
+  if (days === 0) return { label: "Hoje", className: "countdown today" };
 
   // Faixas (ajustáveis)
-  if (days >= 60) return { label: `${days} dias`, style: { background: "#0d3b1e", borderColor: "#1b6b36" } }; // verde
-  if (days >= 40) return { label: `${days} dias`, style: { background: "#0b2b52", borderColor: "#1f4f99" } }; // azul
-  if (days >= 30) return { label: `${days} dias`, style: { background: "#071a35", borderColor: "#163a7a" } }; // azul escuro
-  if (days >= 20) return { label: `${days} dias`, style: { background: "#4a2a00", borderColor: "#b86b00" } }; // laranja
-  if (days >= 10) return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } }; // bordo
+  if (days >= 60) return { label: `Faltam ${days}d`, className: "countdown far" };
+  if (days >= 40) return { label: `Faltam ${days}d`, className: "countdown mid" };
+  if (days >= 20) return { label: `Faltam ${days}d`, className: "countdown near" };
+  if (days >= 10) return { label: `Faltam ${days}d`, className: "countdown soon" };
 
-  // 1 a 9 dias => bordo
-  return { label: `${days} dias`, style: { background: "#3b0a0a", borderColor: "#6b0f0f" } };
+  return { label: `Faltam ${days}d`, className: "countdown urgent" };
 }
 
 function isLate(dueDateStr, status) {
@@ -185,6 +187,16 @@ export default function ImmersionDetailEditPage() {
 
   const [tab, setTab] = useState("informacoes");
 
+  // Deep-link: /imersoes/:id?tab=tarefas abre diretamente a aba Tarefas (checklist)
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qtab = String(router.query?.tab || "");
+    if (qtab === "tarefas") {
+      setTab("checklist");
+    }
+  }, [router.isReady, router.query?.tab]);
+
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -200,6 +212,10 @@ export default function ImmersionDetailEditPage() {
   }, [error]);
 
   const [form, setForm] = useState(null);
+
+  // Regra B: toda tarefa deve ter um responsável padrão.
+  // Se a imersão estiver sem Dono (checklist_owner_id), bloqueamos a criação de tarefas no UI.
+  const ownerMissing = !!form && !form.checklist_owner_id;
   const [originalStatus, setOriginalStatus] = useState(null);
   const isLocked = originalStatus === "Concluída";
 
@@ -228,9 +244,29 @@ export default function ImmersionDetailEditPage() {
 
   // Checklist
   const [profiles, setProfiles] = useState([]);
+
+  const profilesByRole = useMemo(() => {
+    const by = { consultor: [], designer: [], producao: [], eventos: [] };
+    for (const p of profiles || []) {
+      const rk = normalizeRole(p?.role);
+      if (rk && by[rk]) by[rk].push(p);
+      // admin pode ser atribuído como consultor, se necessário
+      if (rk === "admin") by.consultor.push(p);
+    }
+    // ordenação consistente
+    for (const k of Object.keys(by)) {
+      by[k] = by[k].slice().sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+    }
+    return by;
+  }, [profiles]);
   const [speakers, setSpeakers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+
+  // Badge de pendências para a aba "Tarefas" (exibe apenas abertas)
+  const openTasksCount = useMemo(() => {
+    return (tasks || []).filter((t) => String(t?.status || "") !== "Concluída").length;
+  }, [tasks]);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
 
@@ -291,6 +327,7 @@ export default function ImmersionDetailEditPage() {
       { key: "ferramentas", label: "Ferramentas" },
       { key: "materiais", label: "Materiais" },
       { key: "videos", label: "Vídeos" },
+      { key: "checklist", label: "Tarefas", badge: openTasksCount > 0 ? String(openTasksCount) : null },
       { key: "pdca", label: "PDCA" },
       { key: "trainer", label: "Trainer/Palestrante" },
     ];
@@ -299,7 +336,7 @@ export default function ImmersionDetailEditPage() {
       base.splice(6, 0, { key: "custos", label: "Custos" });
     }
     return base;
-  }, [role]);
+  }, [role, openTasksCount]);
 
   // Protege a rota (MVP)
   useEffect(() => {
@@ -319,8 +356,21 @@ export default function ImmersionDetailEditPage() {
         setLoading(true);
         const data = await getImmersion(id);
         if (mounted) {
-          setForm(data);
+          // Regra de negócio: o Dono (checklist_owner_id) deve sempre ser o Consultor.
+          // Mantemos o estado sincronizado para não exibir o aviso "sem Dono" na aba Tarefas.
+          const syncedOwnerId = data?.educational_consultant || "";
+          const normalized = {
+            ...data,
+            checklist_owner_id: syncedOwnerId || data?.checklist_owner_id || "",
+          };
+
+          setForm(normalized);
           setOriginalStatus((prev) => (prev === null ? (data?.status || "") : prev));
+
+          // Se a imersão existente ainda não tinha o campo populado, persiste automaticamente.
+          if (syncedOwnerId && data?.checklist_owner_id !== syncedOwnerId) {
+            updateImmersion(id, { checklist_owner_id: syncedOwnerId }).catch(() => {});
+          }
         }
       } catch (e) {
         if (mounted) setError(e?.message || "Falha ao carregar a imersão.");
@@ -338,7 +388,8 @@ export default function ImmersionDetailEditPage() {
   // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
     let mounted = true;
-    if (!isFullAccess) { setProfiles([]); return () => { mounted = false; }; }
+    // Esta lista também alimenta os dropdowns de Time de educação (Consultor/Designer/Produção/Eventos).
+    // Portanto, não bloqueie o carregamento para perfis limitados.
 
     async function loadProfiles() {
       try {
@@ -666,6 +717,10 @@ export default function ImmersionDetailEditPage() {
         end_date: form.end_date,
         room_location: form.room_location,
         status: form.status,
+
+        // Regra: o Dono (checklist_owner_id) sempre acompanha o Consultor.
+        // Isso garante que a aba de Tarefas nunca fique "sem Dono".
+        checklist_owner_id: form.educational_consultant || null,
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
@@ -1012,11 +1067,14 @@ function normalizeTemplatesForClone(items) {
     return result;
   }, [scheduleItems, scheduleUi]);
 
-  // Templates (tarefas predefinidas) — loader guiado com preview e confirmação
+  // Templates (tarefas predefinidas) — Checklist Templates (lista -> itens -> confirmar)
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState("");
-  const [templatesData, setTemplatesData] = useState([]);
+  // checklist_templates (catálogo) + checklist_template_items (itens)
+  const [templatesCatalog, setTemplatesCatalog] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [templateItems, setTemplateItems] = useState([]);
   const [templatesPhase, setTemplatesPhase] = useState({ "PA-PRE": true, "DURANTE": true, "POS": true });
   const [templatesSelected, setTemplatesSelected] = useState(() => new Set());
   const [templatesQuery, setTemplatesQuery] = useState("");
@@ -1026,18 +1084,45 @@ function normalizeTemplatesForClone(items) {
   }, [tasks]);
 
   const normalizedTemplates = useMemo(() => {
-    const norm = (templatesData || [])
+    const norm = (templateItems || [])
       .map((r, idx) => {
         const title = (r.title || r.name || r.task || r.description || "").toString().trim();
-        const phaseRaw = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim();
-        const phase = ["PA-PRE", "DURANTE", "POS"].includes(phaseRaw) ? phaseRaw : "PA-PRE";
+        // Normaliza fases (aceita variações com/sem acento)
+        const phaseRaw = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim().toUpperCase();
+        let phase = "PA-PRE";
+        if (["DURANTE", "DURING"].includes(phaseRaw)) phase = "DURANTE";
+        else if (["PÓS", "POS", "POST", "PÓS-", "POS-"].includes(phaseRaw)) phase = "POS";
+        else if (["PA", "PRE", "PRÉ", "PA-PRE", "PA-PRÉ", "PA-PRÉ ", "PA-PRÉ"].includes(phaseRaw)) phase = "PA-PRE";
         const statusRaw = (r.status || r.default_status || "Programada").toString().trim();
         const status = TASK_STATUSES.includes(statusRaw) ? statusRaw : "Programada";
         const key = `${phase}::${title.trim().toLowerCase()}`;
         const duplicate = existingTaskKey.has(key);
         const templateId = r.id || r.template_id || null;
         const idKey = templateId ? `id:${templateId}` : `idx:${idx}:${key}`;
-        return { idKey, key, title, phase, status, duplicate };
+        const offsetDays =
+          typeof r.offset_days === "number"
+            ? r.offset_days
+            : typeof r.offsetDays === "number"
+              ? r.offsetDays
+              : r.offset_days != null
+                ? Number(r.offset_days)
+                : r.offsetDays != null
+                  ? Number(r.offsetDays)
+                  : null;
+
+        return {
+          idKey,
+          key,
+          title,
+          phase,
+          status,
+          duplicate,
+          // Campos do template item (para cálculo de prazo / referência)
+          area: r.area || null,
+          responsible_id: r.responsible_id || null,
+          due_basis: r.due_basis || null,
+          offset_days: Number.isFinite(offsetDays) ? offsetDays : null,
+        };
       })
       .filter((t) => !!t.title);
 
@@ -1051,7 +1136,7 @@ function normalizeTemplatesForClone(items) {
       return a.title.localeCompare(b.title);
     });
     return norm;
-  }, [templatesData, existingTaskKey]);
+  }, [templateItems, existingTaskKey]);
 
   const templatesCounts = useMemo(() => {
     const counts = {
@@ -1104,13 +1189,27 @@ function normalizeTemplatesForClone(items) {
     setTemplatesError("");
     setTemplatesLoading(true);
     try {
-      const { data: templates, error: te } = await supabase
-        .from("task_templates")
-        .select("*")
-        .order("created_at", { ascending: true, nullsFirst: false })
-        .limit(1000);
-      if (te) throw te;
-      setTemplatesData(templates || []);
+      // 1) Lista de templates (catálogo)
+      const templates = await listTemplates();
+      setTemplatesCatalog(templates || []);
+
+      // 2) Seleciona automaticamente o template já vinculado na imersão (se existir)
+      //    ou o primeiro template disponível.
+      const defaultTemplateId =
+        immersion?.checklist_template_id ||
+        templatesSelectedTemplateId ||
+        templates?.[0]?.id ||
+        "";
+
+      setTemplatesSelectedTemplateId(defaultTemplateId);
+
+      // 3) Itens do template selecionado
+      if (defaultTemplateId) {
+        const items = await listTemplateItems(defaultTemplateId);
+        setTemplateItems(items || []);
+      } else {
+        setTemplateItems([]);
+      }
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar templates.");
     } finally {
@@ -1175,21 +1274,53 @@ function normalizeTemplatesForClone(items) {
     try {
       setTasksLoading(true);
       const selected = new Set(templatesSelected);
-      const chosen = normalizedTemplates.filter((t) => selected.has(t.idKey) && !t.duplicate);
+      let chosen = normalizedTemplates.filter((t) => selected.has(t.idKey) && !t.duplicate);
+
+      // UX: se o usuário não selecionar nada, assumimos "carregar todas" (apenas as novas).
+      if (chosen.length === 0) {
+        chosen = normalizedTemplates.filter((t) => !t.duplicate);
+      }
 
       if (chosen.length === 0) {
-        setTemplatesError("Selecione pelo menos 1 tarefa nova para carregar.");
+        setTemplatesError("Nenhuma tarefa nova disponível para carregar.");
         return;
       }
 
-      const rows = chosen.map((t) => ({
-        immersion_id: id,
-        title: t.title,
-        phase: t.phase,
-        status: t.status,
-        created_by: user?.id || null,
-        // responsible_id e due_date serão preenchidos automaticamente no lib/tasks
-      }));
+      const parseISODate = (iso) => {
+        if (!iso) return null;
+        const d = new Date(iso + "T00:00:00");
+        return Number.isNaN(d.getTime()) ? null : d;
+      };
+      const toISO = (d) => d.toISOString().slice(0, 10);
+
+      const startD = parseISODate(immersion?.start_date);
+      const endD = parseISODate(immersion?.end_date);
+
+      const rows = chosen.map((t) => {
+        // Preferir datas do template (checklist_template_items) quando disponíveis
+        let due = null;
+        const off = Number.isFinite(t.offset_days) ? t.offset_days : null;
+        if (off != null && (t.due_basis === "start" || t.due_basis === "end")) {
+          const base = t.due_basis === "end" ? endD : startD;
+          if (base) {
+            const d2 = new Date(base.getTime());
+            d2.setDate(d2.getDate() + off);
+            due = toISO(d2);
+          }
+        }
+
+        return {
+          immersion_id: id,
+          title: t.title,
+          phase: t.phase,
+          status: t.status || "Programada",
+          due_date: due,
+          area: t.area || null,
+          // responsible_id: fica como o Dono/Owner via lib/tasks, mas mantemos o valor do template se existir
+          responsible_id: t.responsible_id || null,
+          created_by: user?.id || null,
+        };
+      });
 
       await createTasks(rows);
 
@@ -1340,33 +1471,38 @@ function normalizeTemplatesForClone(items) {
 
             <div className="row">
               {signal ? (
-                <span
-                  className="badge"
-                  style={{
-                    ...signal.style,
-                    border: "1px solid",
-                    padding: "6px 10px",
-                    borderRadius: 999
-                  }}
-                  title="Dias até a data de início"
-                >
-                  {signal.label} até
+                <span className={`badge ${signal.className}`} title="Dias até a data de início">
+                  {signal.label}
                 </span>
               ) : null}
 
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (!id) return;
+                  setTab("checklist");
+                  router.push({ pathname: `/imersoes/${id}`, query: { tab: "tarefas" } }, undefined, { shallow: true });
+                }}
+                disabled={!id}
+                title="Visualizar todas as tarefas desta imersão"
+              >
+                Ver tarefas
+              </button>
+
               {form?.status !== "Concluída" ? (
-                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full || ownerMissing} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
                   Clonar
                 </button>
               ) : (
-                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full}>
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full || ownerMissing}>
                   Clonar
                 </button>
               )}
 
 
               {form?.status !== "Concluída" ? (
-                <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full}>
+                <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full || ownerMissing}>
                   Concluir imersão
                 </button>
               ) : (
@@ -1518,10 +1654,15 @@ function normalizeTemplatesForClone(items) {
                     <select
                       className="input"
                       value={form.educational_consultant || ""}
-                      onChange={(e) => set("educational_consultant", e.target.value)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        set("educational_consultant", v);
+                        // Dono sempre acompanha o consultor definido
+                        set("checklist_owner_id", v);
+                      }}
                     >
                       <option value="">Selecione</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.consultor.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1536,7 +1677,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => set("instructional_designer", e.target.value)}
                     >
                       <option value="">Selecione</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.designer.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1553,7 +1694,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => set("production_responsible", e.target.value)}
                     >
                       <option value="">Selecione</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.producao.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1568,7 +1709,7 @@ function normalizeTemplatesForClone(items) {
                       onChange={(e) => set("events_responsible", e.target.value)}
                     >
                       <option value="">—</option>
-                      {profiles.map((p) => (
+                      {profilesByRole.eventos.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name ? `${p.name} (${p.email})` : p.email}
                         </option>
@@ -1757,7 +1898,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Cronograma</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("schedule", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("schedule", null)} disabled={!full || ownerMissing}>
                 Novo item
               </button>
             </div>
@@ -1891,7 +2032,7 @@ function normalizeTemplatesForClone(items) {
                         <td className="cellWrap">{it.link ? <a href={it.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
                         <td className="cellWrap">{it.staff_notes || "—"}</td>
                         <td>
-                          <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                          <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full || ownerMissing}>Editar</button>
                         </td>
                       </tr>
                     ))}
@@ -1949,7 +2090,7 @@ function normalizeTemplatesForClone(items) {
 
                               <div className="compactActions">
                                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                  <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full}>Editar</button>
+                                  <button type="button" className="btn" onClick={() => openEdit("schedule", it)} disabled={!full || ownerMissing}>Editar</button>
                                 </div>
                               </div>
                             </div>
@@ -1972,7 +2113,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Custos</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("cost", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("cost", null)} disabled={!full || ownerMissing}>
                 Novo custo
               </button>
             </div>
@@ -1995,7 +2136,7 @@ function normalizeTemplatesForClone(items) {
                       <td>{c.item}</td>
                       <td>{typeof c.value === "number" ? c.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</td>
                       <td className="cellWrap">{c.description || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("cost", c)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("cost", c)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(costs || []).length === 0 ? (
@@ -2020,7 +2161,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Ferramentas</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("tool", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("tool", null)} disabled={!full || ownerMissing}>
                 Nova ferramenta
               </button>
             </div>
@@ -2043,7 +2184,7 @@ function normalizeTemplatesForClone(items) {
                       <td>{t.link ? <a href={t.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
                       <td className="cellWrap">{t.print_guidance || "—"}</td>
                       <td>{typeof t.print_quantity === "number" ? t.print_quantity : "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("tool", t)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("tool", t)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(tools || []).length === 0 ? (
@@ -2059,7 +2200,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Materiais</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("material", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("material", null)} disabled={!full || ownerMissing}>
                 Novo material
               </button>
             </div>
@@ -2084,7 +2225,7 @@ function normalizeTemplatesForClone(items) {
                       <td>{m.quantity ?? "—"}</td>
                       <td className="cellWrap">{m.specification || "—"}</td>
                       <td className="cellWrap">{m.reference || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("material", m)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("material", m)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(materials || []).length === 0 ? (
@@ -2100,7 +2241,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>Vídeos</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("video", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("video", null)} disabled={!full || ownerMissing}>
                 Novo vídeo
               </button>
             </div>
@@ -2122,7 +2263,7 @@ function normalizeTemplatesForClone(items) {
                       <td className="cellWrap">{v.when_to_use || "—"}</td>
                       <td>{v.link ? <a href={v.link} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td>
                       <td>{v.area || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("video", v)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("video", v)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(videos || []).length === 0 ? (
@@ -2138,7 +2279,7 @@ function normalizeTemplatesForClone(items) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>PDCA</div>
-              <button type="button" className="btn primary" onClick={() => openEdit("pdca", null)} disabled={!full}>
+              <button type="button" className="btn primary" onClick={() => openEdit("pdca", null)} disabled={!full || ownerMissing}>
                 Novo relato
               </button>
             </div>
@@ -2161,7 +2302,7 @@ function normalizeTemplatesForClone(items) {
                       <td className="cellWrap">{p.situation || "—"}</td>
                       <td>{p.reporter || "—"}</td>
                       <td className="cellWrap">{p.notes || "—"}</td>
-                      <td><button type="button" className="btn" onClick={() => openEdit("pdca", p)} disabled={!full}>Editar</button></td>
+                      <td><button type="button" className="btn" onClick={() => openEdit("pdca", p)} disabled={!full || ownerMissing}>Editar</button></td>
                     </tr>
                   ))}
                   {(pdcaItems || []).length === 0 ? (
@@ -2434,9 +2575,15 @@ function normalizeTemplatesForClone(items) {
 
         {form && tab === "checklist" ? (
           <>
-            <div className="h2">Checklist</div>
+            <div className="h2">Tarefas</div>
 
-            <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            {ownerMissing ? (
+              <div className="alert danger" style={{ margin: "10px 0" }}>
+                Esta imersão está sem <b>Dono</b>. Para criar/atribuir tarefas, defina o Dono na aba <b>Informações</b>.
+              </div>
+            ) : null}
+
+            <div className="row tasksHeader" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div className="small">
                 Total: <b>{checklistSummary.total}</b> • Concluídas: <b>{checklistSummary.done}</b> • Atrasadas: <b>{checklistSummary.late}</b>
               </div>
@@ -2449,12 +2596,12 @@ function normalizeTemplatesForClone(items) {
                   type="button"
                   className="btn"
                   onClick={onLoadPredefinedTasks}
-                  disabled={tasksLoading || !full}
-                  title={!full ? "Apenas administradores podem carregar tarefas predefinidas." : ""}
+                  disabled={tasksLoading || !full || ownerMissing}
+                  title={ownerMissing ? "Defina o Dono da imersão para criar tarefas." : (!full ? "Apenas administradores podem carregar tarefas predefinidas." : "")}
                 >
                   Carregar predefinidas
                 </button>
-                <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={!full}>
+                <button type="button" className="btn primary" onClick={() => setNewTaskOpen((v) => !v)} disabled={!full || ownerMissing} title={ownerMissing ? "Defina o Dono da imersão para criar tarefas." : ""}>
                   {newTaskOpen ? "Fechar" : "Nova tarefa"}
                 </button>
               </div>
@@ -2464,11 +2611,10 @@ function normalizeTemplatesForClone(items) {
             <div className="toolbar" style={{ marginBottom: 12 }}>
               <div className="toolbarLeft">
                 <input
-                  className="input"
+                  className="input taskSearch"
                   placeholder="Buscar por tarefa, responsável ou observação..."
                   value={taskUi.q}
                   onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
-                  style={{ minWidth: 260 }}
                 />
                 <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
                   <option value="ALL">Todas as fases</option>
@@ -2572,6 +2718,52 @@ function normalizeTemplatesForClone(items) {
                     ) : null}
 
                     <div className="card" style={{ marginBottom: 12 }}>
+                      <div className="grid2" style={{ marginBottom: 10 }}>
+                        <div className="field">
+                          <div className="label" style={{ marginBottom: 6 }}>Template</div>
+                          <select
+                            className="input"
+                            value={selectedTemplateId || ""}
+                            onChange={async (e) => {
+                              const nextId = e.target.value;
+                              setSelectedTemplateId(nextId);
+                              if (!nextId) {
+                                setTemplateItems([]);
+                                setTemplatesSelected({});
+                                return;
+                              }
+                              try {
+                                setTemplatesLoading(true);
+                                setTemplatesError("");
+                                const items = await listTemplateItems(nextId);
+                                setTemplateItems(Array.isArray(items) ? items : []);
+                                setTemplatesSelected({});
+                              } catch (err) {
+                                setTemplateItems([]);
+                                setTemplatesSelected({});
+                                setTemplatesError(err?.message || "Falha ao carregar itens do template.");
+                              } finally {
+                                setTemplatesLoading(false);
+                              }
+                            }}
+                            disabled={templatesLoading}
+                          >
+                            <option value="">Selecione</option>
+                            {(templatesCatalog || []).map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <div className="label" style={{ marginBottom: 6 }}>Buscar tarefa</div>
+                          <input
+                            className="input"
+                            placeholder="Buscar tarefa..."
+                            value={templatesQuery}
+                            onChange={(e) => setTemplatesQuery(e.target.value)}
+                          />
+                        </div>
+                      </div>
                       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                           <button
@@ -2599,15 +2791,7 @@ function normalizeTemplatesForClone(items) {
                             PÓS ({templatesCounts.POS.new}/{templatesCounts.POS.total})
                           </button>
                         </div>
-
                         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                          <input
-                            className="input"
-                            placeholder="Buscar tarefa..."
-                            value={templatesQuery}
-                            onChange={(e) => setTemplatesQuery(e.target.value)}
-                            style={{ width: 280, maxWidth: "100%" }}
-                          />
                           <button type="button" className="btn" onClick={selectAllVisible} disabled={templatesLoading}>
                             Selecionar visíveis
                           </button>
@@ -2752,8 +2936,8 @@ function normalizeTemplatesForClone(items) {
                   <button type="button" className="btn" onClick={() => setNewTaskOpen(false)} disabled={taskSaving}>
                     Cancelar
                   </button>
-                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving || !full}>
-                    {taskSaving ? "Criando..." : "Criar tarefa"}
+                  <button type="button" className="btn primary" onClick={onCreateTask} disabled={taskSaving || !full || ownerMissing}>
+                    {taskSaving ? "Criando..." : (ownerMissing ? "Defina o Dono para criar" : "Criar tarefa")}
                   </button>
                 </div>
               </div>
@@ -3401,7 +3585,7 @@ function normalizeTemplatesForClone(items) {
                         setTab("checklist");
                       }}
                     >
-                      Ir para Checklist
+                      Ir para Tarefas
                     </button>
                   </div>
                 </>
@@ -3410,7 +3594,7 @@ function normalizeTemplatesForClone(items) {
               {!closeFlow.loading && closeFlow.summary && closeFlow.canClose ? (
                 <>
                   <div className="small" style={{ marginBottom: 12 }}>
-                    Checklist validado. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
+                    Tarefas validadas. Ao concluir, a imersão ficará marcada como <b>Concluída</b>.
                   </div>
                   <label className="row" style={{ gap: 10, alignItems: "center" }}>
                     <input
@@ -3627,7 +3811,7 @@ function normalizeTemplatesForClone(items) {
                   setTab("checklist");
                 }}
               >
-                Ir para Checklist
+                Ir para Tarefas
               </button>
             </div>
           </div>
