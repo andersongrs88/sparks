@@ -1084,9 +1084,27 @@ function normalizeTemplatesForClone(items) {
     const norm = (templatesData || [])
       .map((r, idx) => {
         const title = (r.title || r.name || r.task || r.description || "").toString().trim();
-        const phaseRaw = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim();
-        const phase = ["PA-PRE", "DURANTE", "POS"].includes(phaseRaw) ? phaseRaw : "PA-PRE";
-        const statusRaw = (r.status || r.default_status || "Programada").toString().trim();
+        const normalizePhase = (val) => {
+          let s = (val ?? "").toString().trim();
+          if (!s) s = "DURANTE";
+          // remove accents/diacritics + normalize separators
+          s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          s = s.toUpperCase();
+          s = s.replace(/[\s_]+/g, "-").replace(/=+/g, "-").replace(/[–—]/g, "-");
+          // keep only letters/numbers/hyphen
+          s = s.replace(/[^A-Z0-9-]/g, "");
+          // map common variants
+          if (s === "PRE" || s === "PA-PRE" || s.startsWith("PA-PRE")) return "PA-PRE";
+          if (s.includes("PRE") && s.includes("PA")) return "PA-PRE";
+          if (s === "POS" || s === "PA-POS" || s.startsWith("PA-POS")) return "POS";
+          if (s.includes("POS")) return "POS";
+          if (s.includes("DUR")) return "DURANTE";
+          if (["PA-PRE", "DURANTE", "POS"].includes(s)) return s;
+          return "DURANTE";
+        };
+
+        const phase = normalizePhase(r.phase ?? r.fase ?? r.stage ?? r.etapa ?? r.momento);
+        const statusRaw = (r.status || r.default_status || r.defaultStatus || "Programada").toString().trim();
         const status = TASK_STATUSES.includes(statusRaw) ? statusRaw : "Programada";
         const key = `${phase}::${title.trim().toLowerCase()}`;
         const duplicate = existingTaskKey.has(key);
