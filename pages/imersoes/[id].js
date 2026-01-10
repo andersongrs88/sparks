@@ -1067,11 +1067,14 @@ function normalizeTemplatesForClone(items) {
     return result;
   }, [scheduleItems, scheduleUi]);
 
-  // Templates (tarefas predefinidas) — loader guiado com preview e confirmação
+  // Templates (tarefas predefinidas) — Checklist Templates (lista -> itens -> confirmar)
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState("");
-  const [templatesData, setTemplatesData] = useState([]);
+  // checklist_templates (catálogo) + checklist_template_items (itens)
+  const [templatesCatalog, setTemplatesCatalog] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [templateItems, setTemplateItems] = useState([]);
   const [templatesPhase, setTemplatesPhase] = useState({ "PA-PRE": true, "DURANTE": true, "POS": true });
   const [templatesSelected, setTemplatesSelected] = useState(() => new Set());
   const [templatesQuery, setTemplatesQuery] = useState("");
@@ -1081,36 +1084,45 @@ function normalizeTemplatesForClone(items) {
   }, [tasks]);
 
   const normalizedTemplates = useMemo(() => {
-    const norm = (templatesData || [])
+    const norm = (templateItems || [])
       .map((r, idx) => {
         const title = (r.title || r.name || r.task || r.description || "").toString().trim();
-        const normalizePhase = (val) => {
-          let s = (val ?? "").toString().trim();
-          if (!s) s = "DURANTE";
-          // remove accents/diacritics + normalize separators
-          s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          s = s.toUpperCase();
-          s = s.replace(/[\s_]+/g, "-").replace(/=+/g, "-").replace(/[–—]/g, "-");
-          // keep only letters/numbers/hyphen
-          s = s.replace(/[^A-Z0-9-]/g, "");
-          // map common variants
-          if (s === "PRE" || s === "PA-PRE" || s.startsWith("PA-PRE")) return "PA-PRE";
-          if (s.includes("PRE") && s.includes("PA")) return "PA-PRE";
-          if (s === "POS" || s === "PA-POS" || s.startsWith("PA-POS")) return "POS";
-          if (s.includes("POS")) return "POS";
-          if (s.includes("DUR")) return "DURANTE";
-          if (["PA-PRE", "DURANTE", "POS"].includes(s)) return s;
-          return "DURANTE";
-        };
-
-        const phase = normalizePhase(r.phase ?? r.fase ?? r.stage ?? r.etapa ?? r.momento);
-        const statusRaw = (r.status || r.default_status || r.defaultStatus || "Programada").toString().trim();
+        // Normaliza fases (aceita variações com/sem acento)
+        const phaseRaw = (r.phase || r.fase || r.stage || "PA-PRE").toString().trim().toUpperCase();
+        let phase = "PA-PRE";
+        if (["DURANTE", "DURING"].includes(phaseRaw)) phase = "DURANTE";
+        else if (["PÓS", "POS", "POST", "PÓS-", "POS-"].includes(phaseRaw)) phase = "POS";
+        else if (["PA", "PRE", "PRÉ", "PA-PRE", "PA-PRÉ", "PA-PRÉ ", "PA-PRÉ"].includes(phaseRaw)) phase = "PA-PRE";
+        const statusRaw = (r.status || r.default_status || "Programada").toString().trim();
         const status = TASK_STATUSES.includes(statusRaw) ? statusRaw : "Programada";
         const key = `${phase}::${title.trim().toLowerCase()}`;
         const duplicate = existingTaskKey.has(key);
         const templateId = r.id || r.template_id || null;
         const idKey = templateId ? `id:${templateId}` : `idx:${idx}:${key}`;
-        return { idKey, key, title, phase, status, duplicate };
+        const offsetDays =
+          typeof r.offset_days === "number"
+            ? r.offset_days
+            : typeof r.offsetDays === "number"
+              ? r.offsetDays
+              : r.offset_days != null
+                ? Number(r.offset_days)
+                : r.offsetDays != null
+                  ? Number(r.offsetDays)
+                  : null;
+
+        return {
+          idKey,
+          key,
+          title,
+          phase,
+          status,
+          duplicate,
+          // Campos do template item (para cálculo de prazo / referência)
+          area: r.area || null,
+          responsible_id: r.responsible_id || null,
+          due_basis: r.due_basis || null,
+          offset_days: Number.isFinite(offsetDays) ? offsetDays : null,
+        };
       })
       .filter((t) => !!t.title);
 
@@ -1124,7 +1136,7 @@ function normalizeTemplatesForClone(items) {
       return a.title.localeCompare(b.title);
     });
     return norm;
-  }, [templatesData, existingTaskKey]);
+  }, [templateItems, existingTaskKey]);
 
   const templatesCounts = useMemo(() => {
     const counts = {
@@ -1177,13 +1189,27 @@ function normalizeTemplatesForClone(items) {
     setTemplatesError("");
     setTemplatesLoading(true);
     try {
-      const { data: templates, error: te } = await supabase
-        .from("task_templates")
-        .select("*")
-        .order("created_at", { ascending: true, nullsFirst: false })
-        .limit(1000);
-      if (te) throw te;
-      setTemplatesData(templates || []);
+      // 1) Lista de templates (catálogo)
+      const templates = await listTemplates();
+      setTemplatesCatalog(templates || []);
+
+      // 2) Seleciona automaticamente o template já vinculado na imersão (se existir)
+      //    ou o primeiro template disponível.
+      const defaultTemplateId =
+        immersion?.checklist_template_id ||
+        templatesSelectedTemplateId ||
+        templates?.[0]?.id ||
+        "";
+
+      setTemplatesSelectedTemplateId(defaultTemplateId);
+
+      // 3) Itens do template selecionado
+      if (defaultTemplateId) {
+        const items = await listTemplateItems(defaultTemplateId);
+        setTemplateItems(items || []);
+      } else {
+        setTemplateItems([]);
+      }
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar templates.");
     } finally {
@@ -1260,14 +1286,41 @@ function normalizeTemplatesForClone(items) {
         return;
       }
 
-      const rows = chosen.map((t) => ({
-        immersion_id: id,
-        title: t.title,
-        phase: t.phase,
-        status: t.status,
-        created_by: user?.id || null,
-        // responsible_id e due_date serão preenchidos automaticamente no lib/tasks
-      }));
+      const parseISODate = (iso) => {
+        if (!iso) return null;
+        const d = new Date(iso + "T00:00:00");
+        return Number.isNaN(d.getTime()) ? null : d;
+      };
+      const toISO = (d) => d.toISOString().slice(0, 10);
+
+      const startD = parseISODate(immersion?.start_date);
+      const endD = parseISODate(immersion?.end_date);
+
+      const rows = chosen.map((t) => {
+        // Preferir datas do template (checklist_template_items) quando disponíveis
+        let due = null;
+        const off = Number.isFinite(t.offset_days) ? t.offset_days : null;
+        if (off != null && (t.due_basis === "start" || t.due_basis === "end")) {
+          const base = t.due_basis === "end" ? endD : startD;
+          if (base) {
+            const d2 = new Date(base.getTime());
+            d2.setDate(d2.getDate() + off);
+            due = toISO(d2);
+          }
+        }
+
+        return {
+          immersion_id: id,
+          title: t.title,
+          phase: t.phase,
+          status: t.status || "Programada",
+          due_date: due,
+          area: t.area || null,
+          // responsible_id: fica como o Dono/Owner via lib/tasks, mas mantemos o valor do template se existir
+          responsible_id: t.responsible_id || null,
+          created_by: user?.id || null,
+        };
+      });
 
       await createTasks(rows);
 
@@ -2665,6 +2718,52 @@ function normalizeTemplatesForClone(items) {
                     ) : null}
 
                     <div className="card" style={{ marginBottom: 12 }}>
+                      <div className="grid2" style={{ marginBottom: 10 }}>
+                        <div className="field">
+                          <div className="label" style={{ marginBottom: 6 }}>Template</div>
+                          <select
+                            className="input"
+                            value={selectedTemplateId || ""}
+                            onChange={async (e) => {
+                              const nextId = e.target.value;
+                              setSelectedTemplateId(nextId);
+                              if (!nextId) {
+                                setTemplateItems([]);
+                                setTemplatesSelected({});
+                                return;
+                              }
+                              try {
+                                setTemplatesLoading(true);
+                                setTemplatesError("");
+                                const items = await listTemplateItems(nextId);
+                                setTemplateItems(Array.isArray(items) ? items : []);
+                                setTemplatesSelected({});
+                              } catch (err) {
+                                setTemplateItems([]);
+                                setTemplatesSelected({});
+                                setTemplatesError(err?.message || "Falha ao carregar itens do template.");
+                              } finally {
+                                setTemplatesLoading(false);
+                              }
+                            }}
+                            disabled={templatesLoading}
+                          >
+                            <option value="">Selecione</option>
+                            {(templatesCatalog || []).map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <div className="label" style={{ marginBottom: 6 }}>Buscar tarefa</div>
+                          <input
+                            className="input"
+                            placeholder="Buscar tarefa..."
+                            value={templatesQuery}
+                            onChange={(e) => setTemplatesQuery(e.target.value)}
+                          />
+                        </div>
+                      </div>
                       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                           <button
@@ -2692,15 +2791,7 @@ function normalizeTemplatesForClone(items) {
                             PÓS ({templatesCounts.POS.new}/{templatesCounts.POS.total})
                           </button>
                         </div>
-
                         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                          <input
-                            className="input"
-                            placeholder="Buscar tarefa..."
-                            value={templatesQuery}
-                            onChange={(e) => setTemplatesQuery(e.target.value)}
-                            style={{ width: 280, maxWidth: "100%" }}
-                          />
                           <button type="button" className="btn" onClick={selectAllVisible} disabled={templatesLoading}>
                             Selecionar visíveis
                           </button>
