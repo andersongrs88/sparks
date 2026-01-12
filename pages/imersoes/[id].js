@@ -1246,7 +1246,7 @@ function normalizeTemplatesForClone(items) {
     openTemplates();
   }
 
-  async function onConfirmLoadTemplates() {
+  async function onConfirmLoadTemplates(showSuccessAlert = false) {
     if (!id || typeof id !== "string") return;
     if (!full) {
       setTemplatesError("Sem permissão para carregar tarefas predefinidas.");
@@ -1278,6 +1278,10 @@ function normalizeTemplatesForClone(items) {
 
       setTemplatesOpen(false);
       await loadTasks(id);
+
+      if (showSuccessAlert) {
+        alert("Tarefas atualizadas");
+      }
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar tarefas predefinidas.");
     } finally {
@@ -2650,11 +2654,11 @@ function normalizeTemplatesForClone(items) {
                       <button
                         type="button"
                         className="btn primary"
-                        onClick={onConfirmLoadTemplates}
+                        onClick={() => onConfirmLoadTemplates(true)}
                         disabled={tasksLoading || templatesLoading || selectedCount === 0}
-                        title={selectedCount === 0 ? "Selecione tarefas para carregar." : ""}
+                        title={selectedCount === 0 ? "Selecione tarefas para salvar." : ""}
                       >
-                        Carregar selecionadas ({selectedCount})
+                        Salvar ({selectedCount})
                       </button>
                     </div>
                   </div>
