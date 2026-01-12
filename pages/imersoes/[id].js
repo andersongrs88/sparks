@@ -5,9 +5,9 @@ import BottomSheet from "../../components/BottomSheet";
 import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
 import { supabase } from "../../lib/supabaseClient";
-import { listActiveTaskTemplates } from "../../lib/taskTemplates";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
+import { listActiveTaskTemplates } from "../../lib/taskTemplates";
 import { canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
@@ -1152,60 +1152,42 @@ function normalizeTemplatesForClone(items) {
     setTemplatesError("");
     setTemplatesLoading(true);
     try {
-      // Preferência: task_templates (catálogo único por fase)
-      // Fallback: checklist_templates/checklist_template_items (bases legadas)
-      let list = null;
+      // 1) Fonte "nova": catálogo task_templates (linhas por tarefa)
+      let hasCatalog = false;
       try {
-        list = await listActiveTaskTemplates();
+        const rows = await listActiveTaskTemplates();
+        hasCatalog = Array.isArray(rows) && rows.length > 0;
       } catch {
-        list = null;
+        // Se não existir tabela/RLS, apenas ignora e tenta o legado.
+        hasCatalog = false;
       }
 
-      if (Array.isArray(list) && list.length > 0) {
-        // Regra do produto: responsável será definido pelo Dono/Consultor da imersão no createTasks()
-        setTemplatesList([]);
-        setSelectedTemplateId("");
-        setTemplatesData(list);
-        return;
+      // 2) Fonte "legada": checklist_templates (templates por conjunto)
+      let legacy = [];
+      try {
+        const { data, error } = await supabase
+          .from("checklist_templates")
+          .select("id,name")
+          .order("name", { ascending: true })
+          .limit(500);
+        if (error) throw error;
+        legacy = data || [];
+      } catch {
+        legacy = [];
       }
 
-      // Fallback (legado)
-      const { data: legacyTemplates, error: e1 } = await supabase
-        .from("checklist_templates")
-        .select("id,name")
-        .order("name", { ascending: true })
-        .limit(500);
-      if (e1) throw e1;
+      const list = [];
+      if (hasCatalog) {
+        list.push({ id: "__TASK_TEMPLATES__", name: "Catálogo padrão (task_templates)", _source: "task_templates" });
+      }
+      for (const t of legacy) list.push({ ...t, _source: "checklist_templates" });
 
-      const firstId = (legacyTemplates || [])[0]?.id || "";
-      setTemplatesList(legacyTemplates || []);
-      setSelectedTemplateId(firstId);
+      setTemplatesList(list);
 
-      if (!firstId) {
-        setTemplatesData([]);
+      // Não auto-carrega: agora o usuário escolhe e clica em "Carregar".
+      if (!list || list.length === 0) {
         setTemplatesError("Nenhum template ativo encontrado.");
-        return;
       }
-
-      const { data: items, error: e2 } = await supabase
-        .from("checklist_template_items")
-        .select("id,phase,title,area,offset_days")
-        .eq("template_id", firstId)
-        .order("phase", { ascending: true })
-        .order("offset_days", { ascending: true })
-        .limit(2000);
-      if (e2) throw e2;
-
-      // Normaliza nomes para o mesmo shape do fluxo novo
-      const normalized = (items || []).map((it) => ({
-        id: it.id,
-        phase: it.phase,
-        title: it.title,
-        area: it.area,
-        days_offset: it.offset_days,
-        is_active: true,
-      }));
-      setTemplatesData(normalized);
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar templates.");
     } finally {
@@ -1214,9 +1196,46 @@ function normalizeTemplatesForClone(items) {
   }
 
   async function fetchTemplateItems(templateId) {
-    // Fluxo legado removido (checklist_templates/checklist_template_items).
-    // Mantemos a função por compatibilidade, mas o modal agora usa apenas task_templates via fetchTemplateList().
-    return;
+    setTemplatesError("");
+    setTemplatesLoading(true);
+    try {
+      if (!templateId) {
+        setTemplatesData([]);
+        return;
+      }
+
+      // Catálogo padrão (task_templates)
+      if (templateId === "__TASK_TEMPLATES__") {
+        const rows = await listActiveTaskTemplates();
+        // Normaliza os campos para o mesmo formato consumido por normalizedTemplates
+        const mapped = (rows || []).map((r) => ({
+          id: r.id,
+          phase: r.phase,
+          title: r.title,
+          offset_days: r.days_offset,
+          area: r.area,
+          suggested_owner: r.suggested_owner,
+          _source: "task_templates",
+        }));
+        setTemplatesData(mapped);
+        return;
+      }
+
+      // Legado (checklist_template_items)
+      const { data: items, error } = await supabase
+        .from("checklist_template_items")
+        .select("id, phase, title, offset_days, observation, sort_order")
+        .eq("template_id", templateId)
+        .order("phase", { ascending: true })
+        .order("offset_days", { ascending: true })
+        .limit(2000);
+      if (error) throw error;
+      setTemplatesData(items || []);
+    } catch (e) {
+      setTemplatesError(e?.message || "Falha ao carregar templates.");
+    } finally {
+      setTemplatesLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -2688,6 +2707,55 @@ function normalizeTemplatesForClone(items) {
                     {templatesError ? (
                       <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{templatesError}</div>
                     ) : null}
+
+                    <div className="card" style={{ marginBottom: 12 }}>
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <div>
+                          <div className="h3" style={{ margin: 0 }}>Templates disponíveis</div>
+                          <div className="small muted" style={{ marginTop: 2 }}>
+                            Escolha um template e clique em “Carregar” para visualizar e selecionar as tarefas.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={fetchTemplateList}
+                          disabled={templatesLoading}
+                          title="Recarregar lista de templates"
+                        >
+                          Recarregar
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: 10 }}>
+                        {templatesList?.length ? (
+                          <div className="stack" style={{ gap: 8 }}>
+                            {templatesList.map((t) => (
+                              <div key={t.id} className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                                  <div className="badge">{t._source === "task_templates" ? "Catálogo" : "Template"}</div>
+                                  <div style={{ fontWeight: 600 }}>{t.name || "Sem nome"}</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className={`btn ${selectedTemplateId === t.id ? "primary" : ""}`}
+                                  onClick={() => {
+                                    setSelectedTemplateId(t.id);
+                                    setTemplatesQuery("");
+                                    setTemplatesPhase({ "PA-PRE": true, "DURANTE": true, "POS": true });
+                                  }}
+                                  disabled={templatesLoading}
+                                >
+                                  {selectedTemplateId === t.id ? "Carregado" : "Carregar"}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="small muted">Nenhum template disponível.</div>
+                        )}
+                      </div>
+                    </div>
 
                     <div className="card" style={{ marginBottom: 12 }}>
                       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
