@@ -670,6 +670,8 @@ export default function ImmersionDetailEditPage() {
     }
 
     try {
+      // Snapshot do consultor ANTES de salvar.
+      // Usado para reapontar tarefas em aberto caso o consultor seja alterado.
       const prevConsultant = originalConsultantRef.current;
       const nextConsultant = form.educational_consultant;
 
@@ -764,8 +766,6 @@ export default function ImmersionDetailEditPage() {
 
       // Se o consultor mudou, atualiza o responsável das tarefas em aberto.
       // Importante: tarefas concluídas NÃO mudam (regra aplicada também no lib/tasks.js).
-      const prevConsultant = originalConsultantRef.current;
-      const nextConsultant = form.educational_consultant;
       if (prevConsultant && nextConsultant && prevConsultant !== nextConsultant) {
         try {
           let currentTasks = tasks;
