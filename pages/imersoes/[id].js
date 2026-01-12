@@ -1407,51 +1407,7 @@ function normalizeTemplatesForClone(items) {
 
   return (
     <Layout title="Editar imersão">
-      
-                    <div className="card" style={{ marginBottom: 12 }}>
-                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <div>
-                          <div className="h3" style={{ margin: 0 }}>Templates disponíveis</div>
-                          <div className="small muted" style={{ marginTop: 2 }}>
-                            Escolha um template e clique em “Carregar” para visualizar e selecionar as tarefas.
-                          </div>
-                        </div>
-                        <button type="button" className="btn" onClick={fetchTemplateList} disabled={templatesLoading}>
-                          Recarregar
-                        </button>
-                      </div>
-
-                      <div style={{ marginTop: 10 }}>
-                        {templatesLoading && templatesList.length === 0 ? (
-                          <div className="small muted">Carregando templates…</div>
-                        ) : templatesList.length === 0 ? (
-                          <div className="small muted">Nenhum template cadastrado.</div>
-                        ) : (
-                          <div className="stack" style={{ gap: 10 }}>
-                            {templatesList.map((t) => (
-                              <div key={t.id} className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                                <div className="row" style={{ gap: 10, alignItems: "center" }}>
-                                  <span className="pill">Template</span>
-                                  <div style={{ fontWeight: 600 }}>{t.name}</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  className={`btn ${selectedTemplateId === t.id ? "primary" : ""}`}
-                                  onClick={async () => {
-                                    setSelectedTemplateId(t.id);
-                                    await fetchTemplateItems(t.id);
-                                  }}
-                                  disabled={templatesLoading}
-                                >
-                                  {selectedTemplateId === t.id ? "Carregado" : "Carregar"}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-<div className="card" style={{ marginBottom: 12 }}>
+      <div className="card" style={{ marginBottom: 12 }}>
         {loading ? (
           <div className="small">Carregando...</div>
         ) : form ? (
@@ -2707,6 +2663,48 @@ function normalizeTemplatesForClone(items) {
                     {templatesError ? (
                       <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{templatesError}</div>
                     ) : null}
+
+
+                    <div className="card" style={{ marginBottom: 12 }}>
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <div>
+                          <div className="small" style={{ fontWeight: 700 }}>Templates disponíveis</div>
+                          <div className="small muted">Escolha um template e clique em “Carregar” para visualizar e selecionar as tarefas.</div>
+                        </div>
+                        <button type="button" className="btn" onClick={fetchTemplateList} disabled={templatesLoading}>
+                          Recarregar
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: 10 }}>
+                        {templatesLoading && templatesList.length === 0 ? (
+                          <div className="small" style={{ padding: 8 }}>Carregando templates...</div>
+                        ) : templatesList.length === 0 ? (
+                          <div className="small" style={{ padding: 8 }}>Nenhum template cadastrado.</div>
+                        ) : (
+                          <div className="stack" style={{ gap: 8 }}>
+                            {templatesList.map((t) => {
+                              const isSel = selectedTemplateId === t.id;
+                              return (
+                                <div key={t.id} className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                                  <div className="row" style={{ gap: 10, alignItems: "center" }}>
+                                    <span className="pill">Template</span>
+                                    <div style={{ fontWeight: 700 }}>{t.name || "Sem nome"}</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className={`btn ${isSel ? "primary" : ""}`}
+                                    onClick={() => setSelectedTemplateId(t.id)}
+                                  >
+                                    {isSel ? "Carregado" : "Carregar"}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
                     <div className="card" style={{ marginBottom: 12 }}>
                       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
