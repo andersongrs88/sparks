@@ -5,7 +5,8 @@ import BottomSheet from "../../components/BottomSheet";
 import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
 import { supabase } from "../../lib/supabaseClient";
-import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion, bulkUpdateTasks } from "../../lib/tasks";
+import { listActiveTaskTemplates } from "../../lib/taskTemplates";
+import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
 import { canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
@@ -223,10 +224,6 @@ export default function ImmersionDetailEditPage() {
   const [originalStatus, setOriginalStatus] = useState(null);
   const isLocked = originalStatus === "Concluída";
 
-  // Mantém o consultor original para aplicar a regra:
-  // se o consultor mudar, tarefas em aberto mudam de responsável; tarefas concluídas não mudam.
-  const originalConsultantRef = useRef(null);
-
   // Governança: bloqueio para concluir imersão com pendências
   const [closeBlock, setCloseBlock] = useState({ open: false, summary: null, sample: [] });
 
@@ -363,11 +360,6 @@ export default function ImmersionDetailEditPage() {
 
           setForm({ ...data, checklist_owner_id: effectiveOwner });
           setOriginalStatus((prev) => (prev === null ? (data?.status || "") : prev));
-
-          // Snapshot do consultor no carregamento inicial (para detectar mudança ao salvar).
-          if (originalConsultantRef.current === null) {
-            originalConsultantRef.current = data?.educational_consultant || null;
-          }
         }
       } catch (e) {
         if (mounted) setError(e?.message || "Falha ao carregar a imersão.");
@@ -670,11 +662,6 @@ export default function ImmersionDetailEditPage() {
     }
 
     try {
-      // Snapshot do consultor ANTES de salvar.
-      // Usado para reapontar tarefas em aberto caso o consultor seja alterado.
-      const prevConsultant = originalConsultantRef.current;
-      const nextConsultant = form.educational_consultant;
-
       // Governança: bloquear "Concluída" com pendências
       const isTryingToClose = form.status === "Concluída" && originalStatus !== "Concluída";
       if (isTryingToClose) {
@@ -722,9 +709,6 @@ export default function ImmersionDetailEditPage() {
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
 
-        // Regra do produto: Dono do checklist sempre espelha o Consultor.
-        checklist_owner_id: form.educational_consultant,
-
         production_responsible: form.production_responsible || null,
         events_responsible: form.events_responsible || null,
 
@@ -763,27 +747,6 @@ export default function ImmersionDetailEditPage() {
 
         // Removido: will_have_speaker (toggle legado). A gestão agora é via speaker_ids.
       });
-
-      // Se o consultor mudou, atualiza o responsável das tarefas em aberto.
-      // Importante: tarefas concluídas NÃO mudam (regra aplicada também no lib/tasks.js).
-      if (prevConsultant && nextConsultant && prevConsultant !== nextConsultant) {
-        try {
-          let currentTasks = tasks;
-          if (!Array.isArray(currentTasks) || currentTasks.length === 0) {
-            currentTasks = await listTasksByImmersion(form.id);
-          }
-          const ids = (currentTasks || []).map((t) => t.id).filter(Boolean);
-          if (ids.length) {
-            await bulkUpdateTasks(ids, { responsible_id: nextConsultant });
-            await loadTasks(form.id);
-          }
-        } catch {
-          // best-effort: não bloqueia o salvamento da imersão
-        }
-      }
-
-      // Atualiza snapshot após salvar
-      originalConsultantRef.current = nextConsultant || null;
 
       alert("Alterações salvas.");
       setOriginalStatus(form.status);
@@ -1189,18 +1152,60 @@ function normalizeTemplatesForClone(items) {
     setTemplatesError("");
     setTemplatesLoading(true);
     try {
-      const { data, error } = await supabase
+      // Preferência: task_templates (catálogo único por fase)
+      // Fallback: checklist_templates/checklist_template_items (bases legadas)
+      let list = null;
+      try {
+        list = await listActiveTaskTemplates();
+      } catch {
+        list = null;
+      }
+
+      if (Array.isArray(list) && list.length > 0) {
+        // Regra do produto: responsável será definido pelo Dono/Consultor da imersão no createTasks()
+        setTemplatesList([]);
+        setSelectedTemplateId("");
+        setTemplatesData(list);
+        return;
+      }
+
+      // Fallback (legado)
+      const { data: legacyTemplates, error: e1 } = await supabase
         .from("checklist_templates")
         .select("id,name")
         .order("name", { ascending: true })
         .limit(500);
-      if (error) throw error;
-      const list = data || [];
-      setTemplatesList(list);
-      // Auto-seleciona o primeiro para reduzir cliques
-      if (!selectedTemplateId && list.length > 0) {
-        setSelectedTemplateId(list[0].id);
+      if (e1) throw e1;
+
+      const firstId = (legacyTemplates || [])[0]?.id || "";
+      setTemplatesList(legacyTemplates || []);
+      setSelectedTemplateId(firstId);
+
+      if (!firstId) {
+        setTemplatesData([]);
+        setTemplatesError("Nenhum template ativo encontrado.");
+        return;
       }
+
+      const { data: items, error: e2 } = await supabase
+        .from("checklist_template_items")
+        .select("id,phase,title,area,offset_days")
+        .eq("template_id", firstId)
+        .order("phase", { ascending: true })
+        .order("offset_days", { ascending: true })
+        .limit(2000);
+      if (e2) throw e2;
+
+      // Normaliza nomes para o mesmo shape do fluxo novo
+      const normalized = (items || []).map((it) => ({
+        id: it.id,
+        phase: it.phase,
+        title: it.title,
+        area: it.area,
+        days_offset: it.offset_days,
+        is_active: true,
+      }));
+      setTemplatesData(normalized);
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar templates.");
     } finally {
@@ -1209,29 +1214,9 @@ function normalizeTemplatesForClone(items) {
   }
 
   async function fetchTemplateItems(templateId) {
-    setTemplatesError("");
-    setTemplatesLoading(true);
-    try {
-      if (!templateId) {
-        setTemplatesData([]);
-        return;
-      }
-      const { data: items, error } = await supabase
-        .from("checklist_template_items")
-        // OBS: responsible_role foi removido do schema.
-        // Regra atual: o responsável das tarefas é o Consultor cadastrado na imersão.
-        .select("id,phase,title,area,offset_days")
-        .eq("template_id", templateId)
-        .order("phase", { ascending: true })
-        .order("offset_days", { ascending: true })
-        .limit(2000);
-      if (error) throw error;
-      setTemplatesData(items || []);
-    } catch (e) {
-      setTemplatesError(e?.message || "Falha ao carregar templates.");
-    } finally {
-      setTemplatesLoading(false);
-    }
+    // Fluxo legado removido (checklist_templates/checklist_template_items).
+    // Mantemos a função por compatibilidade, mas o modal agora usa apenas task_templates via fetchTemplateList().
+    return;
   }
 
   useEffect(() => {
