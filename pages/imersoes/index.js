@@ -6,11 +6,20 @@ import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function badgeClass(status) {
-  if (status === "Concluída") return "badge success";
+  if (status === "Concluída") return "badge ok";
   if (status === "Em andamento") return "badge warn";
-  if (status === "Confirmada") return "badge success";
+  if (status === "Confirmada") return "badge info";
   if (status === "Cancelada") return "badge danger";
+  // Planejamento e demais: neutro
   return "badge";
+}
+
+function normalizeStatus(raw) {
+  const s = (raw || "").trim();
+  // Back-compat: status antigo
+  if (s === "Em execução") return "Em andamento";
+  if (!s) return "Planejamento";
+  return s;
 }
 
 function toDateOnly(isoStr) {
@@ -115,7 +124,7 @@ export default function ImmersionsListPage() {
     });
     const byStatus = {};
     for (const it of all) {
-      const k = it.status || "Planejamento";
+      const k = normalizeStatus(it.status);
       byStatus[k] = byStatus[k] || [];
       byStatus[k].push(it);
     }
@@ -123,9 +132,12 @@ export default function ImmersionsListPage() {
   }, [items, search]);
 
   const statusOrder = useMemo(() => {
+    // Ordem oficial do produto
     const known = ["Planejamento", "Confirmada", "Em andamento", "Concluída", "Cancelada"];
-    const other = Object.keys(grouped || {}).filter((k) => !known.includes(k));
-    return [...known.filter((k) => (grouped || {})[k]?.length), ...other];
+    const other = Object.keys(grouped || {}).filter((k) => !known.includes(k) && (grouped || {})[k]?.length);
+    // Sempre exibe os status oficiais (mesmo vazios) para consistência visual.
+    // Anexa quaisquer status desconhecidos que ainda existam no banco (back-compat).
+    return [...known, ...other];
   }, [grouped]);
 
   function displayNameById(id) {
@@ -193,6 +205,12 @@ export default function ImmersionsListPage() {
 
               {status === "Concluída" && collapsedConcluded ? null : (
               <div style={{ marginTop: 8 }}>
+                {(grouped[status] || []).length === 0 ? (
+                  <div className="small muted" style={{ padding: 10 }}>
+                    Sem imersões neste status.
+                  </div>
+                ) : null}
+
                 {(grouped[status] || []).map((it) => (
                   <button
                     key={it.id}
