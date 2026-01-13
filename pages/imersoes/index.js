@@ -6,10 +6,9 @@ import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function normalizeStatus(status) {
-  if (!status) return "Planejamento";
-  // Back-compat: status antigo
+  // Back-compat: o sistema antigo usava "Em execução".
   if (status === "Em execução") return "Em andamento";
-  return status;
+  return status || "Planejamento";
 }
 
 function badgeClass(status) {
@@ -20,7 +19,6 @@ function badgeClass(status) {
   if (s === "Cancelada") return "badge danger";
   return "badge";
 }
-
 
 function toDateOnly(isoStr) {
   if (!isoStr) return null;
@@ -70,7 +68,7 @@ export default function ImmersionsListPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [collapsedConcluded, setCollapsedConcluded] = useState(true);
-  const [collapsedCancelled, setCollapsedCancelled] = useState(true);
+  const [collapsedCanceled, setCollapsedCanceled] = useState(true);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -133,14 +131,11 @@ export default function ImmersionsListPage() {
   }, [items, search]);
 
   const statusOrder = useMemo(() => {
-    // Ordem operacional (prioridade): Em andamento > Planejamento > Concluída > Cancelada
-    const primary = ["Em andamento", "Planejamento", "Concluída", "Cancelada"];
-    const keys = Object.keys(grouped || {});
-    const other = keys.filter((k) => !primary.includes(k));
-    return [...primary, ...other];
+    // Ordem operacional (foco em execução) + seções históricas colapsáveis.
+    const ordered = ["Em andamento", "Planejamento", "Confirmada", "Concluída", "Cancelada"];
+    const other = Object.keys(grouped || {}).filter((k) => !ordered.includes(k));
+    return [...ordered, ...other];
   }, [grouped]);
-
-
 
   function displayNameById(id) {
     if (!id) return "-";
@@ -185,84 +180,79 @@ export default function ImmersionsListPage() {
 
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
           {statusOrder.map((status) => {
-          const count = (grouped[status] || []).length;
-          const isConcluded = status === "Concluída";
-          const isCancelled = status === "Cancelada";
-          const isCollapsible = isConcluded || isCancelled;
-          const isCollapsed = isConcluded ? collapsedConcluded : isCancelled ? collapsedCancelled : false;
+            const count = (grouped[status] || []).length;
+            const isConcluded = status === "Concluída";
+            const isCanceled = status === "Cancelada";
+            const isCollapsible = isConcluded || isCanceled;
+            const isCollapsed = isConcluded ? collapsedConcluded : isCanceled ? collapsedCanceled : false;
 
-          return (
-            <div className="card" key={status}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 220 }}>
-                  <h3 style={{ margin: 0 }}>{status}</h3>
-                  <span className={badgeClass(status)}>{count}</span>
-                </div>
+            return (
+              <div className="card" key={status}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <h3 style={{ margin: 0 }}>{status}</h3>
+                    <span className={badgeClass(status)}>{count}</span>
+                  </div>
 
-                {isCollapsible ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      if (isConcluded) setCollapsedConcluded((v) => !v);
-                      if (isCancelled) setCollapsedCancelled((v) => !v);
-                    }}
-                    title={isCollapsed ? "Expandir" : "Recolher"}
-                    style={{ height: 36 }}
-                  >
-                    {isCollapsed ? "Expandir" : "Recolher"}
-                  </button>
-                ) : null}
-              </div>
-
-              {isCollapsible && isCollapsed ? null : (
-                <div style={{ marginTop: 8 }}>
-                  {count === 0 ? (
-                    <div className="muted" style={{ padding: "10px 2px" }}>
-                      Sem imersões neste status.
-                    </div>
-                  ) : null}
-
-                  {(grouped[status] || []).map((it) => (
+                  {isCollapsible ? (
                     <button
-                      key={it.id}
                       type="button"
-                      className="listItem"
-                      onClick={() => router.push(`/imersoes/${it.id}`)}
+                      className="btn"
+                      onClick={() => {
+                        if (isConcluded) setCollapsedConcluded((v) => !v);
+                        if (isCanceled) setCollapsedCanceled((v) => !v);
+                      }}
+                      title={isCollapsed ? "Expandir" : "Recolher"}
+                      style={{ height: 36 }}
                     >
-                      <div className="listItemMain">
-                        <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
-                        <div className="listItemMeta">
-                          {(() => {
-                            const t = scheduleTag(it.start_date, it.end_date);
-                            return (
-                              <>
-                                {it.start_date} → {it.end_date} • <span className={t.cls}>{t.label}</span>
-                              </>
-                            );
-                          })()}
-                          {` • Consultor: ${displayNameById(it.educational_consultant)} • Designer: ${displayNameById(it.instructional_designer)}`}
-                          {it.next_action?.title
-                            ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}`
-                            : ""}
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span className="pill">{it.room_location || "-"}</span>
-                        <span aria-hidden="true">›</span>
-                      </div>
+                      {isCollapsed ? "Expandir" : "Recolher"}
                     </button>
-                  ))}
+                  ) : null}
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {isCollapsible && isCollapsed ? null : (
+                  <div style={{ marginTop: 8 }}>
+                    {count === 0 ? (
+                      <div className="muted" style={{ padding: "10px 2px" }}>
+                        Sem imersões neste status.
+                      </div>
+                    ) : null}
+
+                    {(grouped[status] || []).map((it) => (
+                      <button
+                        key={it.id}
+                        type="button"
+                        className="listItem"
+                        onClick={() => router.push(`/imersoes/${it.id}`)}
+                      >
+                        <div className="listItemMain">
+                          <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
+                          <div className="listItemMeta">
+                            {(() => {
+                              const t = scheduleTag(it.start_date, it.end_date);
+                              return (
+                                <>
+                                  {it.start_date} → {it.end_date} • <span className={t.cls}>{t.label}</span>
+                                </>
+                              );
+                            })()}
+                            {` • Consultor: ${displayNameById(it.educational_consultant)} • Designer: ${displayNameById(it.instructional_designer)}`}
+                            {it.next_action?.title
+                              ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}`
+                              : ""}
+                          </div>
+                        </div>
+                        <div className="listItemAside">
+                          <span className="pill">{it.room_location || "-"}</span>
+                          <span className="chev">›</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </Layout>
