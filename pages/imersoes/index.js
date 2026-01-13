@@ -6,8 +6,9 @@ import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function badgeClass(status) {
-  if (status === "Concluída") return "badge ok";
-  if (status === "Em execução") return "badge warn";
+  if (status === "Concluída") return "badge success";
+  if (status === "Em andamento") return "badge warn";
+  if (status === "Confirmada") return "badge success";
   if (status === "Cancelada") return "badge danger";
   return "badge";
 }
@@ -122,7 +123,7 @@ export default function ImmersionsListPage() {
   }, [items, search]);
 
   const statusOrder = useMemo(() => {
-    const known = ["Em execução", "Planejamento", "Concluída"];
+    const known = ["Planejamento", "Confirmada", "Em andamento", "Concluída", "Cancelada"];
     const other = Object.keys(grouped || {}).filter((k) => !known.includes(k));
     return [...known.filter((k) => (grouped || {})[k]?.length), ...other];
   }, [grouped]);

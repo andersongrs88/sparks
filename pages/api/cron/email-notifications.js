@@ -387,8 +387,8 @@ export default async function handler(req, res) {
 
         // Heurística de risco:
         // - >=5 atrasadas => risco
-        // - ou >=3 atrasadas e status "Em execução" => risco
-        const risky = items.length >= 5 || (items.length >= 3 && String(imm.status || "").toLowerCase().includes("exec"));
+        // - ou >=3 atrasadas e status "Em andamento" => risco
+        const risky = items.length >= 5 || (items.length >= 3 && String(imm.status || "").toLowerCase().includes("andamento"));
         if (!risky) continue;
 
         const p = await getProfile(imm.educational_consultant);

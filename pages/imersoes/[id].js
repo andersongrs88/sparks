@@ -76,13 +76,11 @@ function Field({ label, children, hint }) {
 
 function Section({ title, description, children, right }) {
   return (
-    <div className="section" style={{ marginTop: 12 }}>
-      <div className="sectionHeader">
+    <div className="section section--immersion" style={{ marginTop: 12 }}>
+      <div className="sectionHeader sectionHeader--bar">
         <div className="sectionHeaderLeft">
-          <div className="sectionTitle">{title}</div>
-          {description ? (
-            <div className="sectionDesc">{description}</div>
-          ) : null}
+          <div className="sectionTitleText">{title}</div>
+          {description ? <div className="sectionDesc">{description}</div> : null}
         </div>
         {right ? <div className="sectionHeaderRight">{right}</div> : null}
       </div>
@@ -1180,7 +1178,7 @@ function normalizeTemplatesForClone(items) {
       }
       const { data: items, error } = await supabase
         .from("checklist_template_items")
-        .select("id,phase,title,area,offset_days")
+        .select("id,phase,title,area,offset_days,responsible_role")
         .eq("template_id", templateId)
         .order("phase", { ascending: true })
         .order("offset_days", { ascending: true })
@@ -1246,7 +1244,7 @@ function normalizeTemplatesForClone(items) {
     openTemplates();
   }
 
-  async function onConfirmLoadTemplates(showSuccessAlert = false) {
+  async function onConfirmLoadTemplates() {
     if (!id || typeof id !== "string") return;
     if (!full) {
       setTemplatesError("Sem permissão para carregar tarefas predefinidas.");
@@ -1278,10 +1276,6 @@ function normalizeTemplatesForClone(items) {
 
       setTemplatesOpen(false);
       await loadTasks(id);
-
-      if (showSuccessAlert) {
-        alert("Tarefas atualizadas");
-      }
     } catch (e) {
       setTemplatesError(e?.message || "Falha ao carregar tarefas predefinidas.");
     } finally {
@@ -1583,9 +1577,10 @@ function normalizeTemplatesForClone(items) {
                   <Field label="Status">
                     <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                       <option value="Planejamento">Planejamento</option>
-                      <option value="Em execução">Em execução</option>
-                      <option value="Cancelada">Cancelada</option>
+                      <option value="Confirmada">Confirmada</option>
+                      <option value="Em andamento">Em andamento</option>
                       <option value="Concluída">Concluída</option>
+                      <option value="Cancelada">Cancelada</option>
                     </select>
                     <div className="small muted" style={{ marginTop: 6 }}>
                       Para concluir, prefira o botão <b>Concluir imersão</b> no topo (governança de pendências).
@@ -2329,7 +2324,9 @@ function normalizeTemplatesForClone(items) {
                 <Field label="Status">
                   <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                     <option value="Planejamento">Planejamento</option>
-                    <option value="Em execução">Em execução</option>
+                    <option value="Confirmada">Confirmada</option>
+                    <option value="Em andamento">Em andamento</option>
+                    <option value="Concluída">Concluída</option>
                     <option value="Cancelada">Cancelada</option>
                   </select>
                   <div className="small muted" style={{ marginTop: 6 }}>
@@ -2654,11 +2651,11 @@ function normalizeTemplatesForClone(items) {
                       <button
                         type="button"
                         className="btn primary"
-                        onClick={() => onConfirmLoadTemplates(true)}
+                        onClick={onConfirmLoadTemplates}
                         disabled={tasksLoading || templatesLoading || selectedCount === 0}
-                        title={selectedCount === 0 ? "Selecione tarefas para salvar." : ""}
+                        title={selectedCount === 0 ? "Selecione tarefas para carregar." : ""}
                       >
-                        Salvar ({selectedCount})
+                        Carregar selecionadas ({selectedCount})
                       </button>
                     </div>
                   </div>
@@ -2667,48 +2664,6 @@ function normalizeTemplatesForClone(items) {
                     {templatesError ? (
                       <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{templatesError}</div>
                     ) : null}
-
-
-                    <div className="card" style={{ marginBottom: 12 }}>
-                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <div>
-                          <div className="small" style={{ fontWeight: 700 }}>Templates disponíveis</div>
-                          <div className="small muted">Escolha um template e clique em “Carregar” para visualizar e selecionar as tarefas.</div>
-                        </div>
-                        <button type="button" className="btn" onClick={fetchTemplateList} disabled={templatesLoading}>
-                          Recarregar
-                        </button>
-                      </div>
-
-                      <div style={{ marginTop: 10 }}>
-                        {templatesLoading && templatesList.length === 0 ? (
-                          <div className="small" style={{ padding: 8 }}>Carregando templates...</div>
-                        ) : templatesList.length === 0 ? (
-                          <div className="small" style={{ padding: 8 }}>Nenhum template cadastrado.</div>
-                        ) : (
-                          <div className="stack" style={{ gap: 8 }}>
-                            {templatesList.map((t) => {
-                              const isSel = selectedTemplateId === t.id;
-                              return (
-                                <div key={t.id} className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                                  <div className="row" style={{ gap: 10, alignItems: "center" }}>
-                                    <span className="pill">Template</span>
-                                    <div style={{ fontWeight: 700 }}>{t.name || "Sem nome"}</div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className={`btn ${isSel ? "primary" : ""}`}
-                                    onClick={() => setSelectedTemplateId(t.id)}
-                                  >
-                                    {isSel ? "Carregado" : "Carregar"}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
 
                     <div className="card" style={{ marginBottom: 12 }}>
                       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -3772,6 +3727,55 @@ function normalizeTemplatesForClone(items) {
           </div>
         </div>
       ) : null}
+
+      <style jsx global>{`
+        /* Imersão • Seções (containers) */
+        .section--immersion .sectionHeader--bar {
+          background: var(--color-surface-2);
+          padding: 12px 14px;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .section--immersion .sectionBody {
+          padding: 12px 14px;
+        }
+
+        .section--immersion .sectionHeaderLeft {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .section--immersion .sectionTitleText {
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: -0.01em;
+          line-height: 1.15;
+          margin: 0;
+        }
+
+        .section--immersion .sectionDesc {
+          font-size: 12px;
+          color: var(--muted);
+          line-height: 1.35;
+        }
+
+        /* Evita "tarja dupla" herdada do .sectionTitle (usada em outros lugares) */
+        .section--immersion .sectionTitle { 
+          padding: 0; 
+          border: 0; 
+          background: transparent; 
+        }
+
+        @media (max-width: 720px) {
+          .section--immersion .sectionHeader--bar {
+            padding: 12px;
+          }
+          .section--immersion .sectionBody {
+            padding: 12px;
+          }
+        }
+      `}</style>
 
     </Layout>
   );
