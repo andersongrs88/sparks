@@ -6,7 +6,8 @@ import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function badgeClass(status) {
-  if (status === "Concluída") return "badge ok";
+  // Coerência com as classes existentes em styles/globals.css
+  if (status === "Concluída") return "badge success";
   if (status === "Em andamento") return "badge warn";
   if (status === "Confirmada") return "badge info";
   if (status === "Cancelada") return "badge danger";
