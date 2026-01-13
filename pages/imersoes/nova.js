@@ -352,6 +352,7 @@ export default function NovaImersaoPage() {
           ) : null}
 
           {tab === "informacoes" ? (
+          <>
           <div className="section">
             <div className="sectionTitle">Informações básicas</div>
             <div className="sectionBody">
@@ -603,10 +604,10 @@ export default function NovaImersaoPage() {
               ) : null}
             </div>
           </div>
-
+          </>
           ) : null}
 
-          <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="row" style={{ justifyContent: "space-between" }}> 
             <button className="btn" type="button" onClick={() => router.push("/imersoes")}>Cancelar</button>
             <button className="btn primary" type="submit" disabled={saving}>{saving ? "Criando..." : "Criar imersão"}</button>
           </div>
