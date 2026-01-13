@@ -5,23 +5,22 @@ import { useAuth } from "../../context/AuthContext";
 import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
+function normalizeStatus(status) {
+  if (!status) return "Planejamento";
+  // Back-compat: status antigo
+  if (status === "Em execução") return "Em andamento";
+  return status;
+}
+
 function badgeClass(status) {
-  // Coerência com as classes existentes em styles/globals.css
-  if (status === "Concluída") return "badge success";
-  if (status === "Em andamento") return "badge warn";
-  if (status === "Confirmada") return "badge info";
-  if (status === "Cancelada") return "badge danger";
-  // Planejamento e demais: neutro
+  const s = normalizeStatus(status);
+  if (s === "Concluída") return "badge ok";
+  if (s === "Em andamento") return "badge warn";
+  if (s === "Confirmada") return "badge info";
+  if (s === "Cancelada") return "badge danger";
   return "badge";
 }
 
-function normalizeStatus(raw) {
-  const s = (raw || "").trim();
-  // Back-compat: status antigo
-  if (s === "Em execução") return "Em andamento";
-  if (!s) return "Planejamento";
-  return s;
-}
 
 function toDateOnly(isoStr) {
   if (!isoStr) return null;
@@ -71,6 +70,7 @@ export default function ImmersionsListPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [collapsedConcluded, setCollapsedConcluded] = useState(true);
+  const [collapsedCancelled, setCollapsedCancelled] = useState(true);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -133,13 +133,14 @@ export default function ImmersionsListPage() {
   }, [items, search]);
 
   const statusOrder = useMemo(() => {
-    // Ordem oficial do produto
-    const known = ["Planejamento", "Confirmada", "Em andamento", "Concluída", "Cancelada"];
-    const other = Object.keys(grouped || {}).filter((k) => !known.includes(k) && (grouped || {})[k]?.length);
-    // Sempre exibe os status oficiais (mesmo vazios) para consistência visual.
-    // Anexa quaisquer status desconhecidos que ainda existam no banco (back-compat).
-    return [...known, ...other];
+    // Ordem operacional (prioridade): Em andamento > Planejamento > Concluída > Cancelada
+    const primary = ["Em andamento", "Planejamento", "Concluída", "Cancelada"];
+    const keys = Object.keys(grouped || {});
+    const other = keys.filter((k) => !primary.includes(k));
+    return [...primary, ...other];
   }, [grouped]);
+
+
 
   function displayNameById(id) {
     if (!id) return "-";
@@ -183,63 +184,81 @@ export default function ImmersionsListPage() {
         ) : null}
 
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-          {statusOrder.map((status) => (
+          {statusOrder.map((status) => {
+          const count = (grouped[status] || []).length;
+          const isConcluded = status === "Concluída";
+          const isCancelled = status === "Cancelada";
+          const isCollapsible = isConcluded || isCancelled;
+          const isCollapsed = isConcluded ? collapsedConcluded : isCancelled ? collapsedCancelled : false;
+
+          return (
             <div className="card" key={status}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 220 }}>
                   <h3 style={{ margin: 0 }}>{status}</h3>
-                  <span className={badgeClass(status)}>{(grouped[status] || []).length}</span>
+                  <span className={badgeClass(status)}>{count}</span>
                 </div>
 
-                {status === "Concluída" ? (
+                {isCollapsible ? (
                   <button
                     type="button"
                     className="btn"
-                    onClick={() => setCollapsedConcluded((v) => !v)}
-                    title={collapsedConcluded ? "Expandir concluídas" : "Recolher concluídas"}
+                    onClick={() => {
+                      if (isConcluded) setCollapsedConcluded((v) => !v);
+                      if (isCancelled) setCollapsedCancelled((v) => !v);
+                    }}
+                    title={isCollapsed ? "Expandir" : "Recolher"}
                     style={{ height: 36 }}
                   >
-                    {collapsedConcluded ? "Expandir" : "Recolher"}
+                    {isCollapsed ? "Expandir" : "Recolher"}
                   </button>
                 ) : null}
               </div>
 
-              {status === "Concluída" && collapsedConcluded ? null : (
-              <div style={{ marginTop: 8 }}>
-                {(grouped[status] || []).length === 0 ? (
-                  <div className="small muted" style={{ padding: 10 }}>
-                    Sem imersões neste status.
-                  </div>
-                ) : null}
+              {isCollapsible && isCollapsed ? null : (
+                <div style={{ marginTop: 8 }}>
+                  {count === 0 ? (
+                    <div className="muted" style={{ padding: "10px 2px" }}>
+                      Sem imersões neste status.
+                    </div>
+                  ) : null}
 
-                {(grouped[status] || []).map((it) => (
-                  <button
-                    key={it.id}
-                    type="button"
-                    className="listItem"
-                    onClick={() => router.push(`/imersoes/${it.id}`)}
-                  >
-                    <div className="listItemMain">
-                      <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
-                      <div className="listItemMeta">
-                        {(() => {
-                          const t = scheduleTag(it.start_date, it.end_date);
-                          return (
-                            <>
-                              {it.start_date} → {it.end_date} • <span className={t.cls}>{t.label}</span>
-                            </>
-                          );
-                        })()}
-                        {` • Consultor: ${displayNameById(it.educational_consultant)} • Designer: ${displayNameById(it.instructional_designer)}`}
-                        {it.next_action?.title ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}` : ""}
+                  {(grouped[status] || []).map((it) => (
+                    <button
+                      key={it.id}
+                      type="button"
+                      className="listItem"
+                      onClick={() => router.push(`/imersoes/${it.id}`)}
+                    >
+                      <div className="listItemMain">
+                        <div className="listItemTitle">{it.immersion_name || "(sem nome)"}</div>
+                        <div className="listItemMeta">
+                          {(() => {
+                            const t = scheduleTag(it.start_date, it.end_date);
+                            return (
+                              <>
+                                {it.start_date} → {it.end_date} • <span className={t.cls}>{t.label}</span>
+                              </>
+                            );
+                          })()}
+                          {` • Consultor: ${displayNameById(it.educational_consultant)} • Designer: ${displayNameById(it.instructional_designer)}`}
+                          {it.next_action?.title
+                            ? ` • Próxima ação: ${it.next_action.title}${it.next_action.due_date ? ` (prazo ${it.next_action.due_date})` : ""}`
+                            : ""}
+                        </div>
                       </div>
-                    </div>
-                    <div className="listItemAside">
-                      <span className="pill">{it.room_location || "-"}</span>
-                      <span className="chev">›</span>
-                    </div>
-                  </button>
-                ))}
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span className="pill">{it.room_location || "-"}</span>
+                        <span aria-hidden="true">›</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
               </div>
               )}
             </div>
