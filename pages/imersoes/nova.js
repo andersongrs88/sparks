@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import ImmersionTabs from "../../components/ImmersionTabs";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 import { listActiveProfiles } from "../../lib/profiles";
 import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
-import { normalizeRole } from "../../lib/permissions";
+import { isLimitedImmersionRole, normalizeRole } from "../../lib/permissions";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
@@ -29,52 +30,43 @@ function Field({ label, children, hint }) {
   );
 }
 
-
-function Tabs({ tabs, active, onChange }) {
-  return (
-    <div className="tabsRow" role="tablist" aria-label="Seções da imersão">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          className={active === t.key ? "tabBtn active" : "tabBtn"}
-          onClick={() => onChange(t.key)}
-          role="tab"
-          aria-selected={active === t.key}
-        >
-          <span className="tabLabelWrap">{t.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const CREATE_TABS = [
-  { key: "informacoes", label: "Informações" },
-  { key: "narrativa", label: "Narrativa" },
-  { key: "ferramentas", label: "Ferramentas" },
-  { key: "materiais", label: "Materiais" },
-  { key: "videos", label: "Vídeos" },
-  { key: "checklist", label: "Tarefas" },
-  { key: "custos", label: "Custos" },
-  { key: "pdca", label: "PDCA" },
-  { key: "trainer", label: "Trainer/Palestrante" },
-];
-
-
 export default function NovaImersaoPage() {
   const router = useRouter();
-
-  const initialTab = typeof router.query?.tab === "string" ? router.query.tab : "informacoes";
-  const [activeTab, setActiveTab] = useState(CREATE_TABS.some((t) => t.key === initialTab) ? initialTab : "informacoes");
-
-  useEffect(() => {
-    const q = typeof router.query?.tab === "string" ? router.query.tab : null;
-    if (q && CREATE_TABS.some((t) => t.key === q) && q !== activeTab) setActiveTab(q);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.query?.tab]);
   const { loading: authLoading, user, isFullAccess, profile } = useAuth();
   const userProfile = profile;
+
+  const role = normalizeRole(userProfile?.role);
+  const showCostsTab = !isLimitedImmersionRole(role);
+
+  const tabs = useMemo(() => {
+    const base = [
+      { key: "informacoes", label: "Informações" },
+      { key: "narrativa", label: "Narrativa" },
+      { key: "ferramentas", label: "Ferramentas" },
+      { key: "materiais", label: "Materiais" },
+      { key: "videos", label: "Vídeos" },
+      { key: "checklist", label: "Tarefas" },
+    ];
+    if (showCostsTab) base.push({ key: "custos", label: "Custos" });
+    base.push({ key: "pdca", label: "PDCA" });
+    base.push({ key: "trainer", label: "Trainer/Palestrante" });
+    return base;
+  }, [showCostsTab]);
+
+  const [tab, setTab] = useState("informacoes");
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qtab = String(router.query?.tab || "").toLowerCase();
+    if (!qtab) return;
+    // Suporta deep-link legado: ?tab=tarefas -> aba Tarefas
+    if (qtab === "tarefas") {
+      setTab("checklist");
+      return;
+    }
+    const exists = tabs.some((t) => t.key === qtab);
+    if (exists) setTab(qtab);
+  }, [router.isReady, router.query?.tab, tabs]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -273,7 +265,7 @@ export default function NovaImersaoPage() {
           throw new Error(msg || "Falha ao clonar imersão.");
         }
         const out = await r.json();
-        router.push(`/imersoes/${out?.id}?tab=${activeTab}`);
+        router.push(`/imersoes/${out?.id}`);
         return;
       }
 
@@ -316,7 +308,7 @@ export default function NovaImersaoPage() {
         }
       }
 
-      router.push(`/imersoes/${created.id}?tab=${activeTab}`);
+      router.push(`/imersoes/${created.id}`);
     } catch (err) {
       setError(err?.message || "Erro ao criar imersão.");
     } finally {
@@ -332,18 +324,6 @@ export default function NovaImersaoPage() {
           Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <Tabs
-            tabs={CREATE_TABS}
-            active={activeTab}
-            onChange={(k) => {
-              setActiveTab(k);
-              router.replace({ pathname: router.pathname, query: { ...router.query, tab: k } }, undefined, { shallow: true });
-            }}
-          />
-        </div>
-
-
         {error ? (
           <div
             ref={errorRef}
@@ -357,9 +337,21 @@ export default function NovaImersaoPage() {
           </div>
         ) : null}
 
-        
-{activeTab === "informacoes" ? (
         <form onSubmit={onSubmit}>
+          <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
+
+          {tab !== "informacoes" ? (
+            <div className="tabEmpty" role="status" aria-live="polite">
+              <div className="small muted" style={{ marginBottom: 10 }}>
+                As demais abas ficam disponíveis após criar a imersão. Complete as informações e clique em “Criar imersão”.
+              </div>
+              <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+                <button type="button" className="btn" onClick={() => setTab("informacoes")}>Voltar para Informações</button>
+              </div>
+            </div>
+          ) : null}
+
+          {tab === "informacoes" ? (
           <div className="section">
             <div className="sectionTitle">Informações básicas</div>
             <div className="sectionBody">
@@ -612,37 +604,13 @@ export default function NovaImersaoPage() {
             </div>
           </div>
 
+          ) : null}
+
           <div className="row" style={{ justifyContent: "space-between" }}>
             <button className="btn" type="button" onClick={() => router.push("/imersoes")}>Cancelar</button>
             <button className="btn primary" type="submit" disabled={saving}>{saving ? "Criando..." : "Criar imersão"}</button>
           </div>
         </form>
-        ) : (
-          <div className="section">
-            <div className="sectionTitle">{CREATE_TABS.find((t) => t.key === activeTab)?.label || "Seção"}</div>
-            <div className="sectionBody">
-              <div className="small muted" style={{ marginBottom: 12 }}>
-                Para preencher esta seção, primeiro crie a imersão. Após salvar, você será redirecionado automaticamente para a aba selecionada.
-              </div>
-
-              <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-                <button type="button" className="btn" onClick={() => router.push("/imersoes")}>
-                  Cancelar
-                </button>
-
-                <button
-                  type="button"
-                  className="btnPrimary"
-                  onClick={() => onSubmit({ preventDefault: () => {} })}
-                  disabled={saving}
-                >
-                  {saving ? "Criando..." : "Criar imersão"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
     </Layout>
   );

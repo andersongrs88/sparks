@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import ImmersionTabs from "../../components/ImmersionTabs";
 import BottomSheet from "../../components/BottomSheet";
 import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
@@ -76,37 +77,17 @@ function Field({ label, children, hint }) {
 
 function Section({ title, description, children, right }) {
   return (
-    <div className="section section--immersion" style={{ marginTop: 12 }}>
-      <div className="sectionHeader sectionHeader--bar">
+    <div className="section" style={{ marginTop: 12 }}>
+      <div className="sectionHeader">
         <div className="sectionHeaderLeft">
-          <div className="sectionTitleText">{title}</div>
-          {description ? <div className="sectionDesc">{description}</div> : null}
+          <div className="sectionTitle">{title}</div>
+          {description ? (
+            <div className="sectionDesc">{description}</div>
+          ) : null}
         </div>
         {right ? <div className="sectionHeaderRight">{right}</div> : null}
       </div>
       <div className="sectionBody">{children}</div>
-    </div>
-  );
-}
-
-function Tabs({ tabs, active, onChange }) {
-  return (
-    <div className="tabRow">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          className={active === t.key ? "tabBtn active" : "tabBtn"}
-          onClick={() => onChange(t.key)}
-        >
-          <span className="tabLabelWrap">
-            {t.label}
-            {typeof t.badge !== "undefined" && t.badge !== null && t.badge !== "" ? (
-              <span className="tabBadge" aria-label={`Pendências: ${t.badge}`}>{t.badge}</span>
-            ) : null}
-          </span>
-        </button>
-      ))}
     </div>
   );
 }
@@ -1472,7 +1453,7 @@ function normalizeTemplatesForClone(items) {
       </div>
 
       <form className="card" onSubmit={onSaveImmersion}>
-        <Tabs tabs={tabs} active={tab} onChange={setTab} />
+        <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
 
         {}
 
@@ -1577,10 +1558,9 @@ function normalizeTemplatesForClone(items) {
                   <Field label="Status">
                     <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                       <option value="Planejamento">Planejamento</option>
-                      <option value="Confirmada">Confirmada</option>
-                      <option value="Em andamento">Em andamento</option>
-                      <option value="Concluída">Concluída</option>
+                      <option value="Em execução">Em execução</option>
                       <option value="Cancelada">Cancelada</option>
+                      <option value="Concluída">Concluída</option>
                     </select>
                     <div className="small muted" style={{ marginTop: 6 }}>
                       Para concluir, prefira o botão <b>Concluir imersão</b> no topo (governança de pendências).
@@ -2324,9 +2304,7 @@ function normalizeTemplatesForClone(items) {
                 <Field label="Status">
                   <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                     <option value="Planejamento">Planejamento</option>
-                    <option value="Confirmada">Confirmada</option>
-                    <option value="Em andamento">Em andamento</option>
-                    <option value="Concluída">Concluída</option>
+                    <option value="Em execução">Em execução</option>
                     <option value="Cancelada">Cancelada</option>
                   </select>
                   <div className="small muted" style={{ marginTop: 6 }}>
@@ -3727,55 +3705,6 @@ function normalizeTemplatesForClone(items) {
           </div>
         </div>
       ) : null}
-
-      <style jsx global>{`
-        /* Imersão • Seções (containers) */
-        .section--immersion .sectionHeader--bar {
-          background: var(--color-surface-2);
-          padding: 12px 14px;
-          border-bottom: 1px solid var(--line);
-        }
-
-        .section--immersion .sectionBody {
-          padding: 12px 14px;
-        }
-
-        .section--immersion .sectionHeaderLeft {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .section--immersion .sectionTitleText {
-          font-size: 14px;
-          font-weight: 900;
-          letter-spacing: -0.01em;
-          line-height: 1.15;
-          margin: 0;
-        }
-
-        .section--immersion .sectionDesc {
-          font-size: 12px;
-          color: var(--muted);
-          line-height: 1.35;
-        }
-
-        /* Evita "tarja dupla" herdada do .sectionTitle (usada em outros lugares) */
-        .section--immersion .sectionTitle { 
-          padding: 0; 
-          border: 0; 
-          background: transparent; 
-        }
-
-        @media (max-width: 720px) {
-          .section--immersion .sectionHeader--bar {
-            padding: 12px;
-          }
-          .section--immersion .sectionBody {
-            padding: 12px;
-          }
-        }
-      `}</style>
 
     </Layout>
   );
