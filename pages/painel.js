@@ -802,13 +802,19 @@ export default function PainelPage() {
           if (el && keyName) sectionRefs.current[keyName] = el;
         }}
       >
-        <div className="sectionHeader" style={{ alignItems: "center" }}>
-          <div>
-            <h3 className="sectionTitle">{title}</h3>
+        {/*
+          Header do bloco no padrão do sistema:
+          - título sem "tarja" (evita o aspecto de caixa desalinhada)
+          - ações sempre alinhadas à direita
+          - em mobile vira coluna e mantém botões com largura confortável
+        */}
+        <div className="blockHeader">
+          <div className="blockHeaderLeft">
+            <div className="blockTitle">{title}</div>
             {hint ? <div className="small muted">{hint}</div> : null}
           </div>
 
-          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+          <div className="blockHeaderRight">
             <span className="pill" aria-label={`Quantidade: ${items.length}`}>{items.length}</span>
             <button
               type="button"
@@ -1157,6 +1163,51 @@ export default function PainelPage() {
           width: 100%;
           max-width: none;
           padding: 20px;
+        }
+
+        /*
+          Containers dos blocos (Atrasadas, Vencem hoje, etc.)
+          Ajuste para seguir o padrão visual do sistema (card + header limpo),
+          evitando a "tarja" do .sectionTitle dentro do header.
+        */
+        .blockHeader {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .blockHeaderLeft {
+          min-width: 0;
+        }
+
+        .blockTitle {
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: -0.01em;
+          line-height: 1.2;
+        }
+
+        .blockHeaderRight {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-shrink: 0;
+        }
+
+        @media (max-width: 720px) {
+          .blockHeader {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .blockHeaderRight {
+            justify-content: space-between;
+          }
+          .blockHeaderRight .btn {
+            width: auto;
+          }
         }
         @media (max-width: 720px) {
           .pageWrap {
