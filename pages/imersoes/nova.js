@@ -352,7 +352,7 @@ export default function NovaImersaoPage() {
           <ImmersionInfoTab
             form={form}
             setForm={setForm}
-            profiles={profiles}
+            profiles={people}
             speakers={speakers}
             isCreate={true}
             disableNonInfoFields={false}
