@@ -249,6 +249,7 @@ export default function ImmersionDetailEditPage() {
   }, [tasks]);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
+  const [taskSuccess, setTaskSuccess] = useState("");
 
   // UX: filtros/visões para Checklist e Cronograma
   const [taskUi, setTaskUi] = useState({
@@ -1332,8 +1333,12 @@ function normalizeTemplatesForClone(items) {
       if (Object.prototype.hasOwnProperty.call(normalized, "done_at") && !normalized.done_at) normalized.done_at = null;
       if (Object.prototype.hasOwnProperty.call(normalized, "notes") && typeof normalized.notes === "string") normalized.notes = normalized.notes.trim() || null;
       await updateTask(task.id, normalized);
+      setTaskSuccess("Tarefas atualizadas");
+      window.clearTimeout(window.__taskSuccessTimer);
+      window.__taskSuccessTimer = window.setTimeout(() => setTaskSuccess(""), 2500);
       await loadTasks(id);
     } catch (e) {
+      setTaskSuccess("");
       setTaskError(e?.message || "Falha ao atualizar tarefa.");
     }
   }
@@ -2762,6 +2767,7 @@ function normalizeTemplatesForClone(items) {
             ) : null}
 
             {taskError ? <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{taskError}</div> : null}
+          {taskSuccess ? <div style={{ color: "var(--success)", marginTop: 8 }}>{taskSuccess}</div> : null}
             {tasksLoading ? <div className="small" style={{ marginBottom: 10 }}>Carregando tarefas...</div> : null}
 
             {newTaskOpen ? (
