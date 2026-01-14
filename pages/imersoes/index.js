@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
+import { IMMERSION_STATUSES, normalizeImmersionStatus } from "../../lib/immersionConstants";
 import { useAuth } from "../../context/AuthContext";
 import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function normalizeStatus(status) {
-  // Back-compat: o sistema antigo usava "Em execução".
-  if (status === "Em execução") return "Em andamento";
+  // Back-compat: o sistema antigo usava "Em andamento".
+  if (status === "Em andamento") return "Em andamento";
   return status || "Planejamento";
 }
 
@@ -15,7 +16,6 @@ function badgeClass(status) {
   const s = normalizeStatus(status);
   if (s === "Concluída") return "badge ok";
   if (s === "Em andamento") return "badge warn";
-  if (s === "Confirmada") return "badge info";
   if (s === "Cancelada") return "badge danger";
   return "badge";
 }
@@ -132,7 +132,7 @@ export default function ImmersionsListPage() {
 
   const statusOrder = useMemo(() => {
     // Ordem operacional (foco em execução) + seções históricas colapsáveis.
-    const ordered = ["Em andamento", "Planejamento", "Confirmada", "Concluída", "Cancelada"];
+    const ordered = ["Em andamento", "Planejamento", "Concluída", "Cancelada"];
     const other = Object.keys(grouped || {}).filter((k) => !ordered.includes(k));
     return [...ordered, ...other];
   }, [grouped]);
