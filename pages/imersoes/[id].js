@@ -2,15 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import ImmersionTabs from "../../components/ImmersionTabs";
-import ImmersionInfoTab from "../../components/ImmersionInfoTab";
-import { normalizeImmersionStatus } from "../../lib/immersionConstants";
 import BottomSheet from "../../components/BottomSheet";
 import { useAuth } from "../../context/AuthContext";
 import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
-import { canEditTask, isLimitedImmersionRole, roleLabel } from "../../lib/permissions";
+import { canEditTask, isLimitedImmersionRole, roleLabel, normalizeRole } from "../../lib/permissions";
 import { createEvidenceSignedUrl, uploadEvidenceFile } from "../../lib/storage";
 import { listCosts, createCost, updateCost, deleteCost } from "../../lib/costs";
 import { listScheduleItems, createScheduleItem, updateScheduleItem, deleteScheduleItem } from "../../lib/schedule";
@@ -229,6 +227,18 @@ export default function ImmersionDetailEditPage() {
 
   // Checklist
   const [profiles, setProfiles] = useState([]);
+
+  const consultantsOnly = useMemo(() => {
+    return (profiles || []).filter((p) => {
+      const r = normalizeRole(p?.role);
+      return r === "consultor" || r === "consultor_educacao";
+    });
+  }, [profiles]);
+
+  const designersOnly = useMemo(() => {
+    return (profiles || []).filter((p) => normalizeRole(p?.role) === "designer");
+  }, [profiles]);
+
   const [speakers, setSpeakers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -689,9 +699,6 @@ export default function ImmersionDetailEditPage() {
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
 
-        production_responsible: form.production_responsible || null,
-        events_responsible: form.events_responsible || null,
-
         // Palestrantes
         trainer_speaker_id: form.trainer_speaker_id || null,
         speaker_ids: Array.isArray(form.speaker_ids) ? form.speaker_ids.filter(Boolean) : [],
@@ -857,8 +864,6 @@ function normalizeTemplatesForClone(items) {
             status: "Planejamento",
             educational_consultant: form.educational_consultant || null,
             instructional_designer: form.instructional_designer || null,
-            production_responsible: form.production_responsible || null,
-            events_responsible: form.events_responsible || null,
           },
         }),
       });
@@ -1515,13 +1520,311 @@ function normalizeTemplatesForClone(items) {
 
         
         {form && tab === "informacoes" ? (
-          <ImmersionInfoTab
-            form={form}
-            setForm={setForm}
-            profiles={profiles}
-            speakers={speakers}
-            isCreate={false}
-          />
+          <>
+            <Section
+              title="Informações"
+              description="Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer)."
+              right={null}
+            >
+              <div className="grid2">
+                <Field label="Nome da imersão">
+                  <input
+                    className="input"
+                    value={form.immersion_name || ""}
+                    onChange={(e) => set("immersion_name", e.target.value)}
+                    placeholder="Ex.: Imersão Gestão MKT Digital"
+                  />
+                </Field>
+
+                <Field label="Formato" hint="Obrigatório">
+                  <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+                    <option value="">Selecione</option>
+                    {IMMERSION_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
+
+              <Section title="Informações básicas">
+                <div className="grid2">
+                  <Field label="Sala" hint="Obrigatório">
+                    <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
+                      {ROOMS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Status">
+                    <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
+                      <option value="Planejamento">Planejamento</option>
+                      <option value="Em execução">Em execução</option>
+                      <option value="Cancelada">Cancelada</option>
+                      <option value="Concluída">Concluída</option>
+                    </select>
+                    <div className="small muted" style={{ marginTop: 6 }}>
+                      Para concluir, prefira o botão <b>Concluir imersão</b> no topo (governança de pendências).
+                    </div>
+                  </Field>
+                </div>
+
+                <div className="grid2">
+                  <Field label="Data inicial" hint="Obrigatório">
+                    <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
+                  </Field>
+
+                  <Field label="Data final" hint="Obrigatório">
+                    <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
+                <div className="grid2">
+                  <Field label="Consultor (Educação)" hint="Obrigatório">
+                    <select
+                      className="input"
+                      value={form.educational_consultant || ""}
+                      onChange={(e) => set("educational_consultant", e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {consultantsOnly.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name ? `${p.name} (${p.email})` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Designer instrucional" hint="Obrigatório">
+                    <select
+                      className="input"
+                      value={form.instructional_designer || ""}
+                      onChange={(e) => set("instructional_designer", e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {designersOnly.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name ? `${p.name} (${p.email})` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
+                <div className="grid2">
+                  <Field label="Nome do Trainer">
+                    <select className="input" value={form.trainer_speaker_id || ""} onChange={(e) => {
+                        const v = e.target.value;
+                        setForm((p) => ({
+                          ...p,
+                          trainer_speaker_id: v,
+                          speaker_ids: (Array.isArray(p.speaker_ids) ? p.speaker_ids : [""]).map((sid) => (sid === v ? "" : sid)),
+                        }));
+                      }}>
+                      <option value="">—</option>
+                      {speakers.map((s) => {
+                        const selectedAdditional = new Set(
+                          (Array.isArray(form.speaker_ids) ? form.speaker_ids : []).filter(Boolean)
+                        );
+                        const isDup = selectedAdditional.has(s.id);
+                        return (
+                          <option key={s.id} value={s.id} disabled={isDup}>
+                            {s.full_name || s.email}{isDup ? " (já selecionado)" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </Field>
+
+                  <Field label="Vai ter palestrante?">
+                    <div className="stack" style={{ gap: 10 }}>
+                      {((form.speaker_ids && Array.isArray(form.speaker_ids) ? form.speaker_ids : [""]) || [""]).map((sid, idx) => (
+                        <div key={idx} className="row" style={{ gap: 10 }}>
+                          <select
+                            className="input"
+                            value={sid || ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setForm((p) => {
+                                const next = Array.isArray(p.speaker_ids) ? [...p.speaker_ids] : [""];
+                                const trainerId = p.trainer_speaker_id;
+                                const already = new Set(next.filter(Boolean));
+                                if (trainerId) already.add(trainerId);
+                                if (next[idx]) already.delete(next[idx]);
+                                if (v && already.has(v)) {
+                                  next[idx] = "";
+                                } else {
+                                  next[idx] = v;
+                                }
+                                return { ...p, speaker_ids: next };
+                              });
+                            }}
+                          >
+                            <option value="">Selecione</option>
+                            {
+                              speakers.map((s) => {
+                                const selectedElsewhere = new Set(
+                                  (Array.isArray(form.speaker_ids) ? form.speaker_ids : []).filter(Boolean)
+                                );
+                                if (form.trainer_speaker_id) selectedElsewhere.add(form.trainer_speaker_id);
+                                // Permite manter o próprio valor selecionado
+                                if (sid) selectedElsewhere.delete(sid);
+                                const isDup = selectedElsewhere.has(s.id);
+                                return (
+                                  <option key={s.id} value={s.id} disabled={isDup}>
+                                    {s.full_name || s.email}{isDup ? " (já selecionado)" : ""}
+                                  </option>
+                                );
+                              })
+                            }
+                          </select>
+
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => {
+                              setForm((p) => {
+                                const next = Array.isArray(p.speaker_ids) ? [...p.speaker_ids] : [];
+                                next.splice(idx, 1);
+                                return { ...p, speaker_ids: next.length ? next : [""] };
+                              });
+                            }}
+                            disabled={Array.isArray(form.speaker_ids) ? form.speaker_ids.length === 1 : true}
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      ))}
+
+                      <div className="row" style={{ gap: 10 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            setForm((p) => ({
+                              ...p,
+                              speaker_ids: [...(Array.isArray(p.speaker_ids) ? p.speaker_ids : [""]), ""],
+                            }));
+                          }}
+                        >
+                          + Adicionar palestrante
+                        </button>
+                        <div className="small muted">Opcional. Deixe vazio se não houver.</div>
+                      </div>
+                    </div>
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Mentores presentes">
+                <Field label="Mentores presentes">
+                  <input className="input" value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} placeholder="Ex.: Nome 1, Nome 2" />
+                </Field>
+              </Section>
+
+              <Section title="Links e documentos">
+                <div className="grid2">
+                  <Field label="Ordem de Serviço (link)">
+                    <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="URL" />
+                  </Field>
+                  <Field label="Ficha Técnica (link)">
+                    <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="URL" />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Recursos e staff">
+                <Field label="Precisa de staff específico?">
+                  <div className="row">
+                    <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
+                      Sim
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${!form.need_specific_staff ? "primary" : ""}`}
+                      onClick={() => {
+                        set("need_specific_staff", false);
+                        set("staff_justification", "");
+                      }}
+                    >
+                      Não
+                    </button>
+                  </div>
+                </Field>
+
+                <Field label="Justificativa" hint={staffEnabled ? "Obrigatório quando staff específico = Sim." : "Habilita ao marcar Sim."}>
+                  <textarea
+                    className="input"
+                    rows={3}
+                    disabled={!staffEnabled}
+                    value={form.staff_justification || ""}
+                    onChange={(e) => set("staff_justification", e.target.value)}
+                  />
+                </Field>
+
+                {/* Removido: "Vai ter palestrante?" (toggle). A gestão agora é por lista vinculada em "Palestrantes". */}
+              </Section>
+
+              <Section title="Necessidade de terceiros">
+                <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <input type="checkbox" checked={!!form.need_third_parties} onChange={(e) => set("need_third_parties", e.target.checked)} />
+                  Necessidade de terceiros
+                </label>
+
+                <div className="row" style={{ flexWrap: "wrap", gap: 18 }}>
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_speech_therapist}
+                      onChange={(e) => set("third_party_speech_therapist", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Fonoaudióloga
+                  </label>
+
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_barber}
+                      onChange={(e) => set("third_party_barber", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Barbeiro
+                  </label>
+
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_hairdresser}
+                      onChange={(e) => set("third_party_hairdresser", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Cabeleireiro
+                  </label>
+
+                  <label className="small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form.third_party_makeup}
+                      onChange={(e) => set("third_party_makeup", e.target.checked)}
+                      disabled={!form.need_third_parties}
+                    />
+                    Maquiagem
+                  </label>
+                </div>
+              </Section>
+            </Section>
+          </>
         ) : null}
 
         {form && tab === "cronograma" ? (
@@ -1958,7 +2261,7 @@ function normalizeTemplatesForClone(items) {
                     onChange={(e) => set("educational_consultant", e.target.value)}
                   >
                     <option value="">Selecione</option>
-                    {profiles.map((p) => (
+                    {consultantsOnly.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
                       </option>
@@ -1973,7 +2276,7 @@ function normalizeTemplatesForClone(items) {
                     onChange={(e) => set("instructional_designer", e.target.value)}
                   >
                     <option value="">Selecione</option>
-                    {profiles.map((p) => (
+                    {designersOnly.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name ? `${p.name} (${p.email})` : p.email}
                       </option>
@@ -2008,7 +2311,7 @@ function normalizeTemplatesForClone(items) {
                 <Field label="Status">
                   <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                     <option value="Planejamento">Planejamento</option>
-                    <option value="Em andamento">Em andamento</option>
+                    <option value="Em execução">Em execução</option>
                     <option value="Cancelada">Cancelada</option>
                   </select>
                   <div className="small muted" style={{ marginTop: 6 }}>

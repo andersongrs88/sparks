@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import ImmersionTabs from "../../components/ImmersionTabs";
-import ImmersionInfoTab from "../../components/ImmersionInfoTab";
-import { ROOMS } from "../../lib/immersionConstants";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 import { listActiveProfiles } from "../../lib/profiles";
@@ -11,6 +9,11 @@ import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
 import { isLimitedImmersionRole, normalizeRole } from "../../lib/permissions";
+
+const ROOMS = ["Brasil", "São Paulo", "PodCast"];
+
+// Formato (domínio fechado) conforme definido por você. (Mesma nomenclatura da tela de visualização.)
+const IMMERSION_FORMATS = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
 
 function Field({ label, children, hint }) {
   const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
@@ -97,8 +100,6 @@ export default function NovaImersaoPage() {
     educational_consultant: "",
     checklist_owner_id: "",
     instructional_designer: "",
-    production_responsible: "",
-    events_responsible: "",
 
     // Palestrantes
     trainer_speaker_id: "",
@@ -244,8 +245,6 @@ export default function NovaImersaoPage() {
               status: form.status,
               educational_consultant: form.educational_consultant,
               instructional_designer: form.instructional_designer,
-              production_responsible: form.production_responsible || null,
-              events_responsible: form.events_responsible || null,
               trainer_speaker_id: form.trainer_speaker_id || null,
               speaker_ids: Array.from(new Set((form.speaker_ids || []).filter(Boolean))),
               checklist_template_id: form.checklist_template_id,
@@ -276,8 +275,6 @@ export default function NovaImersaoPage() {
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
-        production_responsible: form.production_responsible || null,
-        events_responsible: form.events_responsible || null,
         trainer_speaker_id: form.trainer_speaker_id || null,
         speaker_ids: Array.from(new Set((form.speaker_ids || []).filter(Boolean))),
         checklist_template_id: form.checklist_template_id,
@@ -349,15 +346,256 @@ export default function NovaImersaoPage() {
           ) : null}
 
           {tab === "informacoes" ? (
-          <ImmersionInfoTab
-            form={form}
-            setForm={setForm}
-            profiles={people}
-            speakers={speakers}
-            isCreate={true}
-            disableNonInfoFields={false}
-          />
-        ) : null}
+          <>
+          <div className="section">
+            <div className="sectionTitle">Informações básicas</div>
+            <div className="sectionBody">
+              <Field label="Nome da imersão" hint="Obrigatório">
+                <input className="input" value={form.immersion_name} onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))} placeholder="Ex.: Imersão Gestão MKT Digital" required />
+              </Field>
+
+              <div className="grid2">
+                <Field label="Formato" hint="Obrigatório">
+                  <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
+                    <option value="">Selecione</option>
+                    {IMMERSION_FORMATS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="card" style={{ padding: 12, marginTop: 8, background: "var(--bg2)", border: "1px solid var(--border)" }}>
+                <div className="small" style={{ fontWeight: 800, marginBottom: 6 }}>Clonar imersão (opcional)</div>
+                <div className="small muted" style={{ marginBottom: 10 }}>
+                  Se você escolher uma imersão base, o sistema copia a estrutura completa (tarefas, cronograma, materiais, ferramentas, vídeos, PDCA e custos) e ajusta os prazos pela nova data inicial.
+                </div>
+                <select className="input" value={cloneSourceId} onChange={(e) => setCloneSourceId(e.target.value)}>
+                  <option value="">Não clonar</option>
+                  {immersionOptions.map((it) => (
+                    <option key={it.id} value={it.id}>{it.name}{it.start_date ? ` — ${it.start_date}` : ""}</option>
+                  ))}
+                </select>
+              </div>
+
+
+              <div className="grid2">
+                <Field label="Sala">
+                  <select className="input" value={form.room_location} onChange={(e) => setForm((p) => ({ ...p, room_location: e.target.value }))}>
+                {ROOMS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </Field>
+
+                <Field label="Status">
+                  <select className="input" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
+                    <option value="Planejamento">Planejamento</option>
+                    <option value="Confirmada">Confirmada</option>
+                    <option value="Em andamento">Em andamento</option>
+                    <option value="Concluída">Concluída</option>
+                    <option value="Cancelada">Cancelada</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="grid2">
+                <Field label="Data inicial">
+                  <input className="input" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
+                </Field>
+                <Field label="Data final">
+                  <input className="input" type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
+                </Field>
+              </div>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Time de educação</div>
+            <div className="sectionBody">
+              <div className="grid2">
+                <Field label="Consultor" hint="Obrigatório">
+                  <select
+                    className="input"
+                    value={form.educational_consultant}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm((p) => ({ ...p, educational_consultant: v, checklist_owner_id: v }));
+                    }}
+                  >
+                    <option value="">Selecione</option>
+                    {(peopleByRole.consultores || []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name ? `${p.name} (${p.email})` : p.email}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Designer" hint="Obrigatório">
+                  <select className="input" value={form.instructional_designer} onChange={(e) => setForm((p) => ({ ...p, instructional_designer: e.target.value }))}>
+                    <option value="">Selecione</option>
+                    {(peopleByRole.designers || []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name ? `${p.name} (${p.email})` : p.email}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Checklist template" hint="Obrigatório">
+                <select
+                  className="input"
+                  value={form.checklist_template_id}
+                  onChange={(e) => setForm((p) => ({ ...p, checklist_template_id: e.target.value }))}
+                  required
+                >
+                  <option value="">Selecione</option>
+                  {checklistTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Mentores presentes">
+                <input className="input" value={form.mentors_present} onChange={(e) => setForm((p) => ({ ...p, mentors_present: e.target.value }))} placeholder="Ex.: Nome 1, Nome 2" />
+              </Field>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Palestrantes</div>
+            <div className="sectionBody">
+              <div className="grid2">
+                <Field label="Nome do Trainer" hint="Opcional">
+                  <select
+                    className="input"
+                    value={form.trainer_speaker_id}
+                    onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((p) => ({
+                            ...p,
+                            trainer_speaker_id: v,
+                            // Evita duplicidade: se o trainer estiver na lista de adicionais, remove.
+                            speaker_ids: (p.speaker_ids || []).map((sid) => (sid === v ? "" : sid)),
+                          }));
+                        }}
+                  >
+                    <option value="">—</option>
+                    {speakers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.full_name || s.email}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Vai ter palestrante?" hint="Opcional">
+                  <div className="stack" style={{ gap: 10 }}>
+                    {(form.speaker_ids || []).map((sid, idx) => (
+                      <div key={idx} className="row" style={{ gap: 10 }}>
+                        <select
+                          className="input"
+                          value={sid}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setForm((p) => {
+                              const next = [...(p.speaker_ids || [])];
+                              // Evita duplicidade entre adicionais e com o Trainer
+                              const trainerId = p.trainer_speaker_id;
+                              const already = new Set(next.filter(Boolean));
+                              if (trainerId) already.add(trainerId);
+                              // remove o valor atual do slot para permitir re-seleção do mesmo
+                              if (next[idx]) already.delete(next[idx]);
+                              if (v && already.has(v)) {
+                                next[idx] = "";
+                              } else {
+                                next[idx] = v;
+                              }
+                              return { ...p, speaker_ids: next };
+                            });
+                          }}
+                        >
+                          <option value="">Selecione</option>
+                          {speakers.map((s) => {
+                            const selectedElsewhere = new Set((form.speaker_ids || []).filter(Boolean));
+                              // Também evita duplicar o Trainer
+                              if (form.trainer_speaker_id) selectedElsewhere.add(form.trainer_speaker_id);
+                              // Permite manter o próprio valor selecionado; bloqueia duplicidade em outros slots
+                            if (sid) selectedElsewhere.delete(sid);
+                            const isDup = selectedElsewhere.has(s.id);
+                            return (
+                              <option key={s.id} value={s.id} disabled={isDup}>
+                                {s.full_name || s.email}{isDup ? " (já selecionado)" : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            setForm((p) => {
+                              const next = [...(p.speaker_ids || [])];
+                              next.splice(idx, 1);
+                              return { ...p, speaker_ids: next.length ? next : [""] };
+                            });
+                          }}
+                          disabled={(form.speaker_ids || []).length === 1}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+
+                    <div className="row" style={{ gap: 10 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => setForm((p) => ({ ...p, speaker_ids: [...(p.speaker_ids || []), ""] }))}
+                      >
+                        + Adicionar palestrante
+                      </button>
+                      <div className="small muted">Você pode vincular múltiplos palestrantes nesta imersão.</div>
+                    </div>
+                  </div>
+                </Field>
+              </div>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Links e documentos</div>
+            <div className="sectionBody">
+              <div className="grid2">
+                <Field label="Ordem de Serviço (link)">
+                  <input className="input" value={form.service_order_link} onChange={(e) => setForm((p) => ({ ...p, service_order_link: e.target.value }))} placeholder="URL" />
+                </Field>
+                <Field label="Ficha Técnica (link)">
+                  <input className="input" value={form.technical_sheet_link} onChange={(e) => setForm((p) => ({ ...p, technical_sheet_link: e.target.value }))} placeholder="URL" />
+                </Field>
+              </div>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Recursos e staff</div>
+            <div className="sectionBody">
+              <Field label="Precisa de staff específico?">
+                <div className="row">
+                  <label className="row" style={{ gap: 8 }}>
+                    <input type="checkbox" checked={form.need_specific_staff} onChange={(e) => setForm((p) => ({ ...p, need_specific_staff: e.target.checked }))} />
+                    <span className="small">Sim</span>
+                  </label>
+                </div>
+              </Field>
+
+              {form.need_specific_staff ? (
+                <Field label="Justificativa do staff">
+                  <textarea className="input" rows={3} value={form.staff_justification} onChange={(e) => setForm((p) => ({ ...p, staff_justification: e.target.value }))} />
+                </Field>
+              ) : null}
+            </div>
+          </div>
+          </>
+          ) : null}
 
           <div className="row" style={{ justifyContent: "space-between" }}> 
             <button className="btn" type="button" onClick={() => router.push("/imersoes")}>Cancelar</button>
