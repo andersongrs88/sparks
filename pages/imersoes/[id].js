@@ -2617,86 +2617,103 @@ function normalizeTemplatesForClone(items) {
               </div>
             </div>
 
-            {/* Barra de filtros (reduz ruído visual e melhora uso no mobile) */}
+            {/* Barra de filtros (organizada por grupos para reduzir ruído visual e melhorar uso no mobile) */}
             <div className="toolbar" style={{ marginBottom: 12 }}>
-              <div className="toolbarLeft">
-                <input
-                  className="input taskSearch"
-                  placeholder="Buscar por tarefa, responsável ou observação..."
-                  value={taskUi.q}
-                  onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
-                />
-                <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
-                  <option value="ALL">Todas as fases</option>
-                  {PHASES.map((p) => (
-                    <option key={p.key} value={p.key}>{p.label}</option>
-                  ))}
-                </select>
-                <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))}>
-                  <option value="ALL">Todos os status</option>
-                  {TASK_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-                <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))}>
-                  <option value="ALL">Todos os responsáveis</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+                {/* Linha 1: busca + ações rápidas */}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    className="input taskSearch"
+                    placeholder="Buscar por tarefa, responsável ou observação..."
+                    value={taskUi.q}
+                    onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
+                    style={{ flex: "1 1 320px" }}
+                  />
 
-              <div className="toolbarRight">
-                <button
-                  type="button"
-                  className={taskUi.onlyLate ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
-                  title="Mostrar apenas tarefas atrasadas"
-                >
-                  Atrasadas
-                </button>
-                <button
-                  type="button"
-                  className={taskUi.hideDone ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
-                  title="Ocultar tarefas concluídas"
-                >
-                  Ocultar concluídas
-                </button>
-                <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))}>
-                  <option value="due">Ordenar: prazo</option>
-                  <option value="title">Ordenar: título</option>
-                  <option value="status">Ordenar: status</option>
-                  <option value="responsible">Ordenar: responsável</option>
-                </select>
-                <button
-                  type="button"
-                  className={taskUi.view === "cards" ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
-                  title="Visualização compacta (recomendada)"
-                >
-                  Compacto
-                </button>
-                <button
-                  type="button"
-                  className={taskUi.view === "table" ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
-                  title="Visualização em tabela (mais detalhada)"
-                >
-                  Tabela
-                </button>
-                <button
-                  type="button"
-                  className={taskUi.view === "kanban" ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
-                  title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
-                >
-                  Kanban
-                </button>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className={taskUi.onlyLate ? "btn primary" : "btn"}
+                      onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
+                      title="Mostrar apenas tarefas atrasadas"
+                    >
+                      Atrasadas
+                    </button>
+                    <button
+                      type="button"
+                      className={taskUi.hideDone ? "btn primary" : "btn"}
+                      onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
+                      title="Ocultar tarefas concluídas"
+                    >
+                      Ocultar concluídas
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linha 2: filtros (fase/status/responsável) */}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))} style={{ flex: "1 1 180px" }}>
+                    <option value="ALL">Todas as fases</option>
+                    {PHASES.map((p) => (
+                      <option key={p.key} value={p.key}>{p.label}</option>
+                    ))}
+                  </select>
+
+                  <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))} style={{ flex: "1 1 200px" }}>
+                    <option value="ALL">Todos os status</option>
+                    {TASK_STATUSES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+
+                  <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))} style={{ flex: "1 1 240px" }}>
+                    <option value="ALL">Todos os responsáveis</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Linha 3: ordenação + visualização */}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                  <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))} style={{ flex: "1 1 220px", maxWidth: 320 }}>
+                    <option value="due">Ordenar: prazo</option>
+                    <option value="title">Ordenar: título</option>
+                    <option value="status">Ordenar: status</option>
+                    <option value="responsible">Ordenar: responsável</option>
+                  </select>
+
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className={taskUi.view === "cards" ? "btn primary" : "btn"}
+                      onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
+                      title="Visualização compacta (recomendada)"
+                    >
+                      Compacto
+                    </button>
+                    <button
+                      type="button"
+                      className={taskUi.view === "table" ? "btn primary" : "btn"}
+                      onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
+                      title="Visualização em tabela (mais detalhada)"
+                    >
+                      Tabela
+                    </button>
+                    <button
+                      type="button"
+                      className={taskUi.view === "kanban" ? "btn primary" : "btn"}
+                      onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
+                      title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
+                    >
+                      Kanban
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-	            {selectedTaskIds.size > 0 ? (
+            {selectedTaskIds.size > 0 ? (
 	              <div className="alert" style={{ margin: "10px 0", background: "var(--bg2)", border: "1px solid var(--border)" }}>
 	                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
 	                  <div className="small">
