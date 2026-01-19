@@ -368,6 +368,9 @@ export default function PainelPage() {
       const concluded = String(editStatus || "").toLowerCase().includes("conclu");
       patch.done_at = concluded ? (activeTask.done_at || new Date().toISOString()) : null;
 
+      // Mantém o estado do formulário coerente (evita sensação de "não salvou")
+      setEditDoneAt(patch.done_at || "");
+
       const { error: e } = await supabase.from("immersion_tasks").update(patch).eq("id", activeTask.id);
       if (e) throw e;
 
@@ -408,6 +411,9 @@ export default function PainelPage() {
 
       // Revalida (garante consistência com filtros)
       await loadTasks();
+
+      // UX: ao concluir, fecha o drawer automaticamente
+      if (concluded) closeTask();
     } catch (e) {
       notify(e?.message || "Falha ao salvar.", "danger");
     } finally {
