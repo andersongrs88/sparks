@@ -60,6 +60,37 @@ function scheduleTag(startDateStr, endDateStr) {
   return { label: "Sem data", cls: "tag neutral" };
 }
 
+function parseDateOnly(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function compareImmersionsByNearestDate(a, b) {
+  // Ordenar por data mais próxima: prioriza start_date (asc).
+  // Itens sem data ficam no final.
+  const ad = parseDateOnly(a?.start_date) || parseDateOnly(a?.end_date);
+  const bd = parseDateOnly(b?.start_date) || parseDateOnly(b?.end_date);
+
+  if (ad && bd) {
+    const diff = ad.getTime() - bd.getTime();
+    if (diff !== 0) return diff;
+  } else if (ad && !bd) {
+    return -1;
+  } else if (!ad && bd) {
+    return 1;
+  }
+
+  // Desempate estável por nome
+  const an = String(a?.immersion_name || "").toLowerCase();
+  const bn = String(b?.immersion_name || "").toLowerCase();
+  if (an < bn) return -1;
+  if (an > bn) return 1;
+  return String(a?.id || "").localeCompare(String(b?.id || ""));
+}
+
 
 export default function ImmersionsListPage() {
   const router = useRouter();
@@ -224,7 +255,10 @@ export default function ImmersionsListPage() {
                       </div>
                     ) : null}
 
-                    {(grouped[status] || []).map((it) => (
+                    {(() => {
+                      const list = grouped[status] || [];
+                      const sorted = [...list].sort(compareImmersionsByNearestDate);
+                      return sorted.map((it) => (
                       <button
                         key={it.id}
                         type="button"
@@ -253,7 +287,8 @@ export default function ImmersionsListPage() {
                           <span className="chev">›</span>
                         </div>
                       </button>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 )}
               </div>
