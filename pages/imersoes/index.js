@@ -7,12 +7,14 @@ import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function normalizeStatus(status) {
-  // Back-compat: o sistema antigo usava "Em andamento".
-  if (status === "Em andamento") return "Em andamento";
-  // Alguns bancos/legados podem registrar "Em execução".
-  // Mantemos uma seção dedicada e padronizamos o rótulo exibido.
-  if (status === "Em execução" || status === "Em Execução") return "Em Execução";
-  return status || "Planejamento";
+  if (!status) return "Planejamento";
+  // Normalização para garantir agrupamento e ordenação estáveis.
+  // Mantemos compatibilidade com variações antigas.
+  if (status === "Em execução" || status === "Em Execução" || status === "Em execução ") return "Em Execução";
+  if (status === "Em andamento" || status === "Em Andamento") return "Em andamento";
+  if (status === "Concluida") return "Concluída";
+  if (status === "Cancelada" || status === "Cancelado") return "Cancelada";
+  return status;
 }
 
 function badgeClass(status) {
@@ -58,37 +60,6 @@ function scheduleTag(startDateStr, endDateStr) {
   }
 
   return { label: "Sem data", cls: "tag neutral" };
-}
-
-function parseDateOnly(isoStr) {
-  if (!isoStr) return null;
-  const d = new Date(isoStr + "T00:00:00");
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function compareImmersionsByNearestDate(a, b) {
-  // Ordenar por data mais próxima: prioriza start_date (asc).
-  // Itens sem data ficam no final.
-  const ad = parseDateOnly(a?.start_date) || parseDateOnly(a?.end_date);
-  const bd = parseDateOnly(b?.start_date) || parseDateOnly(b?.end_date);
-
-  if (ad && bd) {
-    const diff = ad.getTime() - bd.getTime();
-    if (diff !== 0) return diff;
-  } else if (ad && !bd) {
-    return -1;
-  } else if (!ad && bd) {
-    return 1;
-  }
-
-  // Desempate estável por nome
-  const an = String(a?.immersion_name || "").toLowerCase();
-  const bn = String(b?.immersion_name || "").toLowerCase();
-  if (an < bn) return -1;
-  if (an > bn) return 1;
-  return String(a?.id || "").localeCompare(String(b?.id || ""));
 }
 
 
@@ -148,31 +119,56 @@ export default function ImmersionsListPage() {
     };
   }, [authLoading, user]);
 
-  const grouped = useMemo(() => {
+  const visibleItems = useMemo(() => {
+    const uid = user?.id;
+    const base = Array.isArray(items) ? items : [];
+
+    // Regra: esta tela lista apenas as imersões do usuário.
+    // Admin (full access) mantém visão global.
+    const scoped = isFullAccess
+      ? base
+      : base.filter((it) => it?.educational_consultant === uid || it?.instructional_designer === uid);
+
     const q = (search || "").trim().toLowerCase();
-    const all = (items || []).filter((it) => {
-      if (!q) return true;
-      const hay = `${it.immersion_name || ""} ${it.status || ""} ${it.room_location || ""}`.toLowerCase();
-      return hay.includes(q);
-    });
+    const searched = q
+      ? scoped.filter((it) => {
+          const hay = `${it?.immersion_name || ""} ${it?.status || ""} ${it?.room_location || ""}`.toLowerCase();
+          return hay.includes(q);
+        })
+      : scoped;
+
+    return searched;
+  }, [items, search, user?.id, isFullAccess]);
+
+  const grouped = useMemo(() => {
     const byStatus = {};
-    for (const it of all) {
+    for (const it of visibleItems) {
       const k = normalizeStatus(it.status);
       byStatus[k] = byStatus[k] || [];
       byStatus[k].push(it);
     }
     return byStatus;
-  }, [items, search]);
+  }, [visibleItems]);
 
   const statusOrder = useMemo(() => {
-    // Ordem fixa solicitada (sempre renderizar as seções, mesmo se vazias):
-    // Em Execução -> Em andamento -> Planejamento -> Concluída -> Cancelada
-    const fixed = ["Em Execução", "Em andamento", "Planejamento", "Concluída", "Cancelada"];
-    const keys = Object.keys(grouped || {});
-    const other = keys.filter((k) => !fixed.includes(k));
-    other.sort((a, b) => String(a).toLowerCase().localeCompare(String(b).toLowerCase(), "pt-BR"));
-    return [...fixed, ...other];
+    // Ordem fixa solicitada (operações > histórico).
+    const ordered = ["Em Execução", "Em andamento", "Planejamento", "Concluída", "Cancelada"];
+    const other = Object.keys(grouped || {}).filter((k) => !ordered.includes(k));
+    return [...ordered, ...other];
   }, [grouped]);
+
+  function sortByNearestDateAsc(a, b) {
+    const ad = toDateOnly(a?.start_date) || toDateOnly(a?.end_date);
+    const bd = toDateOnly(b?.start_date) || toDateOnly(b?.end_date);
+    const at = ad ? ad.getTime() : Number.POSITIVE_INFINITY;
+    const bt = bd ? bd.getTime() : Number.POSITIVE_INFINITY;
+    if (at !== bt) return at - bt;
+    const an = String(a?.immersion_name || "");
+    const bn = String(b?.immersion_name || "");
+    const nc = an.localeCompare(bn);
+    if (nc !== 0) return nc;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  }
 
   function displayNameById(id) {
     if (!id) return "-";
@@ -208,9 +204,9 @@ export default function ImmersionsListPage() {
         {error ? <div className="alert danger" style={{ marginTop: 12 }}>{error}</div> : null}
         {loading ? <div className="skeletonList" /> : null}
 
-        {!loading && (items || []).length === 0 ? (
+        {!loading && (visibleItems || []).length === 0 ? (
           <div className="card">
-            <p style={{ opacity: 0.85 }}>Nenhuma imersão cadastrada.</p>
+            <p style={{ opacity: 0.85 }}>Nenhuma imersão encontrada para este usuário.</p>
             {isFullAccess ? <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
           </div>
         ) : null}
@@ -255,10 +251,7 @@ export default function ImmersionsListPage() {
                       </div>
                     ) : null}
 
-                    {(() => {
-                      const list = grouped[status] || [];
-                      const sorted = [...list].sort(compareImmersionsByNearestDate);
-                      return sorted.map((it) => (
+                    {(grouped[status] || []).slice().sort(sortByNearestDateAsc).map((it) => (
                       <button
                         key={it.id}
                         type="button"
@@ -287,8 +280,7 @@ export default function ImmersionsListPage() {
                           <span className="chev">›</span>
                         </div>
                       </button>
-                      ));
-                    })()}
+                    ))}
                   </div>
                 )}
               </div>
