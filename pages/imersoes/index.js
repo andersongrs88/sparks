@@ -9,6 +9,9 @@ import { listProfiles } from "../../lib/profiles";
 function normalizeStatus(status) {
   // Back-compat: o sistema antigo usava "Em andamento".
   if (status === "Em andamento") return "Em andamento";
+  // Alguns bancos/legados podem registrar "Em execução".
+  // Mantemos uma seção dedicada e padronizamos o rótulo exibido.
+  if (status === "Em execução" || status === "Em Execução") return "Em Execução";
   return status || "Planejamento";
 }
 
@@ -131,10 +134,13 @@ export default function ImmersionsListPage() {
   }, [items, search]);
 
   const statusOrder = useMemo(() => {
-    // Ordem operacional (foco em execução) + seções históricas colapsáveis.
-    const ordered = ["Em andamento", "Planejamento", "Concluída", "Cancelada"];
-    const other = Object.keys(grouped || {}).filter((k) => !ordered.includes(k));
-    return [...ordered, ...other];
+    // Ordem fixa solicitada (sempre renderizar as seções, mesmo se vazias):
+    // Em Execução -> Em andamento -> Planejamento -> Concluída -> Cancelada
+    const fixed = ["Em Execução", "Em andamento", "Planejamento", "Concluída", "Cancelada"];
+    const keys = Object.keys(grouped || {});
+    const other = keys.filter((k) => !fixed.includes(k));
+    other.sort((a, b) => String(a).toLowerCase().localeCompare(String(b).toLowerCase(), "pt-BR"));
+    return [...fixed, ...other];
   }, [grouped]);
 
   function displayNameById(id) {
