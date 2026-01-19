@@ -251,6 +251,10 @@ export default function ImmersionDetailEditPage() {
   const [taskError, setTaskError] = useState("");
   const [taskSuccess, setTaskSuccess] = useState("");
 
+  // Seleção em massa (checkbox serve apenas para selecionar, não para concluir)
+  const [selectedTaskIds, setSelectedTaskIds] = useState(() => new Set());
+  const [bulkResponsibleId, setBulkResponsibleId] = useState("");
+
   // UX: filtros/visões para Checklist e Cronograma
   const [taskUi, setTaskUi] = useState({
     q: "",
@@ -1343,6 +1347,72 @@ function normalizeTemplatesForClone(items) {
     }
   }
 
+  function toggleTaskSelection(taskId) {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  function clearTaskSelection() {
+    setSelectedTaskIds(new Set());
+    setBulkResponsibleId("");
+  }
+
+  async function bulkUpdateSelectedTasks(patchBuilder) {
+    const ids = Array.from(selectedTaskIds || []);
+    if (!ids.length) return;
+
+    setTaskError("");
+    setTaskSuccess("");
+    try {
+      setTaskSaving(true);
+      for (const taskId of ids) {
+        const task = (tasks || []).find((t) => t.id === taskId);
+        if (!task) continue;
+
+        const allowed = canEditTask({ role, userId: user?.id, taskResponsibleId: task?.responsible_id }) || full;
+        if (!allowed) continue;
+
+        const patch = typeof patchBuilder === "function" ? patchBuilder(task) : patchBuilder;
+        const normalized = { ...(patch || {}) };
+
+        // Auditoria mínima ao concluir tarefa
+        if (Object.prototype.hasOwnProperty.call(normalized, "status") && normalized.status === "Concluída") {
+          const now = new Date();
+          normalized.completed_by = user?.id || null;
+          normalized.completed_at = now.toISOString();
+          normalized.done_at = now.toISOString().slice(0, 10);
+        }
+        // Reabrir limpa marcas de conclusão
+        if (Object.prototype.hasOwnProperty.call(normalized, "status") && normalized.status !== "Concluída") {
+          if (Object.prototype.hasOwnProperty.call(normalized, "done_at") && !normalized.done_at) normalized.done_at = null;
+          if (normalized.status === "Programada") {
+            normalized.done_at = null;
+            normalized.completed_by = null;
+            normalized.completed_at = null;
+          }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(normalized, "notes") && typeof normalized.notes === "string") normalized.notes = normalized.notes.trim() || null;
+        await updateTask(taskId, normalized);
+      }
+
+      setTaskSuccess("Tarefas atualizadas");
+      window.clearTimeout(window.__taskSuccessTimer);
+      window.__taskSuccessTimer = window.setTimeout(() => setTaskSuccess(""), 2500);
+      clearTaskSelection();
+      await loadTasks(id);
+    } catch (e) {
+      setTaskSuccess("");
+      setTaskError(e?.message || "Falha ao atualizar tarefas em massa.");
+    } finally {
+      setTaskSaving(false);
+    }
+  }
+
   async function onUploadEvidence(task, file) {
     const allowed = canEditTask({ role, userId: user?.id, taskResponsibleId: task?.responsible_id }) || full;
     if (!allowed) {
@@ -1858,6 +1928,8 @@ function normalizeTemplatesForClone(items) {
                 <div className="onlyMobile">
                   <button className="btn sm" onClick={() => setShowScheduleFilters(true)}>Filtros</button>
                 </div>
+
+
 <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <select className="input" value={scheduleUi.day} onChange={(e) => setScheduleUi((p) => ({ ...p, day: e.target.value }))}>
                     <option value="ALL">Todos os dias</option>
@@ -2624,6 +2696,72 @@ function normalizeTemplatesForClone(items) {
               </div>
             </div>
 
+	            {selectedTaskIds.size > 0 ? (
+	              <div className="alert" style={{ margin: "10px 0", background: "var(--bg2)", border: "1px solid var(--border)" }}>
+	                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+	                  <div className="small">
+	                    Selecionadas: <b>{selectedTaskIds.size}</b>
+	                  </div>
+	                  <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+	                    <button
+	                      type="button"
+	                      className="btn"
+	                      onClick={() => bulkUpdateSelectedTasks({ status: "Concluída" })}
+	                      disabled={taskSaving || tasksLoading}
+	                      title="Concluir tarefas selecionadas"
+	                    >
+	                      Concluir
+	                    </button>
+	                    <button
+	                      type="button"
+	                      className="btn"
+	                      onClick={() => bulkUpdateSelectedTasks({ status: "Programada", done_at: null, completed_by: null, completed_at: null })}
+	                      disabled={taskSaving || tasksLoading}
+	                      title="Reabrir tarefas selecionadas"
+	                    >
+	                      Reabrir
+	                    </button>
+	                    <select
+	                      className="input"
+	                      value={bulkResponsibleId}
+	                      onChange={(e) => setBulkResponsibleId(e.target.value)}
+	                      disabled={taskSaving || tasksLoading}
+	                      aria-label="Reatribuir responsável"
+	                      title="Selecione um responsável para reatribuir"
+	                    >
+	                      <option value="">Reatribuir para...</option>
+	                      <option value="__NULL__">Sem responsável</option>
+	                      {profiles.map((p) => (
+	                        <option key={p.id} value={p.id}>{p.name} ({roleLabel(p.role)})</option>
+	                      ))}
+	                    </select>
+	                    <button
+	                      type="button"
+	                      className="btn"
+	                      onClick={() => {
+	                        const val = bulkResponsibleId;
+	                        if (!val) return;
+	                        bulkUpdateSelectedTasks({ responsible_id: val === "__NULL__" ? null : val });
+	                      }}
+	                      disabled={taskSaving || tasksLoading || !bulkResponsibleId}
+	                      title="Aplicar reatribuição nas tarefas selecionadas"
+	                    >
+	                      Aplicar
+	                    </button>
+	                    <button
+	                      type="button"
+	                      className="btn"
+	                      onClick={clearTaskSelection}
+	                      disabled={taskSaving || tasksLoading}
+	                      title="Limpar seleção"
+	                    >
+	                      Limpar
+	                    </button>
+	                  </div>
+	                </div>
+	              </div>
+	            ) : null}
+
             {templatesOpen ? (
               <div className="overlay" role="dialog" aria-modal="true">
                 <div className="dialog" style={{ maxWidth: 980 }}>
@@ -3045,20 +3183,15 @@ function normalizeTemplatesForClone(items) {
                               <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                                 <div style={{ minWidth: 0 }}>
                                   <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-                                    {canEdit ? (
-                                      <label className="chk" title={isDone ? "Marcar como não concluída" : "Marcar como concluída"}>
-                                        <input
-                                          type="checkbox"
-                                          checked={isDone}
-                                          onChange={(e) =>
-                                            onQuickUpdateTask(t, e.target.checked
-                                              ? { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0, 10) }
-                                              : { status: "Programada", done_at: null }
-                                            )
-                                          }
-                                        />
-                                      </label>
-                                    ) : null}
+								{canEdit ? (
+								  <label className="chk" title={selectedTaskIds.has(t.id) ? "Desselecionar tarefa" : "Selecionar tarefa"}>
+								    <input
+								      type="checkbox"
+								      checked={selectedTaskIds.has(t.id)}
+								      onChange={() => toggleTaskSelection(t.id)}
+								    />
+								  </label>
+								) : null}
                                     <div style={{ minWidth: 0 }}>
                                       <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
                                       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
