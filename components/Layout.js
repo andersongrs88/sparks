@@ -24,6 +24,15 @@ export default function Layout({ title, children, hideNav = false }) {
   const { loading, profile, isFullAccess, user, signOutFast } = useAuth();
   const router = useRouter();
   const role = profile?.role;
+  const displayName = useMemo(() => {
+    // Preferência: nome do profile (quando existe). Fallback: parte antes do @ no email.
+    const rawName = profile?.name;
+    if (rawName && String(rawName).trim()) return String(rawName).trim();
+
+    const email = profile?.email || user?.email || "";
+    if (!email) return "";
+    return String(email).split("@")[0] || "";
+  }, [profile?.name, profile?.email, user?.email]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -66,7 +75,7 @@ const documentTitle = useMemo(() => {
 
         <div className="sidebarMeta">
           <div className="small">{loading ? "Carregando..." : roleLabel(role)}</div>
-          <div className="small muted">{profile?.email || user?.email || ""}</div>
+          <div className="small muted">{loading ? "" : displayName}</div>
         </div>
 
         <nav className="nav" aria-label="Navegação principal">
