@@ -67,17 +67,19 @@ function taskIsOverdue(task, today) {
 }
 
 function buildImmersionScopeOr({ role, userId }) {
-  // Observação: mantemos checklist_owner_id como fallback, pois é o "dono" que você definiu.
+  // Observação: o Dashboard deve respeitar o mesmo escopo da UI.
+  // Para Consultor/Designer: apenas imersões atribuídas no campo do papel.
+  // checklist_owner_id NÃO deve ampliar o escopo nesses casos (evita contagens/listas divergentes).
   if (!userId) return null;
   switch (normalizeRole(role)) {
     case "consultor":
-      return `educational_consultant.eq.${userId},checklist_owner_id.eq.${userId}`;
+      return `educational_consultant.eq.${userId}`;
     case "designer":
-      return `instructional_designer.eq.${userId},checklist_owner_id.eq.${userId}`;
+      return `instructional_designer.eq.${userId}`;
     case "producao":
-      return `production_responsible.eq.${userId},checklist_owner_id.eq.${userId}`;
+      return `production_responsible.eq.${userId}`;
     case "eventos":
-      return `events_responsible.eq.${userId},checklist_owner_id.eq.${userId}`;
+      return `events_responsible.eq.${userId}`;
     default:
       return `checklist_owner_id.eq.${userId}`;
   }
