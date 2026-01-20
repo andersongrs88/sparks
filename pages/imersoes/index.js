@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import { IMMERSION_STATUSES, normalizeImmersionStatus } from "../../lib/immersionConstants";
@@ -7,14 +7,11 @@ import { listImmersions } from "../../lib/immersions";
 import { listProfiles } from "../../lib/profiles";
 
 function normalizeStatus(status) {
-  if (!status) return "Planejamento";
-  // Normalização para garantir agrupamento e ordenação estáveis.
-  // Mantemos compatibilidade com variações antigas.
-  if (status === "Em execução" || status === "Em Execução" || status === "Em execução ") return "Em Execução";
-  if (status === "Em andamento" || status === "Em Andamento") return "Em andamento";
-  if (status === "Concluida") return "Concluída";
-  if (status === "Cancelada" || status === "Cancelado") return "Cancelada";
-  return status;
+  // Back-compat: variações históricas de rótulos.
+  if (status === "Em execução" || status === "Em Execucao" || status === "Em execucao") return "Em Execução";
+  if (status === "Em Execução") return "Em Execução";
+  if (status === "Em andamento") return "Em andamento";
+  return status || "Planejamento";
 }
 
 function badgeClass(status) {
@@ -65,7 +62,7 @@ function scheduleTag(startDateStr, endDateStr) {
 
 export default function ImmersionsListPage() {
   const router = useRouter();
-  const { loading: authLoading, user, isFullAccess } = useAuth();
+  const { loading: authLoading, user, isFullAccess, role } = useAuth();
 
   const [items, setItems] = useState([]);
   const [profilesById, setProfilesById] = useState({});
@@ -74,6 +71,9 @@ export default function ImmersionsListPage() {
   const [search, setSearch] = useState("");
   const [collapsedConcluded, setCollapsedConcluded] = useState(true);
   const [collapsedCanceled, setCollapsedCanceled] = useState(true);
+
+  const refreshInFlightRef = useRef(false);
+  const lastRefreshTsRef = useRef(0);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -84,18 +84,48 @@ export default function ImmersionsListPage() {
 
     let mounted = true;
 
-    async function load() {
+    function filterImmersionsForUser(data) {
+      const uid = user?.id;
+      if (!uid) return [];
+
+      // Admin/NoAuth: mantém visão global.
+      if (isFullAccess && (uid === "noauth" || role === "admin")) return data || [];
+
+      // Requisito: nesta tela, consultor vê apenas imersões em que ele é o consultor.
+      if (role === "consultor") {
+        return (data || []).filter((it) => String(it?.educational_consultant || "") === String(uid));
+      }
+
+      // Designer: mantém a visão alinhada ao papel (apenas imersões em que ele é o designer).
+      if (role === "designer") {
+        return (data || []).filter((it) => String(it?.instructional_designer || "") === String(uid));
+      }
+
+      // Demais papéis: fallback seguro (se a RLS já restringe, apenas respeitamos o retorno).
+      return data || [];
+    }
+
+    const load = async ({ silent = false } = {}) => {
+      if (refreshInFlightRef.current) return;
+
+      // Debounce defensivo: evita múltiplos reloads em sequência (focus + visibilitychange, etc.)
+      const now = Date.now();
+      if (now - (lastRefreshTsRef.current || 0) < 700) return;
+      lastRefreshTsRef.current = now;
+
+      refreshInFlightRef.current = true;
       try {
         setError("");
-        setLoading(true);
+        if (!silent) setLoading(true);
+
         const [data, profs] = await Promise.all([
           listImmersions(),
           // Perfis: usado apenas para exibir nomes (Consultor/Designer) na listagem.
-          // Mantém o UX mais confiável sem exigir abrir cada imersão.
           listProfiles().catch(() => []),
         ]);
         if (!mounted) return;
-        setItems(data || []);
+
+        setItems(filterImmersionsForUser(data));
 
         const map = {};
         for (const p of profs || []) {
@@ -109,64 +139,79 @@ export default function ImmersionsListPage() {
         if (!mounted) return;
         setError(e?.message || "Falha ao carregar imersões.");
       } finally {
-        if (mounted) setLoading(false);
+        refreshInFlightRef.current = false;
+        if (mounted && !silent) setLoading(false);
       }
-    }
+    };
 
+    // 1) Carrega ao entrar na tela
     load();
+
+    // 2) Atualiza ao voltar o foco / visibilidade (navegação entre abas, etc.)
+    const onFocus = () => load({ silent: true });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load({ silent: true });
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    // 3) Polling leve (garante atualização mesmo sem realtime configurado)
+    const intervalId = window.setInterval(() => load({ silent: true }), 45_000);
+
     return () => {
       mounted = false;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(intervalId);
     };
-  }, [authLoading, user]);
-
-  const visibleItems = useMemo(() => {
-    const uid = user?.id;
-    const base = Array.isArray(items) ? items : [];
-
-    // Regra: esta tela lista apenas as imersões do usuário.
-    // Admin (full access) mantém visão global.
-    const scoped = isFullAccess
-      ? base
-      : base.filter((it) => it?.educational_consultant === uid || it?.instructional_designer === uid);
-
-    const q = (search || "").trim().toLowerCase();
-    const searched = q
-      ? scoped.filter((it) => {
-          const hay = `${it?.immersion_name || ""} ${it?.status || ""} ${it?.room_location || ""}`.toLowerCase();
-          return hay.includes(q);
-        })
-      : scoped;
-
-    return searched;
-  }, [items, search, user?.id, isFullAccess]);
+  }, [authLoading, user, role, isFullAccess]);
 
   const grouped = useMemo(() => {
+    const q = (search || "").trim().toLowerCase();
+    const all = (items || []).filter((it) => {
+      if (!q) return true;
+      const hay = `${it.immersion_name || ""} ${it.status || ""} ${it.room_location || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
     const byStatus = {};
-    for (const it of visibleItems) {
+    for (const it of all) {
       const k = normalizeStatus(it.status);
       byStatus[k] = byStatus[k] || [];
       byStatus[k].push(it);
     }
     return byStatus;
-  }, [visibleItems]);
+  }, [items, search]);
 
   const statusOrder = useMemo(() => {
-    // Ordem fixa solicitada (operações > histórico).
+    // Ordem canônica solicitada (sempre fixa) + seções adicionais, se existirem.
     const ordered = ["Em Execução", "Em andamento", "Planejamento", "Concluída", "Cancelada"];
     const other = Object.keys(grouped || {}).filter((k) => !ordered.includes(k));
     return [...ordered, ...other];
   }, [grouped]);
 
-  function sortByNearestDateAsc(a, b) {
-    const ad = toDateOnly(a?.start_date) || toDateOnly(a?.end_date);
-    const bd = toDateOnly(b?.start_date) || toDateOnly(b?.end_date);
-    const at = ad ? ad.getTime() : Number.POSITIVE_INFINITY;
-    const bt = bd ? bd.getTime() : Number.POSITIVE_INFINITY;
-    if (at !== bt) return at - bt;
+  function sortByNearestDate(a, b) {
+    const aDate = toDateOnly(a?.start_date) || toDateOnly(a?.end_date);
+    const bDate = toDateOnly(b?.start_date) || toDateOnly(b?.end_date);
+
+    // Nulls last
+    if (!aDate && !bDate) {
+      const an = String(a?.immersion_name || "");
+      const bn = String(b?.immersion_name || "");
+      const byName = an.localeCompare(bn, "pt-BR");
+      if (byName !== 0) return byName;
+      return String(a?.id || "").localeCompare(String(b?.id || ""));
+    }
+    if (!aDate) return 1;
+    if (!bDate) return -1;
+
+    const diff = aDate.getTime() - bDate.getTime();
+    if (diff !== 0) return diff;
+
+    // Desempate estável
     const an = String(a?.immersion_name || "");
     const bn = String(b?.immersion_name || "");
-    const nc = an.localeCompare(bn);
-    if (nc !== 0) return nc;
+    const byName = an.localeCompare(bn, "pt-BR");
+    if (byName !== 0) return byName;
     return String(a?.id || "").localeCompare(String(b?.id || ""));
   }
 
@@ -204,9 +249,9 @@ export default function ImmersionsListPage() {
         {error ? <div className="alert danger" style={{ marginTop: 12 }}>{error}</div> : null}
         {loading ? <div className="skeletonList" /> : null}
 
-        {!loading && (visibleItems || []).length === 0 ? (
+        {!loading && (items || []).length === 0 ? (
           <div className="card">
-            <p style={{ opacity: 0.85 }}>Nenhuma imersão encontrada para este usuário.</p>
+            <p style={{ opacity: 0.85 }}>Nenhuma imersão cadastrada.</p>
             {isFullAccess ? <button className="btn primary" onClick={() => router.push("/imersoes/nova")}>Criar a primeira</button> : null}
           </div>
         ) : null}
@@ -251,7 +296,7 @@ export default function ImmersionsListPage() {
                       </div>
                     ) : null}
 
-                    {(grouped[status] || []).slice().sort(sortByNearestDateAsc).map((it) => (
+                    {(grouped[status] || []).slice().sort(sortByNearestDate).map((it) => (
                       <button
                         key={it.id}
                         type="button"
