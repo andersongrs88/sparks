@@ -67,10 +67,13 @@ function taskIsOverdue(task, today) {
 }
 
 function buildImmersionScopeOr({ role, userId }) {
-  // Observação: o Dashboard deve respeitar o mesmo escopo da UI.
-  // Para Consultor/Designer: apenas imersões atribuídas no campo do papel.
-  // checklist_owner_id NÃO deve ampliar o escopo nesses casos (evita contagens/listas divergentes).
   if (!userId) return null;
+
+  // Escopo estrito por papel (evita vazamento por checklist_owner_id):
+  // - Consultor: apenas imersões em que é o consultor educacional
+  // - Designer: apenas imersões em que é o designer instrucional
+  // - Outros papéis: apenas o respectivo responsável
+  // - Admin: tratado fora (sem filtro)
   switch (normalizeRole(role)) {
     case "consultor":
       return `educational_consultant.eq.${userId}`;
@@ -81,7 +84,8 @@ function buildImmersionScopeOr({ role, userId }) {
     case "eventos":
       return `events_responsible.eq.${userId}`;
     default:
-      return `checklist_owner_id.eq.${userId}`;
+      // fallback seguro: nada além do próprio usuário
+      return `educational_consultant.eq.${userId}`;
   }
 }
 
@@ -142,13 +146,8 @@ export default async function handler(req, res) {
 
     const totalImmersions = immersions?.length || 0;
 
-    // Set com imersões onde o usuário é dono (checklist_owner_id)
-    const ownerImmersionIdSet = new Set(
-      (immersions || [])
-        .filter((i) => userId && i?.checklist_owner_id === userId)
-        .map((i) => i.id)
-        .filter(Boolean)
-    );
+    // Lista de imersões no escopo do usuário (já filtradas acima).
+    const scopedImmersionIds = (immersions || []).map((i) => i.id).filter(Boolean);
 
     // ---------------------------
     // 2) TAREFAS — escopo por perfil
@@ -163,38 +162,19 @@ export default async function handler(req, res) {
       if (error) throw error;
       tasks = data || [];
     } else {
-      // tasks atribuídas diretamente ao usuário
-      const { data: assigned, error: errAssigned } = await supabaseAdmin
-        .from("immersion_tasks")
-        .select("id, immersion_id, title, status, due_date, done_at, phase, responsible_id")
-        .eq("responsible_id", userId)
-        .limit(20000);
-      if (errAssigned) throw errAssigned;
-
-      // tasks sem responsável, mas dono da imersão = usuário
-      let ownedOrphans = [];
-      const ownerIds = Array.from(ownerImmersionIdSet.values());
-      if (ownerIds.length > 0) {
-        const { data: owned, error: errOwned } = await supabaseAdmin
+      if (scopedImmersionIds.length === 0) {
+        tasks = [];
+      } else {
+        // Consultor/Designer: todas as tarefas das imersões sob sua responsabilidade
+        // (independente do responsável da tarefa).
+        const { data, error } = await supabaseAdmin
           .from("immersion_tasks")
           .select("id, immersion_id, title, status, due_date, done_at, phase, responsible_id")
-          .is("responsible_id", null)
-          .in("immersion_id", ownerIds)
+          .in("immersion_id", scopedImmersionIds)
           .limit(20000);
-        if (errOwned) throw errOwned;
-        ownedOrphans = owned || [];
+        if (error) throw error;
+        tasks = data || [];
       }
-
-      // união sem duplicação
-      const seen = new Set();
-      const merged = [];
-      for (const t of [...(assigned || []), ...(ownedOrphans || [])]) {
-        if (!t?.id) continue;
-        if (seen.has(t.id)) continue;
-        seen.add(t.id);
-        merged.push(t);
-      }
-      tasks = merged;
     }
 
     // ---------------------------
@@ -216,18 +196,16 @@ export default async function handler(req, res) {
     // - Consultor/Designer: total das minhas atrasadas (escopo do usuário)
     const overdueTasks = (tasks || []).filter((t) => taskIsOverdue(t, today)).length;
     const lateTasks = overdueTasks;
-
     // Minhas / Minhas atrasadas:
-    // - Sempre: apenas atribuídas ao usuário (responsável OU dono da imersão quando sem responsável)
+    // - Admin: tarefas onde responsible_id = userId
+    // - Consultor/Designer: mesmas regras, mas restritas ao escopo das imersões do usuário
     let myOpen = 0;
     let myOverdue = 0;
 
     if (userId) {
-      // Para admin, "tasks" é global, então precisamos filtrar o que é dele
-      const base = isAdmin ? tasks : tasks; // non-admin já é escopo do usuário
-      for (const t of base || []) {
-        const mine = isAdmin ? taskIsMine({ task: t, userId, ownerImmersionIdSet }) : true;
-        if (!mine) continue;
+      const base = tasks || [];
+      for (const t of base) {
+        if (t?.responsible_id !== userId) continue;
         if (taskIsOpen(t)) myOpen += 1;
         if (taskIsOverdue(t, today)) myOverdue += 1;
       }
