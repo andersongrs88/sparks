@@ -2555,86 +2555,124 @@ function normalizeTemplatesForClone(items) {
               </div>
             </div>
 
-            {/* Barra de filtros (reduz ruído visual e melhora uso no mobile) */}
-            <div className="toolbar" style={{ marginBottom: 12 }}>
-              <div className="toolbarLeft">
-                <input
-                  className="input taskSearch"
-                  placeholder="Buscar por tarefa, responsável ou observação..."
-                  value={taskUi.q}
-                  onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
-                />
-                <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
-                  <option value="ALL">Todas as fases</option>
-                  {PHASES.map((p) => (
-                    <option key={p.key} value={p.key}>{p.label}</option>
-                  ))}
-                </select>
-                <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))}>
-                  <option value="ALL">Todos os status</option>
-                  {TASK_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-                <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))}>
-                  <option value="ALL">Todos os responsáveis</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+            
 
-              <div className="toolbarRight">
-                <button
-                  type="button"
-                  className={taskUi.onlyLate ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
-                  title="Mostrar apenas tarefas atrasadas"
-                >
-                  Atrasadas
-                </button>
-                <button
-                  type="button"
-                  className={taskUi.hideDone ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
-                  title="Ocultar tarefas concluídas"
-                >
-                  Ocultar concluídas
-                </button>
-                <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))}>
-                  <option value="due">Ordenar: prazo</option>
-                  <option value="title">Ordenar: título</option>
-                  <option value="status">Ordenar: status</option>
-                  <option value="responsible">Ordenar: responsável</option>
-                </select>
-                <button
-                  type="button"
-                  className={taskUi.view === "cards" ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
-                  title="Visualização compacta (recomendada)"
-                >
-                  Compacto
-                </button>
-                <button
-                  type="button"
-                  className={taskUi.view === "table" ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
-                  title="Visualização em tabela (mais detalhada)"
-                >
-                  Tabela
-                </button>
-                <button
-                  type="button"
-                  className={taskUi.view === "kanban" ? "btn primary" : "btn"}
-                  onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
-                  title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
-                >
-                  Kanban
-                </button>
-              </div>
-            </div>
 
-            {templatesOpen ? (
+{/* Barra de filtros (organizada em blocos para reduzir ruído e melhorar uso no mobile) */}
+<div
+  className="taskToolbar"
+  style={{
+    marginBottom: 12,
+    border: "1px solid var(--border)",
+    borderRadius: 16,
+    padding: 14,
+    background: "var(--panel)",
+  }}
+>
+  {/* Filtros */}
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+    <div style={{ flex: "1 1 520px", minWidth: 280 }}>
+      <input
+        className="input taskSearch"
+        placeholder="Buscar por tarefa, responsável ou observação..."
+        value={taskUi.q}
+        onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
+        style={{ width: "100%" }}
+      />
+    </div>
+
+    <div
+      style={{
+        flex: "2 1 720px",
+        minWidth: 280,
+        display: "grid",
+        gap: 10,
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+      }}
+    >
+      <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
+        <option value="ALL">Todas as fases</option>
+        {PHASES.map((p) => (
+          <option key={p.key} value={p.key}>{p.label}</option>
+        ))}
+      </select>
+
+      <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))}>
+        <option value="ALL">Todos os status</option>
+        {TASK_STATUSES.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+      </select>
+
+      <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))}>
+        <option value="ALL">Todos os responsáveis</option>
+        {profiles.map((p) => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+
+  {/* Ações rápidas + Ordenação */}
+  <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+    <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+      <button
+        type="button"
+        className={taskUi.onlyLate ? "btn primary" : "btn"}
+        onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
+        title="Mostrar apenas tarefas atrasadas"
+      >
+        Atrasadas
+      </button>
+      <button
+        type="button"
+        className={taskUi.hideDone ? "btn primary" : "btn"}
+        onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
+        title="Ocultar tarefas concluídas"
+      >
+        Ocultar concluídas
+      </button>
+    </div>
+
+    <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))} style={{ minWidth: 220 }}>
+        <option value="due">Ordenar: prazo</option>
+        <option value="title">Ordenar: título</option>
+        <option value="status">Ordenar: status</option>
+        <option value="responsible">Ordenar: responsável</option>
+      </select>
+
+      <div role="group" aria-label="Visualização" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className={taskUi.view === "cards" ? "btn primary" : "btn"}
+          onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
+          title="Visualização compacta (recomendada)"
+        >
+          Compacto
+        </button>
+        <button
+          type="button"
+          className={taskUi.view === "table" ? "btn primary" : "btn"}
+          onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
+          title="Visualização em tabela (mais detalhada)"
+        >
+          Tabela
+        </button>
+        <button
+          type="button"
+          className={taskUi.view === "kanban" ? "btn primary" : "btn"}
+          onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
+          title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
+        >
+          Kanban
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{templatesOpen ? (
               <div className="overlay" role="dialog" aria-modal="true">
                 <div className="dialog" style={{ maxWidth: 980 }}>
                   <div className="dialogHeader">
