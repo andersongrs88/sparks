@@ -78,13 +78,24 @@ function Field({ label, children, hint }) {
 function Section({ title, description, children, right }) {
   return (
     <div className="section" style={{ marginTop: 12 }}>
-      <div className="row" style={{ alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <div className="sectionTitle">{title}</div>
-        {right ? <div>{right}</div> : null}
+      <div
+        className="sectionTitle"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+          {title}
+        </span>
+        {right ? <div style={{ flex: "0 0 auto" }}>{right}</div> : null}
       </div>
+
       <div className="sectionBody">
         {description ? (
-          <div className="small muted" style={{ marginBottom: 10 }}>
+          <div className="muted" style={{ marginBottom: 8 }}>
             {description}
           </div>
         ) : null}
@@ -1400,80 +1411,91 @@ function normalizeTemplatesForClone(items) {
 
   return (
     <Layout title="Editar imersão">
-  <div className="card">
-    <div className="h2">Editar imersão</div>
-    <div className="small muted" style={{ marginBottom: 12 }}>
-      Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).
-    </div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        {loading ? (
+          <div className="small">Carregando...</div>
+        ) : form ? (
+          <div
+            className="row"
+            style={{
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: "1 1 420px", minWidth: 260 }}>
+              <div className="h1" style={{ margin: 0, lineHeight: 1.15, wordBreak: "break-word" }}>
+                {form.immersion_name}
+              </div>
+              <div className="small" style={{ marginTop: 4, wordBreak: "break-word", whiteSpace: "normal" }}>
+                {form.start_date} → {form.end_date} • Tipo: {form.type || "-"} • Sala: {form.room_location || "-"} • Status: {form.status}
+              </div>
+            </div>
 
-    {error ? (
-      <div
-        ref={errorRef}
-        tabIndex={-1}
-        role="alert"
-        aria-live="assertive"
-        className="small"
-        style={{ color: "var(--danger)", marginBottom: 10 }}
-      >
-        {error}
-      </div>
-    ) : null}
+            <div className="row" style={{ flex: "0 1 auto", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+              {signal ? (
+                <span className={`badge ${signal.className}`} title="Dias até a data de início">
+                  {signal.label}
+                </span>
+              ) : null}
 
-    {loading ? (
-      <div className="small">Carregando...</div>
-    ) : form ? (
-      <div className="row" style={{ justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {signal ? (
-          <span className={`badge ${signal.className}`} title="Dias até a data de início">
-            {signal.label}
-          </span>
-        ) : null}
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (!id) return;
+                  setTab("checklist");
+                  router.push({ pathname: `/imersoes/${id}`, query: { tab: "tarefas" } }, undefined, { shallow: true });
+                }}
+                disabled={!id}
+                title="Visualizar todas as tarefas desta imersão"
+              >
+                Ver tarefas
+              </button>
 
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            if (!id) return;
-            setTab("checklist");
-            router.push({ pathname: `/imersoes/${id}`, query: { tab: "tarefas" } }, undefined, { shallow: true });
-          }}
-          disabled={!id}
-          title="Visualizar todas as tarefas desta imersão"
-        >
-          Ver tarefas
-        </button>
+              {form?.status !== "Concluída" ? (
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full || ownerMissing} title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas">
+                  Clonar
+                </button>
+              ) : (
+                <button type="button" className="btn" onClick={openCloneImmersionFlow} disabled={!full || ownerMissing}>
+                  Clonar
+                </button>
+              )}
 
-        <button
-          type="button"
-          className="btn"
-          onClick={openCloneImmersionFlow}
-          disabled={!full || ownerMissing}
-          title="Criar uma nova imersão copiando responsáveis e (opcionalmente) tarefas predefinidas"
-        >
-          Clonar
-        </button>
 
-        {form?.status !== "Concluída" ? (
-          <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full || ownerMissing}>
-            Concluir imersão
-          </button>
+              {form?.status !== "Concluída" ? (
+                <button type="button" className="btn primary" onClick={openCloseImmersionFlow} disabled={!full || ownerMissing}>
+                  Concluir imersão
+                </button>
+              ) : (
+                <span className="badge" style={{ background: "var(--success-soft)", color: "var(--success)", border: "1px solid var(--border)" }}>
+                  Concluída
+                </span>
+              )}
+
+              <button type="button" className="btn danger" onClick={onDeleteImmersion} disabled={removing}>
+                {removing ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          </div>
         ) : (
-          <span className="badge" style={{ background: "var(--success-soft)", color: "var(--success)", border: "1px solid var(--border)" }}>
-            Concluída
-          </span>
+          <div className="small">Imersão não encontrada.</div>
         )}
-
-        <button type="button" className="btn danger" onClick={onDeleteImmersion} disabled={removing}>
-          {removing ? "Excluindo..." : "Excluir"}
-        </button>
       </div>
-    ) : (
-      <div className="small">Imersão não encontrada.</div>
-    )}
 
-    <form onSubmit={onSaveImmersion}>
-
+      <form className="card" onSubmit={onSaveImmersion}>
         <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
+
+        {}
+
+        {error ? (
+              <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>
+                {error}
+              </div>
+            ) : null}
+
         {!form ? <div className="small">Nada para editar.</div> : null}
 
         <fieldset disabled={!full || isLocked || !canEditCurrentTab(tab) || saving} style={{ border: 0, padding: 0, margin: 0 }}>
@@ -3173,8 +3195,6 @@ function normalizeTemplatesForClone(items) {
           </div>
         )}
       </form>
-
-      </div>
 
       {editModal?.open ? (
         <div className="overlay" role="dialog" aria-modal="true">
