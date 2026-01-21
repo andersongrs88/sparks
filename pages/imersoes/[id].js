@@ -251,10 +251,6 @@ export default function ImmersionDetailEditPage() {
   const [taskError, setTaskError] = useState("");
   const [taskSuccess, setTaskSuccess] = useState("");
 
-  // Seleção em massa (checkbox serve apenas para selecionar, não para concluir)
-  const [selectedTaskIds, setSelectedTaskIds] = useState(() => new Set());
-  const [bulkResponsibleId, setBulkResponsibleId] = useState("");
-
   // UX: filtros/visões para Checklist e Cronograma
   const [taskUi, setTaskUi] = useState({
     q: "",
@@ -1347,72 +1343,6 @@ function normalizeTemplatesForClone(items) {
     }
   }
 
-  function toggleTaskSelection(taskId) {
-    setSelectedTaskIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) next.delete(taskId);
-      else next.add(taskId);
-      return next;
-    });
-  }
-
-  function clearTaskSelection() {
-    setSelectedTaskIds(new Set());
-    setBulkResponsibleId("");
-  }
-
-  async function bulkUpdateSelectedTasks(patchBuilder) {
-    const ids = Array.from(selectedTaskIds || []);
-    if (!ids.length) return;
-
-    setTaskError("");
-    setTaskSuccess("");
-    try {
-      setTaskSaving(true);
-      for (const taskId of ids) {
-        const task = (tasks || []).find((t) => t.id === taskId);
-        if (!task) continue;
-
-        const allowed = canEditTask({ role, userId: user?.id, taskResponsibleId: task?.responsible_id }) || full;
-        if (!allowed) continue;
-
-        const patch = typeof patchBuilder === "function" ? patchBuilder(task) : patchBuilder;
-        const normalized = { ...(patch || {}) };
-
-        // Auditoria mínima ao concluir tarefa
-        if (Object.prototype.hasOwnProperty.call(normalized, "status") && normalized.status === "Concluída") {
-          const now = new Date();
-          normalized.completed_by = user?.id || null;
-          normalized.completed_at = now.toISOString();
-          normalized.done_at = now.toISOString().slice(0, 10);
-        }
-        // Reabrir limpa marcas de conclusão
-        if (Object.prototype.hasOwnProperty.call(normalized, "status") && normalized.status !== "Concluída") {
-          if (Object.prototype.hasOwnProperty.call(normalized, "done_at") && !normalized.done_at) normalized.done_at = null;
-          if (normalized.status === "Programada") {
-            normalized.done_at = null;
-            normalized.completed_by = null;
-            normalized.completed_at = null;
-          }
-        }
-
-        if (Object.prototype.hasOwnProperty.call(normalized, "notes") && typeof normalized.notes === "string") normalized.notes = normalized.notes.trim() || null;
-        await updateTask(taskId, normalized);
-      }
-
-      setTaskSuccess("Tarefas atualizadas");
-      window.clearTimeout(window.__taskSuccessTimer);
-      window.__taskSuccessTimer = window.setTimeout(() => setTaskSuccess(""), 2500);
-      clearTaskSelection();
-      await loadTasks(id);
-    } catch (e) {
-      setTaskSuccess("");
-      setTaskError(e?.message || "Falha ao atualizar tarefas em massa.");
-    } finally {
-      setTaskSaving(false);
-    }
-  }
-
   async function onUploadEvidence(task, file) {
     const allowed = canEditTask({ role, userId: user?.id, taskResponsibleId: task?.responsible_id }) || full;
     if (!allowed) {
@@ -1472,17 +1402,25 @@ function normalizeTemplatesForClone(items) {
         {loading ? (
           <div className="small">Carregando...</div>
         ) : form ? (
-          <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div className="h1" style={{ margin: 0 }}>
+          <div
+            className="row"
+            style={{
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: "1 1 420px", minWidth: 260 }}>
+              <div className="h1" style={{ margin: 0, lineHeight: 1.15, wordBreak: "break-word" }}>
                 {form.immersion_name}
               </div>
-              <div className="small">
+              <div className="small" style={{ marginTop: 4, wordBreak: "break-word", whiteSpace: "normal" }}>
                 {form.start_date} → {form.end_date} • Tipo: {form.type || "-"} • Sala: {form.room_location || "-"} • Status: {form.status}
               </div>
             </div>
 
-            <div className="row">
+            <div className="row" style={{ flex: "0 1 auto", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
               {signal ? (
                 <span className={`badge ${signal.className}`} title="Dias até a data de início">
                   {signal.label}
@@ -1928,8 +1866,6 @@ function normalizeTemplatesForClone(items) {
                 <div className="onlyMobile">
                   <button className="btn sm" onClick={() => setShowScheduleFilters(true)}>Filtros</button>
                 </div>
-
-
 <div className="onlyDesktop" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <select className="input" value={scheduleUi.day} onChange={(e) => setScheduleUi((p) => ({ ...p, day: e.target.value }))}>
                     <option value="ALL">Todos os dias</option>
@@ -2617,167 +2553,84 @@ function normalizeTemplatesForClone(items) {
               </div>
             </div>
 
-            {/* Barra de filtros (organizada por grupos para reduzir ruído visual e melhorar uso no mobile) */}
+            {/* Barra de filtros (reduz ruído visual e melhora uso no mobile) */}
             <div className="toolbar" style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-                {/* Linha 1: busca + ações rápidas */}
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  <input
-                    className="input taskSearch"
-                    placeholder="Buscar por tarefa, responsável ou observação..."
-                    value={taskUi.q}
-                    onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
-                    style={{ flex: "1 1 320px" }}
-                  />
+              <div className="toolbarLeft">
+                <input
+                  className="input taskSearch"
+                  placeholder="Buscar por tarefa, responsável ou observação..."
+                  value={taskUi.q}
+                  onChange={(e) => setTaskUi((p) => ({ ...p, q: e.target.value }))}
+                />
+                <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))}>
+                  <option value="ALL">Todas as fases</option>
+                  {PHASES.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+                <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))}>
+                  <option value="ALL">Todos os status</option>
+                  {TASK_STATUSES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))}>
+                  <option value="ALL">Todos os responsáveis</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
 
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className={taskUi.onlyLate ? "btn primary" : "btn"}
-                      onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
-                      title="Mostrar apenas tarefas atrasadas"
-                    >
-                      Atrasadas
-                    </button>
-                    <button
-                      type="button"
-                      className={taskUi.hideDone ? "btn primary" : "btn"}
-                      onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
-                      title="Ocultar tarefas concluídas"
-                    >
-                      Ocultar concluídas
-                    </button>
-                  </div>
-                </div>
-
-                {/* Linha 2: filtros (fase/status/responsável) */}
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  <select className="input" value={taskUi.phase} onChange={(e) => setTaskUi((p) => ({ ...p, phase: e.target.value }))} style={{ flex: "1 1 180px" }}>
-                    <option value="ALL">Todas as fases</option>
-                    {PHASES.map((p) => (
-                      <option key={p.key} value={p.key}>{p.label}</option>
-                    ))}
-                  </select>
-
-                  <select className="input" value={taskUi.status} onChange={(e) => setTaskUi((p) => ({ ...p, status: e.target.value }))} style={{ flex: "1 1 200px" }}>
-                    <option value="ALL">Todos os status</option>
-                    {TASK_STATUSES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-
-                  <select className="input" value={taskUi.responsible} onChange={(e) => setTaskUi((p) => ({ ...p, responsible: e.target.value }))} style={{ flex: "1 1 240px" }}>
-                    <option value="ALL">Todos os responsáveis</option>
-                    {profiles.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Linha 3: ordenação + visualização */}
-                <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-                  <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))} style={{ flex: "1 1 220px", maxWidth: 320 }}>
-                    <option value="due">Ordenar: prazo</option>
-                    <option value="title">Ordenar: título</option>
-                    <option value="status">Ordenar: status</option>
-                    <option value="responsible">Ordenar: responsável</option>
-                  </select>
-
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className={taskUi.view === "cards" ? "btn primary" : "btn"}
-                      onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
-                      title="Visualização compacta (recomendada)"
-                    >
-                      Compacto
-                    </button>
-                    <button
-                      type="button"
-                      className={taskUi.view === "table" ? "btn primary" : "btn"}
-                      onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
-                      title="Visualização em tabela (mais detalhada)"
-                    >
-                      Tabela
-                    </button>
-                    <button
-                      type="button"
-                      className={taskUi.view === "kanban" ? "btn primary" : "btn"}
-                      onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
-                      title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
-                    >
-                      Kanban
-                    </button>
-                  </div>
-                </div>
+              <div className="toolbarRight">
+                <button
+                  type="button"
+                  className={taskUi.onlyLate ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, onlyLate: !p.onlyLate }))}
+                  title="Mostrar apenas tarefas atrasadas"
+                >
+                  Atrasadas
+                </button>
+                <button
+                  type="button"
+                  className={taskUi.hideDone ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, hideDone: !p.hideDone }))}
+                  title="Ocultar tarefas concluídas"
+                >
+                  Ocultar concluídas
+                </button>
+                <select className="input" value={taskUi.sort} onChange={(e) => setTaskUi((p) => ({ ...p, sort: e.target.value }))}>
+                  <option value="due">Ordenar: prazo</option>
+                  <option value="title">Ordenar: título</option>
+                  <option value="status">Ordenar: status</option>
+                  <option value="responsible">Ordenar: responsável</option>
+                </select>
+                <button
+                  type="button"
+                  className={taskUi.view === "cards" ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, view: "cards" }))}
+                  title="Visualização compacta (recomendada)"
+                >
+                  Compacto
+                </button>
+                <button
+                  type="button"
+                  className={taskUi.view === "table" ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, view: "table" }))}
+                  title="Visualização em tabela (mais detalhada)"
+                >
+                  Tabela
+                </button>
+                <button
+                  type="button"
+                  className={taskUi.view === "kanban" ? "btn primary" : "btn"}
+                  onClick={() => setTaskUi((p) => ({ ...p, view: "kanban" }))}
+                  title="Mini Kanban por fase (PA-PRÉ/DURANTE/PÓS)"
+                >
+                  Kanban
+                </button>
               </div>
             </div>
-
-            {selectedTaskIds.size > 0 ? (
-	              <div className="alert" style={{ margin: "10px 0", background: "var(--bg2)", border: "1px solid var(--border)" }}>
-	                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-	                  <div className="small">
-	                    Selecionadas: <b>{selectedTaskIds.size}</b>
-	                  </div>
-	                  <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-	                    <button
-	                      type="button"
-	                      className="btn"
-	                      onClick={() => bulkUpdateSelectedTasks({ status: "Concluída" })}
-	                      disabled={taskSaving || tasksLoading}
-	                      title="Concluir tarefas selecionadas"
-	                    >
-	                      Concluir
-	                    </button>
-	                    <button
-	                      type="button"
-	                      className="btn"
-	                      onClick={() => bulkUpdateSelectedTasks({ status: "Programada", done_at: null, completed_by: null, completed_at: null })}
-	                      disabled={taskSaving || tasksLoading}
-	                      title="Reabrir tarefas selecionadas"
-	                    >
-	                      Reabrir
-	                    </button>
-	                    <select
-	                      className="input"
-	                      value={bulkResponsibleId}
-	                      onChange={(e) => setBulkResponsibleId(e.target.value)}
-	                      disabled={taskSaving || tasksLoading}
-	                      aria-label="Reatribuir responsável"
-	                      title="Selecione um responsável para reatribuir"
-	                    >
-	                      <option value="">Reatribuir para...</option>
-	                      <option value="__NULL__">Sem responsável</option>
-	                      {profiles.map((p) => (
-	                        <option key={p.id} value={p.id}>{p.name} ({roleLabel(p.role)})</option>
-	                      ))}
-	                    </select>
-	                    <button
-	                      type="button"
-	                      className="btn"
-	                      onClick={() => {
-	                        const val = bulkResponsibleId;
-	                        if (!val) return;
-	                        bulkUpdateSelectedTasks({ responsible_id: val === "__NULL__" ? null : val });
-	                      }}
-	                      disabled={taskSaving || tasksLoading || !bulkResponsibleId}
-	                      title="Aplicar reatribuição nas tarefas selecionadas"
-	                    >
-	                      Aplicar
-	                    </button>
-	                    <button
-	                      type="button"
-	                      className="btn"
-	                      onClick={clearTaskSelection}
-	                      disabled={taskSaving || tasksLoading}
-	                      title="Limpar seleção"
-	                    >
-	                      Limpar
-	                    </button>
-	                  </div>
-	                </div>
-	              </div>
-	            ) : null}
 
             {templatesOpen ? (
               <div className="overlay" role="dialog" aria-modal="true">
@@ -3200,15 +3053,20 @@ function normalizeTemplatesForClone(items) {
                               <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                                 <div style={{ minWidth: 0 }}>
                                   <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-								{canEdit ? (
-								  <label className="chk" title={selectedTaskIds.has(t.id) ? "Desselecionar tarefa" : "Selecionar tarefa"}>
-								    <input
-								      type="checkbox"
-								      checked={selectedTaskIds.has(t.id)}
-								      onChange={() => toggleTaskSelection(t.id)}
-								    />
-								  </label>
-								) : null}
+                                    {canEdit ? (
+                                      <label className="chk" title={isDone ? "Marcar como não concluída" : "Marcar como concluída"}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isDone}
+                                          onChange={(e) =>
+                                            onQuickUpdateTask(t, e.target.checked
+                                              ? { status: "Concluída", done_at: t.done_at || new Date().toISOString().slice(0, 10) }
+                                              : { status: "Programada", done_at: null }
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                    ) : null}
                                     <div style={{ minWidth: 0 }}>
                                       <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{t.title}</div>
                                       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
