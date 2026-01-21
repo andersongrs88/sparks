@@ -78,27 +78,29 @@ function Field({ label, children, hint }) {
 function Section({ title, description, children, right }) {
   return (
     <div className="section" style={{ marginTop: 12 }}>
-      <div className="sectionHeader">
-        <div className="sectionHeaderLeft">
-          <div className="sectionTitle">{title}</div>
-          {description ? (
-            <div className="sectionDesc">{description}</div>
-          ) : null}
-        </div>
-        {right ? <div className="sectionHeaderRight">{right}</div> : null}
+      <div
+        className="row"
+        style={{
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div className="sectionTitle">{title}</div>
+        {right ? <div>{right}</div> : null}
       </div>
+
+      {description ? (
+        <div className="small muted" style={{ marginTop: 4 }}>
+          {description}
+        </div>
+      ) : null}
+
       <div className="sectionBody">{children}</div>
     </div>
   );
 }
-
-// Converte qualquer data recebida (YYYY-MM-DD ou ISO) para "somente data" no horário local
-function toLocalDateOnly(d) {
-  if (!d) return null;
-  const date = typeof d === "string" ? new Date(d) : d;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
 function daysUntil(startDateValue) {
   if (!startDateValue) return null;
 
@@ -1402,22 +1404,14 @@ function normalizeTemplatesForClone(items) {
         {loading ? (
           <div className="small">Carregando...</div>
         ) : form ? (
-          <div
-            className="row"
-            style={{
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ flex: "1 1 420px", minWidth: 260 }}>
-              <div className="h1" style={{ margin: 0, lineHeight: 1.15, wordBreak: "break-word" }}>
-                {form.immersion_name}
-              </div>
-              <div className="small" style={{ marginTop: 4, wordBreak: "break-word", whiteSpace: "normal" }}>
-                {form.start_date} → {form.end_date} • Tipo: {form.type || "-"} • Sala: {form.room_location || "-"} • Status: {form.status}
-              </div>
+                    <div>
+            <div className="h2">Editar imersão</div>
+            <div className="small muted" style={ marginBottom: 12 }>
+              Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).
+            </div>
+
+            <div className="small muted" style={ marginBottom: 12, wordBreak: "break-word", whiteSpace: "normal" }>
+              {form.immersion_name} • {form.start_date} → {form.end_date} • Tipo: {form.type || "-"} • Sala: {form.room_location || "-"} • Status: {form.status}
             </div>
 
             <div className="row" style={{ flex: "0 1 auto", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
@@ -1467,12 +1461,14 @@ function normalizeTemplatesForClone(items) {
               </button>
             </div>
           </div>
+          </div>
+
         ) : (
           <div className="small">Imersão não encontrada.</div>
         )}
       </div>
 
-      <form className="card" onSubmit={onSaveImmersion}>
+      <form onSubmit={onSaveImmersion}>
         <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
 
         {}
