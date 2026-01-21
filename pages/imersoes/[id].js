@@ -78,29 +78,16 @@ function Field({ label, children, hint }) {
 function Section({ title, description, children, right }) {
   return (
     <div className="section" style={{ marginTop: 12 }}>
-      <div
-        className="sectionTitle"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-          {title}
-        </span>
-        {right ? <div style={{ flex: "0 0 auto" }}>{right}</div> : null}
+      <div className="sectionHeader">
+        <div className="sectionHeaderLeft">
+          <div className="sectionTitle">{title}</div>
+          {description ? (
+            <div className="sectionDesc">{description}</div>
+          ) : null}
+        </div>
+        {right ? <div className="sectionHeaderRight">{right}</div> : null}
       </div>
-
-      <div className="sectionBody">
-        {description ? (
-          <div className="muted" style={{ marginBottom: 8 }}>
-            {description}
-          </div>
-        ) : null}
-        {children}
-      </div>
+      <div className="sectionBody">{children}</div>
     </div>
   );
 }
@@ -1180,7 +1167,9 @@ function normalizeTemplatesForClone(items) {
       }
       const { data: items, error } = await supabase
         .from("checklist_template_items")
-        .select("id,phase,title,area,offset_days,responsible_role")
+        // OBS: a coluna `responsible_role` não existe no schema atual.
+        // Mantemos apenas os campos necessários para preview e criação das tarefas.
+        .select("id,phase,title,area,offset_days")
         .eq("template_id", templateId)
         .order("phase", { ascending: true })
         .order("offset_days", { ascending: true })
@@ -2677,6 +2666,32 @@ function normalizeTemplatesForClone(items) {
                     ) : null}
 
                     <div className="card" style={{ marginBottom: 12 }}>
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                        <div className="col" style={{ minWidth: 260, flex: 1 }}>
+                          <div className="small muted" style={{ marginBottom: 6 }}>Template</div>
+                          <select
+                            className="input"
+                            value={selectedTemplateId}
+                            onChange={(e) => setSelectedTemplateId(e.target.value)}
+                            disabled={templatesLoading}
+                            aria-label="Selecionar template"
+                          >
+                            {templatesList.length === 0 ? (
+                              <option value="">Nenhum template cadastrado</option>
+                            ) : null}
+                            {templatesList.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                          <button type="button" className="btn" onClick={fetchTemplateList} disabled={templatesLoading} title="Atualizar lista de templates">
+                            Atualizar templates
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                           <button
