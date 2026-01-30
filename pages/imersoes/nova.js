@@ -5,7 +5,6 @@ import ImmersionTabs from "../../components/ImmersionTabs";
 import { useAuth } from "../../context/AuthContext";
 import { createImmersion } from "../../lib/immersions";
 import { listActiveProfiles } from "../../lib/profiles";
-import { supabase } from "../../lib/supabaseClient";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
 import { isLimitedImmersionRole, normalizeRole } from "../../lib/permissions";
@@ -86,7 +85,6 @@ export default function NovaImersaoPage() {
     eventos: []
   });
   const [checklistTemplates, setChecklistTemplates] = useState([]);
-  const [immersionOptions, setImmersionOptions] = useState([]);
   const [speakers, setSpeakers] = useState([]);
 
   const [form, setForm] = useState({
@@ -96,7 +94,7 @@ export default function NovaImersaoPage() {
     start_date: "",
     end_date: "",
     room_location: ROOMS[0],
-    status: "Planejamento",
+    status: "Confirmada",
     educational_consultant: "",
     checklist_owner_id: "",
     instructional_designer: "",
@@ -111,9 +109,6 @@ export default function NovaImersaoPage() {
     service_order_link: "",
     technical_sheet_link: ""
   });
-
-  // Clonar imersão inteira (substitui o bloco "Templates do tipo")
-  const [cloneSourceId, setCloneSourceId] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -181,19 +176,6 @@ export default function NovaImersaoPage() {
         // silencioso
       }
 
-      // Opções para clonagem
-      try {
-        const { data, error: e } = await supabase
-          .from("immersions")
-          .select("id, immersion_name, start_date")
-          .order("start_date", { ascending: false })
-          .limit(300);
-        if (!e && mounted) {
-          setImmersionOptions((data || []).map((r) => ({ id: r.id, name: r.immersion_name, start_date: r.start_date })));
-        }
-      } catch {
-        // best-effort
-      }
     })();
     return () => { mounted = false; };
   }, []);
@@ -229,49 +211,13 @@ export default function NovaImersaoPage() {
 
     setSaving(true);
     try {
-      // Clonar imersão inteira (copia tarefas, cronograma, materiais, ferramentas, vídeos, PDCA e custos)
-      if (cloneSourceId) {
-        const r = await fetch("/api/immersions/clone-full", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source_id: cloneSourceId,
-            overrides: {
-              immersion_name: form.immersion_name.trim(),
-              type: form.type,
-              start_date: form.start_date,
-              end_date: form.end_date,
-              room_location: form.room_location,
-              status: form.status,
-              educational_consultant: form.educational_consultant,
-              instructional_designer: form.instructional_designer,
-              trainer_speaker_id: form.trainer_speaker_id || null,
-              speaker_ids: Array.from(new Set((form.speaker_ids || []).filter(Boolean))),
-              checklist_template_id: form.checklist_template_id,
-              mentors_present: form.mentors_present || null,
-              need_specific_staff: !!form.need_specific_staff,
-              staff_justification: form.need_specific_staff ? (form.staff_justification || null) : null,
-              service_order_link: form.service_order_link || null,
-              technical_sheet_link: form.technical_sheet_link || null,
-            }
-          })
-        });
-        if (!r.ok) {
-          const msg = await r.text();
-          throw new Error(msg || "Falha ao clonar imersão.");
-        }
-        const out = await r.json();
-        router.push(`/imersoes/${out?.id}`);
-        return;
-      }
-
       const created = await createImmersion({
         immersion_name: form.immersion_name.trim(),
         type: form.type,
         start_date: form.start_date,
         end_date: form.end_date,
         room_location: form.room_location,
-        status: form.status,
+        status: "Confirmada",
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
@@ -366,19 +312,6 @@ export default function NovaImersaoPage() {
                   </select>
                 </Field>
               </div>
-              <div className="card" style={{ padding: 12, marginTop: 8, background: "var(--bg2)", border: "1px solid var(--border)" }}>
-                <div className="small" style={{ fontWeight: 800, marginBottom: 6 }}>Clonar imersão (opcional)</div>
-                <div className="small muted" style={{ marginBottom: 10 }}>
-                  Se você escolher uma imersão base, o sistema copia a estrutura completa (tarefas, cronograma, materiais, ferramentas, vídeos, PDCA e custos) e ajusta os prazos pela nova data inicial.
-                </div>
-                <select className="input" value={cloneSourceId} onChange={(e) => setCloneSourceId(e.target.value)}>
-                  <option value="">Não clonar</option>
-                  {immersionOptions.map((it) => (
-                    <option key={it.id} value={it.id}>{it.name}{it.start_date ? ` — ${it.start_date}` : ""}</option>
-                  ))}
-                </select>
-              </div>
-
 
               <div className="grid2">
                 <Field label="Sala">
@@ -388,13 +321,7 @@ export default function NovaImersaoPage() {
                 </Field>
 
                 <Field label="Status">
-                  <select className="input" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
-                    <option value="Planejamento">Planejamento</option>
-                    <option value="Confirmada">Confirmada</option>
-                    <option value="Em andamento">Em andamento</option>
-                    <option value="Concluída">Concluída</option>
-                    <option value="Cancelada">Cancelada</option>
-                  </select>
+                  <input className="input" value="Confirmada" readOnly aria-readonly="true" />
                 </Field>
               </div>
 
