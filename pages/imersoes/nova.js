@@ -88,6 +88,7 @@ export default function NovaImersaoPage() {
   const [speakers, setSpeakers] = useState([]);
 
   const [form, setForm] = useState({
+    immersion_catalog_id: "",
     immersion_name: "",
     // Coluna `type` (Formato) — alguns bancos antigos não possuem `immersion_type`
     type: "",
@@ -110,10 +111,71 @@ export default function NovaImersaoPage() {
     technical_sheet_link: ""
   });
 
+
+function normalizeFormatValue(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function catalogFormatToType(format) {
+  const f = normalizeFormatValue(format);
+  // Backward-compat: sistema antigo usa "Online"; padrão novo usa "Onlive"
+  if (f === "presencial") return "Presencial";
+  if (f === "onlive") return "Onlive";
+  if (f === "online") return "Online";
+  if (f === "zoom") return "Zoom";
+  if (f === "entrada") return "Entrada";
+  if (f === "giants") return "Giants";
+  if (f === "incompany") return "Incompany";
+  if (f === "outros" || f === "outras") return "Outros";
+  if (f === "extras") return "Extras";
+  return format ? String(format) : "";
+}
+
+function guessChecklistTemplateIdByFormat(_type, templates) {
+  const t = String(_type || "").trim().toLowerCase();
+  if (!t) return "";
+  const list = Array.isArray(templates) ? templates : [];
+  const exact = list.find((x) => String(x?.name || "").trim().toLowerCase() === t);
+  if (exact?.id) return exact.id;
+  const sub = list.find((x) => String(x?.name || "").trim().toLowerCase().includes(t));
+  if (sub?.id) return sub.id;
+
+  const aliases = new Map([
+    ["onlive", ["onlive", "online"]],
+    ["online", ["online", "onlive"]],
+    ["presencial", ["presencial", "presenciais"]],
+    ["outros", ["outros", "outras"]],
+    ["incompany", ["incompany", "in company"]],
+  ]);
+  for (const [key, vals] of aliases.entries()) {
+    if (t !== key) continue;
+    for (const v of vals) {
+      const m = list.find((x) => String(x?.name || "").trim().toLowerCase().includes(v));
+      if (m?.id) return m.id;
+    }
+  }
+  return "";
+}
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) router.replace("/login");
   }, [authLoading, user, router]);
+
+
+useEffect(() => {
+  if (authLoading) return;
+  if (!user) return;
+  (async () => {
+    try {
+      const catalog = await listImmersionCatalog({ onlyActive: true });
+      setImmersionCatalog(catalog || []);
+    } catch (e) {
+      // Se o catálogo ainda não existir no banco, não bloqueia criação manual (fallback).
+      console.warn("immersion_catalog load failed", e);
+    }
+  })();
+}, [authLoading, user]);
 
   // Ao criar uma nova imersão: se o usuário logado for Consultor, preenche automaticamente.
   useEffect(() => {
@@ -189,6 +251,10 @@ export default function NovaImersaoPage() {
       return;
     }
 
+    if (immersionCatalog.length > 0 && !form.immersion_catalog_id) {
+      setError("Selecione uma imersão cadastrada.");
+      return;
+    }
     if (!form.immersion_name?.trim()) {
       setError("Informe o nome da imersão.");
       return;
@@ -296,22 +362,75 @@ export default function NovaImersaoPage() {
           <div className="section">
             <div className="sectionTitle">Informações básicas</div>
             <div className="sectionBody">
-              <Field label="Nome da imersão" hint="Obrigatório">
-                <input className="input" value={form.immersion_name} onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))} placeholder="Ex.: Imersão Gestão MKT Digital" required />
-              </Field>
 
-              <div className="grid2">
-                <Field label="Formato" hint="Obrigatório">
-                  <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
-                    <option value="">Selecione</option>
-                    {IMMERSION_FORMATS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
+{immersionCatalog.length > 0 ? (
+  <>
+    <Field label="Nome da imersão" hint="Obrigatório">
+      <select
+        className="input"
+        value={form.immersion_catalog_id}
+        onChange={(e) => {
+          const id = e.target.value;
+          const picked = immersionCatalog.find((x) => String(x.id) === String(id));
+          const nextName = picked?.name ? String(picked.name) : "";
+          const nextType = picked?.format ? catalogFormatToType(picked.format) : "";
+          setForm((p) => ({
+            ...p,
+            immersion_catalog_id: id,
+            immersion_name: nextName,
+            type: nextType,
+            // ao trocar o cadastro, reseta template para permitir auto-seleção pelo formato
+            checklist_template_id: "",
+          }));
+        }}
+        required
+        aria-label="Selecione uma imersão cadastrada"
+      >
+        <option value="">Selecione</option>
+        {immersionCatalog.map((c) => {
+          const fmt = catalogFormatToType(c.format);
+          const label = fmt ? `${c.name} • ${fmt}` : c.name;
+          return (
+            <option key={c.id} value={c.id}>
+              {label}
+            </option>
+          );
+        })}
+      </select>
+    </Field>
+
+    <div className="grid2">
+      <Field label="Formato" hint="Obrigatório">
+        <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
+      </Field>
+    </div>
+  </>
+) : (
+  <>
+    <Field label="Nome da imersão" hint="Obrigatório">
+      <input
+        className="input"
+        value={form.immersion_name}
+        onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))}
+        placeholder="Ex.: Imersão Gestão MKT Digital"
+        required
+      />
+    </Field>
+
+    <div className="grid2">
+      <Field label="Formato" hint="Obrigatório">
+        <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
+          <option value="">Selecione</option>
+          {IMMERSION_FORMATS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </div>
+  </>
+)}
 
               <div className="grid2">
                 <Field label="Sala">
