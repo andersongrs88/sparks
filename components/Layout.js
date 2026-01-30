@@ -84,6 +84,7 @@ const documentTitle = useMemo(() => {
           {canSeeMenuItem(role, "painel") ? <NavItem href="/painel" label="Plano de Ação" icon="✅" /> : null}
           {canSeeMenuItem(role, "relatorios") ? <NavItem href="/relatorios" label="Relatórios" icon="📊" /> : null}
           {canSeeMenuItem(role, "templates") ? <NavItem href="/configuracoes/templates" label="Templates" icon="🧩" /> : null}
+          {canSeeMenuItem(role, "cadastro_imersoes") ? <NavItem href="/configuracoes/cadastro-imersoes" label="Cadastro de Imersões" icon="🗂️" /> : null}
           {canSeeMenuItem(role, "notificacoes_email") ? <NavItem href="/configuracoes/notificacoes-email" label="Notificações (E-mail)" icon="✉️" /> : null}
           {canSeeMenuItem(role, "palestrantes") ? <NavItem href="/palestrantes" label="Palestrantes" icon="🎤" /> : null}
           {canSeeMenuItem(role, "usuarios") ? <NavItem href="/usuarios" label="Usuários" icon="👤" /> : null}
