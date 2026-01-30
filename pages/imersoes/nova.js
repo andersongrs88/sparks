@@ -321,9 +321,7 @@ export default function NovaImersaoPage() {
                 </Field>
 
                 <Field label="Status">
-                  <input className="input" value="Confirmada" readOnly aria-readonly="true" select/>
-                  <input className="input" value="Em Andamento " readOnly aria-readonly="true"/>
-                  <input className="input" value="Planejamento" readOnly aria-readonly="true"/>     
+                  <input className="input" value="Confirmada" readOnly aria-readonly="true" select/>     
                 </Field>
               </div>
 
