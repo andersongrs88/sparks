@@ -11,6 +11,7 @@ function normalizeStatus(status) {
   if (status === "Em execução" || status === "Em Execucao" || status === "Em execucao") return "Em Execução";
   if (status === "Em Execução") return "Em Execução";
   if (status === "Em andamento") return "Em andamento";
+  if (status === "Confirmada" || status === "Confirmado") return "Confirmada";
   return status || "Planejamento";
 }
 
@@ -41,7 +42,7 @@ function scheduleTag(startDateStr, endDateStr) {
   if (end && today > end) return { label: "Encerrada", cls: "tag neutral" };
 
   // If we have a start date and we're between start and end (or end is missing), it's ongoing
-  if (start && today >= start && (!end || today <= end)) return { label: "Em andamento", cls: "tag info" };
+  if (start && today >= start && (!end || today <= end)) return { label: "Em execução", cls: "tag info" };
 
   // If it hasn't started yet, show countdown
   if (start && today < start) {
@@ -57,6 +58,18 @@ function scheduleTag(startDateStr, endDateStr) {
   }
 
   return { label: "Sem data", cls: "tag neutral" };
+}
+
+function isInExecutionWindow(startDateStr, endDateStr) {
+  const start = toDateOnly(startDateStr);
+  const end = toDateOnly(endDateStr);
+
+  if (!start) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return today >= start && (!end || today <= end);
 }
 
 
@@ -175,7 +188,9 @@ export default function ImmersionsListPage() {
     });
     const byStatus = {};
     for (const it of all) {
-      const k = normalizeStatus(it.status);
+      // Regra de exibição: "Em Execução" é um agrupamento automático quando a imersão está acontecendo,
+      // independentemente do status persistido.
+      const k = isInExecutionWindow(it?.start_date, it?.end_date) ? "Em Execução" : normalizeStatus(it.status);
       byStatus[k] = byStatus[k] || [];
       byStatus[k].push(it);
     }
@@ -184,7 +199,7 @@ export default function ImmersionsListPage() {
 
   const statusOrder = useMemo(() => {
     // Ordem canônica solicitada (sempre fixa) + seções adicionais, se existirem.
-    const ordered = ["Em Execução", "Em andamento", "Planejamento", "Concluída", "Cancelada"];
+    const ordered = ["Em Execução", "Em andamento", "Planejamento", "Confirmada", "Concluída", "Cancelada"];
     const other = Object.keys(grouped || {}).filter((k) => !ordered.includes(k));
     return [...ordered, ...other];
   }, [grouped]);
