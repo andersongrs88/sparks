@@ -12,7 +12,7 @@ import { isLimitedImmersionRole, normalizeRole } from "../../lib/permissions";
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
 // Formato (domínio fechado) conforme definido por você. (Mesma nomenclatura da tela de visualização.)
-const IMMERSION_FORMATS = ["Presencial", "Onlive", "Zoom", "Entrada", "Giants", "Incompany", "Outros"];
+const IMMERSION_FORMATS = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
 
 function Field({ label, children, hint }) {
   const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
@@ -218,7 +218,6 @@ export default function NovaImersaoPage() {
         end_date: form.end_date,
         room_location: form.room_location,
         status: "Confirmada",
-        is_active: !!form.is_active,
 
         educational_consultant: form.educational_consultant,
         instructional_designer: form.instructional_designer,
@@ -321,16 +320,8 @@ export default function NovaImersaoPage() {
                   </select>
                 </Field>
 
-                <Field label="Status" hint="Obrigatório">
-                  <select
-                    className="input"
-                    value={form.is_active ? "ativo" : "inativo"}
-                    onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.value === "ativo" }))}
-                    aria-label="Status do cadastro (ativo ou inativo)"
-                  >
-                    <option value="ativo">Ativo</option>
-                    <option value="inativo">Inativo</option>
-                  </select>
+                <Field label="Status">
+                  <input className="input" value="Confirmada" readOnly aria-readonly="true" select/>     
                 </Field>
               </div>
 
