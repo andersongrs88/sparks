@@ -87,6 +87,9 @@ export default function NovaImersaoPage() {
   const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [speakers, setSpeakers] = useState([]);
 
+  // Cadastro mestre (public.immersion_catalog) — usado para padronizar Nome/Formato.
+  const [immersionCatalog, setImmersionCatalog] = useState([]);
+
   const [form, setForm] = useState({
     immersion_catalog_id: "",
     immersion_name: "",
