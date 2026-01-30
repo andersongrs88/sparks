@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Layout from "../../components/Layout";
 import ImmersionTabs from "../../components/ImmersionTabs";
 import { useAuth } from "../../context/AuthContext";
-import { createImmersion } from "../../lib/immersions";
+import { createImmersion, listImmersionCatalog } from "../../lib/immersions";
 import { listActiveProfiles } from "../../lib/profiles";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
