@@ -147,6 +147,32 @@ export default function NovaImersaoPage() {
   function ctx() {
     return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form.immersion_catalog_id };
   }
+  function getNextAction() {
+    if (!form) return null;
+
+    const hasCatalog = (immersionCatalog?.length || 0) > 0;
+    if (hasCatalog && !form.immersion_catalog_id) {
+      return { field: "immersion_catalog_id", tab: "informacoes", label: "Selecione a imersão", ctaText: "Selecionar" };
+    }
+    if (!form.immersion_name?.trim()) {
+      return { field: "immersion_name", tab: "informacoes", label: "Defina o nome da imersão", ctaText: "Preencher" };
+    }
+    if (!form.start_date || !form.end_date) {
+      return { field: !form.start_date ? "start_date" : "end_date", tab: "informacoes", label: "Defina data inicial e final", ctaText: "Definir datas" };
+    }
+    if (!form.educational_consultant || !form.instructional_designer) {
+      return { field: !form.educational_consultant ? "educational_consultant" : "instructional_designer", tab: "informacoes", label: "Defina o time de educação (Consultor e Designer)", ctaText: "Definir time" };
+    }
+    if (!form.checklist_template_id) {
+      return { field: "checklist_template_id", tab: "informacoes", label: "Selecione o checklist template", ctaText: "Selecionar" };
+    }
+
+    // Próximo passo sugerido após a base mínima
+    return { tab: "narrativa", label: "Siga para a Narrativa", ctaText: "Ir para Narrativa" };
+  }
+
+  const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog]);
+
 
   function collectStepErrors(stepKeys) {
     const c = ctx();
@@ -513,7 +539,42 @@ useEffect(() => {
 
           {tab === "informacoes" ? (
           <>
-          <div className="section">
+          
+            {nextAction ? (
+              <div
+                className="card"
+                style={{
+                  marginBottom: 12,
+                  border: "1px solid var(--border)",
+                  background: "var(--card)",
+                  borderRadius: 12,
+                  padding: 12,
+                }}
+                role="region"
+                aria-label="Próximo passo recomendado"
+              >
+                <div className="row" style={{ alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="small muted" style={{ marginBottom: 2 }}>Próximo passo recomendado</div>
+                    <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{nextAction.label}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => {
+                      if (nextAction.tab) handleTabChange(nextAction.tab);
+                      if (nextAction.field) {
+                        setTimeout(() => scrollToField(nextAction.field), 150);
+                      }
+                    }}
+                  >
+                    {nextAction.ctaText || "Ir agora"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+<div className="section">
             <div className="sectionTitle">Informações básicas</div>
             <div className="sectionBody">
 

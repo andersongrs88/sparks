@@ -247,6 +247,32 @@ export default function ImmersionDetailEditPage() {
   function ctx() {
     return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form?.immersion_catalog_id };
   }
+  function getNextAction() {
+    if (!form) return null;
+
+    const hasCatalog = (immersionCatalog?.length || 0) > 0;
+    if (hasCatalog && !form.immersion_catalog_id) {
+      return { field: "immersion_catalog_id", tab: "informacoes", label: "Selecione a imersão", ctaText: "Selecionar" };
+    }
+    if (!form.immersion_name?.trim()) {
+      return { field: "immersion_name", tab: "informacoes", label: "Defina o nome da imersão", ctaText: "Preencher" };
+    }
+    if (!form.start_date || !form.end_date) {
+      return { field: !form.start_date ? "start_date" : "end_date", tab: "informacoes", label: "Defina data inicial e final", ctaText: "Definir datas" };
+    }
+    if (!form.educational_consultant || !form.instructional_designer) {
+      return { field: !form.educational_consultant ? "educational_consultant" : "instructional_designer", tab: "informacoes", label: "Defina o time de educação (Consultor e Designer)", ctaText: "Definir time" };
+    }
+    if (!form.checklist_template_id) {
+      return { field: "checklist_template_id", tab: "informacoes", label: "Selecione o checklist template", ctaText: "Selecionar" };
+    }
+
+    // Próximo passo sugerido após a base mínima
+    return { tab: "narrativa", label: "Siga para a Narrativa", ctaText: "Ir para Narrativa" };
+  }
+
+  const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog]);
+
 
   function collectStepErrors(stepKeys) {
     const c = ctx();
@@ -900,7 +926,24 @@ export default function ImmersionDetailEditPage() {
       return;
     }
 
-    setCloseFlow({ open: true, loading: true, error: "", summary: null, sample: [], canClose: false, confirm: false });
+        // Validação de preenchimento (campos obrigatórios) antes de concluir
+    const formErrs = collectStepErrors(["informacoes", "time"]);
+    if (Object.keys(formErrs).length > 0) {
+      markErrors(formErrs);
+      setCloseFlow({
+        open: true,
+        loading: false,
+        error: "Existem pendências de preenchimento. Corrija para concluir a imersão.",
+        summary: null,
+        sample: [],
+        canClose: false,
+        confirm: false,
+        formErrors: formErrs,
+      });
+      return;
+    }
+
+setCloseFlow({ open: true, loading: true, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
     try {
       try {
         await syncOverdueTasksForImmersion(form.id);
@@ -940,7 +983,7 @@ export default function ImmersionDetailEditPage() {
       await updateImmersion(form.id, { status: "Concluída" });
       setForm((p) => ({ ...p, status: "Concluída" }));
       setOriginalStatus("Concluída");
-      setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
+      setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
       alert("Imersão concluída.");
     } catch (e) {
       setCloseFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao concluir." }));
@@ -1791,7 +1834,42 @@ function normalizeTemplatesForClone(items) {
         
         {form && tab === "informacoes" ? (
           <>
-            <div className="small muted" style={{ marginBottom: 12 }}>Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).</div>
+            
+            {nextAction ? (
+              <div
+                className="card"
+                style={{
+                  marginBottom: 12,
+                  border: "1px solid var(--border)",
+                  background: "var(--card)",
+                  borderRadius: 12,
+                  padding: 12,
+                }}
+                role="region"
+                aria-label="Próximo passo recomendado"
+              >
+                <div className="row" style={{ alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="small muted" style={{ marginBottom: 2 }}>Próximo passo recomendado</div>
+                    <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{nextAction.label}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => {
+                      if (nextAction.tab) handleTabChange(nextAction.tab);
+                      if (nextAction.field) {
+                        setTimeout(() => scrollToField(nextAction.field), 150);
+                      }
+                    }}
+                  >
+                    {nextAction.ctaText || "Ir agora"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+<div className="small muted" style={{ marginBottom: 12 }}>Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).</div>
 
             
               <SimpleSection title="Informações básicas">
@@ -3793,7 +3871,7 @@ function normalizeTemplatesForClone(items) {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false })}
+                  onClick={() => setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null })}
                   disabled={!!closeFlow.loading}
                 >
                   Cancelar
@@ -3814,6 +3892,43 @@ function normalizeTemplatesForClone(items) {
               {closeFlow.error ? (
                 <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{closeFlow.error}</div>
               ) : null}
+
+              {closeFlow.formErrors ? (
+                <div
+                  className="card"
+                  style={{
+                    border: "1px solid var(--border)",
+                    background: "var(--card)",
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Pendências de preenchimento</div>
+                  <div className="small muted" style={{ marginBottom: 10 }}>
+                    Clique em um item para ir direto ao campo.
+                  </div>
+                  <div className="col" style={{ gap: 8 }}>
+                    {Object.entries(closeFlow.formErrors).map(([field, msg]) => (
+                      <button
+                        key={field}
+                        type="button"
+                        className="btn"
+                        style={{ justifyContent: "space-between" }}
+                        onClick={() => {
+                          setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
+                          handleTabChange("informacoes");
+                          setTimeout(() => scrollToField(field), 180);
+                        }}
+                      >
+                        <span style={{ textAlign: "left" }}>{msg}</span>
+                        <span className="small muted">Ir para o campo</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
 
               {closeFlow.loading && !closeFlow.summary ? (
                 <div className="small">Validando checklist...</div>
@@ -3871,7 +3986,7 @@ function normalizeTemplatesForClone(items) {
                       type="button"
                       className="btn primary"
                       onClick={() => {
-                        setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
+                        setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
                         setTab("checklist");
                       }}
                     >
