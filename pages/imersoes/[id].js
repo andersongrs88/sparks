@@ -261,45 +261,6 @@ export default function ImmersionDetailEditPage() {
   function ctx() {
     return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form?.immersion_catalog_id };
   }
-  function getNextAction() {
-    if (!form) return null;
-
-    const hasCatalog = (immersionCatalog?.length || 0) > 0;
-    if (hasCatalog && !form.immersion_catalog_id) {
-      return { field: "immersion_catalog_id", tab: "informacoes", label: "Selecione a imersão", ctaText: "Selecionar" };
-    }
-    if (!form.immersion_name?.trim()) {
-      return { field: "immersion_name", tab: "informacoes", label: "Defina o nome da imersão", ctaText: "Preencher" };
-    }
-    if (!form.start_date || !form.end_date) {
-      return { field: !form.start_date ? "start_date" : "end_date", tab: "informacoes", label: "Defina data inicial e final", ctaText: "Definir datas" };
-    }
-    if (!form.educational_consultant || !form.instructional_designer) {
-      return { field: !form.educational_consultant ? "educational_consultant" : "instructional_designer", tab: "informacoes", label: "Defina o time de educação (Consultor e Designer)", ctaText: "Definir time" };
-    }
-    if (!form.checklist_template_id) {
-      return { field: "checklist_template_id", tab: "informacoes", label: "Selecione o checklist template", ctaText: "Selecionar" };
-    }
-
-    // Próximo passo sugerido após a base mínima
-    if (!form.immersion_narrative?.trim()) {
-      return { tab: "narrativa", field: "immersion_narrative", label: "Preencha a narrativa da imersão", ctaText: "Preencher" };
-    }
-    if ((materials?.length || 0) === 0) {
-      return { tab: "materiais", label: "Adicione os materiais da imersão", ctaText: "Adicionar materiais" };
-    }
-    if ((videos?.length || 0) === 0) {
-      return { tab: "videos", label: "Adicione os vídeos da imersão", ctaText: "Adicionar vídeos" };
-    }
-    if ((openTasksCount || 0) > 0) {
-      return { tab: "checklist", label: "Revise as tarefas em aberto", ctaText: "Ver tarefas" };
-    }
-    return { tab: "pdca", label: "Registre aprendizados no PDCA", ctaText: "Abrir PDCA" };
-  }
-
-
-  const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog]);
-
 
   function collectStepErrors(stepKeys) {
     const c = ctx();
@@ -461,6 +422,45 @@ export default function ImmersionDetailEditPage() {
   const [tools, setTools] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [videos, setVideos] = useState([]);
+
+  function getNextAction() {
+    if (!form) return null;
+
+    const hasCatalog = (immersionCatalog?.length || 0) > 0;
+    if (hasCatalog && !form.immersion_catalog_id) {
+      return { field: "immersion_catalog_id", tab: "informacoes", label: "Selecione a imersão", ctaText: "Selecionar" };
+    }
+    if (!form.immersion_name?.trim()) {
+      return { field: "immersion_name", tab: "informacoes", label: "Defina o nome da imersão", ctaText: "Preencher" };
+    }
+    if (!form.start_date || !form.end_date) {
+      return { field: !form.start_date ? "start_date" : "end_date", tab: "informacoes", label: "Defina data inicial e final", ctaText: "Definir datas" };
+    }
+    if (!form.educational_consultant || !form.instructional_designer) {
+      return { field: !form.educational_consultant ? "educational_consultant" : "instructional_designer", tab: "informacoes", label: "Defina o time de educação (Consultor e Designer)", ctaText: "Definir time" };
+    }
+    if (!form.checklist_template_id) {
+      return { field: "checklist_template_id", tab: "informacoes", label: "Selecione o checklist template", ctaText: "Selecionar" };
+    }
+
+    // Próximo passo sugerido após a base mínima
+    if (!form.immersion_narrative?.trim()) {
+      return { tab: "narrativa", field: "immersion_narrative", label: "Preencha a narrativa da imersão", ctaText: "Preencher" };
+    }
+    if ((materials?.length || 0) === 0) {
+      return { tab: "materiais", label: "Adicione os materiais da imersão", ctaText: "Adicionar materiais" };
+    }
+    if ((videos?.length || 0) === 0) {
+      return { tab: "videos", label: "Adicione os vídeos da imersão", ctaText: "Adicionar vídeos" };
+    }
+    if ((openTasksCount || 0) > 0) {
+      return { tab: "checklist", label: "Revise as tarefas em aberto", ctaText: "Ver tarefas" };
+    }
+    return { tab: "pdca", label: "Registre aprendizados no PDCA", ctaText: "Abrir PDCA" };
+  }
+
+  const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog, materials, videos, openTasksCount]);
+
   const [pdcaItems, setPdcaItems] = useState([]);
 
   const [sectionsLoading, setSectionsLoading] = useState(false);
