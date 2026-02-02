@@ -8,13 +8,14 @@ import { listActiveProfiles } from "../../lib/profiles";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
 import { isLimitedImmersionRole, normalizeRole } from "../../lib/permissions";
+import { validateImmersionField } from "../../lib/immersionValidation";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
 // Formato (domínio fechado) conforme definido por você. (Mesma nomenclatura da tela de visualização.)
 const IMMERSION_FORMATS = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
 
-function Field({ label, children, hint }) {
+function Field({ label, children, hint, error }) {
   const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
   return (
     <div style={{ marginBottom: 10 }}>
@@ -25,6 +26,9 @@ function Field({ label, children, hint }) {
         ) : null}
       </div>
       {children}
+      {error ? (
+        <div style={{ marginTop: 6, fontSize: 12, color: "#b42318" }} role="alert" aria-live="polite">{error}</div>
+      ) : null}
     </div>
   );
 }
@@ -113,6 +117,29 @@ export default function NovaImersaoPage() {
     service_order_link: "",
     technical_sheet_link: ""
   });
+
+  const [touched, setTouched] = useState({});
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  function ctx() {
+    return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form.immersion_catalog_id };
+  }
+
+  function markTouched(name) {
+    setTouched((p) => ({ ...p, [name]: true }));
+  }
+
+  function runFieldValidation(name, nextValue) {
+    const value = nextValue !== undefined ? nextValue : form?.[name];
+    const msg = validateImmersionField(name, value, ctx());
+    setFieldErrors((p) => ({ ...p, [name]: msg }));
+    return msg;
+  }
+
+  function getFieldError(name) {
+    if (!touched?.[name]) return "";
+    return fieldErrors?.[name] || "";
+  }
 
 
 function normalizeFormatValue(v) {
@@ -368,7 +395,7 @@ useEffect(() => {
 
 {immersionCatalog.length > 0 ? (
   <>
-    <Field label="Nome da imersão" hint="Obrigatório">
+    <Field label="Nome da imersão" hint="Obrigatório" error={getFieldError("immersion_name")}>
       <select
         className="input"
         value={form.immersion_catalog_id}
@@ -403,8 +430,8 @@ useEffect(() => {
     </Field>
 
     <div className="grid2">
-      <Field label="Formato" hint="Obrigatório">
-        <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
+      <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
+        <input className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={() => { markTouched("type"); runFieldValidation("type"); }} value={form.type || ""} readOnly aria-readonly="true" />
       </Field>
     </div>
   </>
@@ -413,6 +440,10 @@ useEffect(() => {
     <Field label="Nome da imersão" hint="Obrigatório">
       <input
         className="input"
+        id="field-immersion_name"
+        data-field="immersion_name"
+        aria-invalid={!!getFieldError("immersion_name")}
+        onBlur={(e) => { markTouched("immersion_name"); runFieldValidation("immersion_name", e.target.value); }}
         value={form.immersion_name}
         onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))}
         placeholder="Ex.: Imersão Gestão MKT Digital"
@@ -421,8 +452,8 @@ useEffect(() => {
     </Field>
 
     <div className="grid2">
-      <Field label="Formato" hint="Obrigatório">
-        <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
+      <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
+        <select className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={(e) => { markTouched("type"); runFieldValidation("type", e.target.value); }} value={form.type} onChange={(e) => { setForm((p) => ({ ...p, type: e.target.value })); }}>
           <option value="">Selecione</option>
           {IMMERSION_FORMATS.map((t) => (
             <option key={t} value={t}>
@@ -448,11 +479,11 @@ useEffect(() => {
               </div>
 
               <div className="grid2">
-                <Field label="Data inicial">
-                  <input className="input" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
+                <Field label="Data inicial" hint="Obrigatório" error={getFieldError("start_date")}>
+                  <input className="input" type="date" id="field-start_date" data-field="start_date" aria-invalid={!!getFieldError("start_date")} onBlur={(e) => { markTouched("start_date"); runFieldValidation("start_date", e.target.value); }} value={form.start_date} onChange={(e) => { setForm((p) => ({ ...p, start_date: e.target.value })); }} />
                 </Field>
-                <Field label="Data final">
-                  <input className="input" type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
+                <Field label="Data final" hint="Obrigatório" error={getFieldError("end_date")}>
+                  <input className="input" type="date" id="field-end_date" data-field="end_date" aria-invalid={!!getFieldError("end_date")} onBlur={(e) => { markTouched("end_date"); runFieldValidation("end_date", e.target.value); }} value={form.end_date} onChange={(e) => { setForm((p) => ({ ...p, end_date: e.target.value })); }} />
                 </Field>
               </div>
             </div>
@@ -462,9 +493,13 @@ useEffect(() => {
             <div className="sectionTitle">Time de educação</div>
             <div className="sectionBody">
               <div className="grid2">
-                <Field label="Consultor" hint="Obrigatório">
+                <Field label="Consultor" hint="Obrigatório" error={getFieldError("educational_consultant")}>
                   <select
                     className="input"
+                    id="field-educational_consultant"
+                    data-field="educational_consultant"
+                    aria-invalid={!!getFieldError("educational_consultant")}
+                    onBlur={(e) => { markTouched("educational_consultant"); runFieldValidation("educational_consultant", e.target.value); }}
                     value={form.educational_consultant}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -479,8 +514,8 @@ useEffect(() => {
                     ))}
                   </select>
                 </Field>
-                <Field label="Designer" hint="Obrigatório">
-                  <select className="input" value={form.instructional_designer} onChange={(e) => setForm((p) => ({ ...p, instructional_designer: e.target.value }))}>
+                <Field label="Designer" hint="Obrigatório" error={getFieldError("instructional_designer")}>
+                  <select className="input" id="field-instructional_designer" data-field="instructional_designer" aria-invalid={!!getFieldError("instructional_designer")} onBlur={(e) => { markTouched("instructional_designer"); runFieldValidation("instructional_designer", e.target.value); }} value={form.instructional_designer} onChange={(e) => { setForm((p) => ({ ...p, instructional_designer: e.target.value })); }}>
                     <option value="">Selecione</option>
                     {(peopleByRole.designers || []).map((p) => (
                       <option key={p.id} value={p.id}>
@@ -490,9 +525,13 @@ useEffect(() => {
                   </select>
                 </Field>
               </div>
-              <Field label="Checklist template" hint="Obrigatório">
+              <Field label="Checklist template" hint="Obrigatório" error={getFieldError("checklist_template_id")}>
                 <select
                   className="input"
+                  id="field-checklist_template_id"
+                  data-field="checklist_template_id"
+                  aria-invalid={!!getFieldError("checklist_template_id")}
+                  onBlur={(e) => { markTouched("checklist_template_id"); runFieldValidation("checklist_template_id", e.target.value); }}
                   value={form.checklist_template_id}
                   onChange={(e) => setForm((p) => ({ ...p, checklist_template_id: e.target.value }))}
                   required

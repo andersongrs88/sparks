@@ -17,6 +17,7 @@ import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from ".
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
 import { listSpeakers } from "../../lib/speakers";
+import { validateImmersionField } from "../../lib/immersionValidation";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
@@ -80,7 +81,7 @@ const PDCA_CATEGORIES = [
   "Outros",
 ];
 
-function Field({ label, children, hint }) {
+function Field({ label, children, hint, error }) {
   const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
   return (
     <div style={{ marginBottom: 12 }}>
@@ -91,6 +92,9 @@ function Field({ label, children, hint }) {
         ) : null}
       </div>
       {children}
+      {error ? (
+        <div style={{ marginTop: 6, fontSize: 12, color: "#b42318" }} role="alert" aria-live="polite">{error}</div>
+      ) : null}
     </div>
   );
 }
@@ -225,6 +229,29 @@ export default function ImmersionDetailEditPage() {
   }, [error]);
 
   const [form, setForm] = useState(null);
+
+  const [touched, setTouched] = useState({});
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  function ctx() {
+    return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form?.immersion_catalog_id };
+  }
+
+  function markTouched(name) {
+    setTouched((p) => ({ ...p, [name]: true }));
+  }
+
+  function runFieldValidation(name, nextValue) {
+    const value = nextValue !== undefined ? nextValue : form?.[name];
+    const msg = validateImmersionField(name, value, ctx());
+    setFieldErrors((p) => ({ ...p, [name]: msg }));
+    return msg;
+  }
+
+  function getFieldError(name) {
+    if (!touched?.[name]) return "";
+    return fieldErrors?.[name] || "";
+  }
 
   const [immersionCatalog, setImmersionCatalog] = useState([]);
 
@@ -1560,7 +1587,7 @@ function normalizeTemplatesForClone(items) {
             >
               {immersionCatalog.length > 0 ? (
                 <>
-                  <Field label="Nome da imersão" hint="Obrigatório">
+                  <Field label="Nome da imersão" hint="Obrigatório" error={getFieldError("immersion_name")}>
                     <select
                       className="input"
                       value={form.immersion_catalog_id || ""}
@@ -1598,7 +1625,7 @@ function normalizeTemplatesForClone(items) {
 
                   <div className="grid2">
                     <Field label="Tipo" hint="Obrigatório">
-                      <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
+                      <input className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={() => { markTouched("type"); runFieldValidation("type"); }} value={form.type || ""} readOnly aria-readonly="true" />
                     </Field>
                   </div>
 
@@ -1634,11 +1661,11 @@ function normalizeTemplatesForClone(items) {
 
               <div className="grid2">
                 <Field label="Data de início" hint="Obrigatório">
-                  <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
+                  <input className="input" type="date" id="field-start_date" data-field="start_date" aria-invalid={!!getFieldError("start_date")} onBlur={(e) => { markTouched("start_date"); runFieldValidation("start_date", e.target.value); }} value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
                 </Field>
 
                 <Field label="Data de fim" hint="Obrigatório">
-                  <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
+                  <input className="input" type="date" id="field-end_date" data-field="end_date" aria-invalid={!!getFieldError("end_date")} onBlur={(e) => { markTouched("end_date"); runFieldValidation("end_date", e.target.value); }} value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                 </Field>
               </div>
 
@@ -1659,9 +1686,13 @@ function normalizeTemplatesForClone(items) {
 	                {/* Catálogo de Imersões (Cadastro de Imersões): padroniza Nome/Formato também na edição */}
 	                {immersionCatalog.length > 0 ? (
 	                  <div className="grid2">
-	                    <Field label="Lista da imersão" hint="Obrigatório">
+	                    <Field label="Lista da imersão" hint="Obrigatório" error={getFieldError("immersion_catalog_id")}>
 	                      <select
 	                        className="input"
+	                        id="field-immersion_catalog_id"
+	                        data-field="immersion_catalog_id"
+	                        aria-invalid={!!getFieldError("immersion_catalog_id")}
+	                        onBlur={() => { markTouched("immersion_catalog_id"); runFieldValidation("immersion_catalog_id"); }}
 	                        value={form.immersion_catalog_id || ""}
 	                        onChange={(e) => {
 	                          const pickedId = e.target.value;
@@ -1695,7 +1726,7 @@ function normalizeTemplatesForClone(items) {
 	                      </select>
 	                    </Field>
 
-	                    <Field label="Formato" hint="Obrigatório">
+	                    <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
 	                      <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
 	                    </Field>
 	                  </div>
@@ -1704,6 +1735,10 @@ function normalizeTemplatesForClone(items) {
 	                    <Field label="Nome da imersão" hint="Obrigatório">
 	                      <input
 	                        className="input"
+	                        id="field-immersion_name"
+	                        data-field="immersion_name"
+	                        aria-invalid={!!getFieldError("immersion_name")}
+	                        onBlur={(e) => { markTouched("immersion_name"); runFieldValidation("immersion_name", e.target.value); }}
 	                        value={form.immersion_name || ""}
 	                        onChange={(e) => set("immersion_name", e.target.value)}
 	                        placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
@@ -1711,8 +1746,8 @@ function normalizeTemplatesForClone(items) {
 	                    </Field>
 
 	                    <div className="grid2">
-	                      <Field label="Formato" hint="Obrigatório">
-	                        <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+	                      <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
+	                        <select className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={(e) => { markTouched("type"); runFieldValidation("type", e.target.value); }} value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
 	                          <option value="">Selecione</option>
 	                          {IMMERSION_TYPES.map((t) => (
 	                            <option key={t} value={t}>
@@ -1750,11 +1785,11 @@ function normalizeTemplatesForClone(items) {
                 </div>
 
                 <div className="grid2">
-                  <Field label="Data inicial" hint="Obrigatório">
+                  <Field label="Data inicial" hint="Obrigatório" error={getFieldError("start_date")}>
                     <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
                   </Field>
 
-                  <Field label="Data final" hint="Obrigatório">
+                  <Field label="Data final" hint="Obrigatório" error={getFieldError("end_date")}>
                     <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                   </Field>
                 </div>
@@ -1762,9 +1797,13 @@ function normalizeTemplatesForClone(items) {
 
               <SimpleSection title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
                 <div className="grid2">
-                  <Field label="Consultor (Educação)" hint="Obrigatório">
+                  <Field label="Consultor (Educação)" hint="Obrigatório" error={getFieldError("educational_consultant")}>
                     <select
                       className="input"
+                      id="field-educational_consultant"
+                      data-field="educational_consultant"
+                      aria-invalid={!!getFieldError("educational_consultant")}
+                      onBlur={(e) => { markTouched("educational_consultant"); runFieldValidation("educational_consultant", e.target.value); }}
                       value={form.educational_consultant || ""}
                       onChange={(e) => set("educational_consultant", e.target.value)}
                     >
@@ -1777,9 +1816,13 @@ function normalizeTemplatesForClone(items) {
                     </select>
                   </Field>
 
-                  <Field label="Designer instrucional" hint="Obrigatório">
+                  <Field label="Designer instrucional" hint="Obrigatório" error={getFieldError("instructional_designer")}>
                     <select
                       className="input"
+                      id="field-instructional_designer"
+                      data-field="instructional_designer"
+                      aria-invalid={!!getFieldError("instructional_designer")}
+                      onBlur={(e) => { markTouched("instructional_designer"); runFieldValidation("instructional_designer", e.target.value); }}
                       value={form.instructional_designer || ""}
                       onChange={(e) => set("instructional_designer", e.target.value)}
                     >
