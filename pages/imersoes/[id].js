@@ -112,6 +112,23 @@ function Section({ title, description, children, right }) {
   );
 }
 
+function CollapsibleSection({ title, description, children, defaultOpen = false }) {
+  return (
+    <details className="section collapsibleSection" style={{ marginTop: 12 }} open={defaultOpen}>
+      <summary className="sectionHeader collapsibleSummary">
+        <div className="sectionHeaderLeft">
+          <div className="sectionTitle">{title}</div>
+          {description ? <div className="sectionDesc">{description}</div> : null}
+        </div>
+        <div className="sectionHeaderRight">
+          <span className="collapsibleChevron" aria-hidden="true">▾</span>
+        </div>
+      </summary>
+      <div className="sectionBody">{children}</div>
+    </details>
+  );
+}
+
 // Converte qualquer data recebida (YYYY-MM-DD ou ISO) para "somente data" no horário local
 function toLocalDateOnly(d) {
   if (!d) return null;
@@ -1786,7 +1803,19 @@ function normalizeTemplatesForClone(items) {
                 </div>
               </Section>
 
-              <Section title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
+              <div className="infoDivider">
+                <div className="infoDividerTitle">Complementos (opcional)</div>
+                <div className="small muted">Abra apenas o que fizer sentido para esta imersão.</div>
+              </div>
+
+              <CollapsibleSection
+                title="Palestrantes"
+                description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão."
+                defaultOpen={
+                  !!form.trainer_speaker_id ||
+                  (Array.isArray(form.speaker_ids) ? form.speaker_ids.filter(Boolean).length > 0 : false)
+                }
+              >
                 <div className="grid2">
                   <Field label="Nome do Trainer">
                     <select className="input" value={form.trainer_speaker_id || ""} onChange={(e) => {
@@ -1890,15 +1919,18 @@ function normalizeTemplatesForClone(items) {
                     </div>
                   </Field>
                 </div>
-              </Section>
+              </CollapsibleSection>
 
-              <Section title="Mentores presentes">
+              <CollapsibleSection title="Mentores presentes" defaultOpen={!!(form.mentors_present || "").trim()}>
                 <Field label="Mentores presentes">
                   <input className="input" value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} placeholder="Ex.: Nome 1, Nome 2" />
                 </Field>
-              </Section>
+              </CollapsibleSection>
 
-              <Section title="Links e documentos">
+              <CollapsibleSection
+                title="Links e documentos"
+                defaultOpen={!!(form.service_order_link || "").trim() || !!(form.technical_sheet_link || "").trim()}
+              >
                 <div className="grid2">
                   <Field label="Ordem de Serviço (link)">
                     <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="URL" />
@@ -1907,9 +1939,9 @@ function normalizeTemplatesForClone(items) {
                     <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="URL" />
                   </Field>
                 </div>
-              </Section>
+              </CollapsibleSection>
 
-              <Section title="Recursos e staff">
+              <CollapsibleSection title="Recursos e staff" defaultOpen={!!form.need_specific_staff}>
                 <Field label="Precisa de staff específico?">
                   <div className="row">
                     <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
@@ -1939,9 +1971,9 @@ function normalizeTemplatesForClone(items) {
                 </Field>
 
                 {/* Removido: "Vai ter palestrante?" (toggle). A gestão agora é por lista vinculada em "Palestrantes". */}
-              </Section>
+              </CollapsibleSection>
 
-              <Section title="Necessidade de terceiros">
+              <CollapsibleSection title="Necessidade de terceiros" defaultOpen={!!form.need_third_parties}>
                 <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                   <input type="checkbox" checked={!!form.need_third_parties} onChange={(e) => set("need_third_parties", e.target.checked)} />
                   Necessidade de terceiros
@@ -1988,7 +2020,7 @@ function normalizeTemplatesForClone(items) {
                     Maquiagem
                   </label>
                 </div>
-              </Section>
+              </CollapsibleSection>
             </Section>
           </>
         ) : null}
@@ -3943,6 +3975,46 @@ function normalizeTemplatesForClone(items) {
           </div>
         </div>
       ) : null}
+
+      <style jsx global>{`
+        /* UX (Opção A): hierarquia + seções opcionais colapsáveis na aba Informações */
+        details.collapsibleSection > summary {
+          list-style: none;
+          cursor: pointer;
+        }
+        details.collapsibleSection > summary::-webkit-details-marker {
+          display: none;
+        }
+        details.collapsibleSection .collapsibleChevron {
+          display: inline-block;
+          transition: transform 0.15s ease;
+          line-height: 1;
+          opacity: 0.8;
+        }
+        details.collapsibleSection[open] .collapsibleChevron {
+          transform: rotate(180deg);
+        }
+
+        .infoDivider {
+          margin-top: 16px;
+          padding-top: 6px;
+          border-top: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        .infoDividerTitle {
+          font-weight: 700;
+          font-size: 13px;
+          letter-spacing: 0.2px;
+        }
+
+        @media (max-width: 520px) {
+          .infoDivider {
+            margin-top: 14px;
+          }
+          details.collapsibleSection .sectionHeader {
+            padding-right: 8px;
+          }
+        }
+      `}</style>
 
     </Layout>
   );
