@@ -1779,7 +1779,7 @@ function normalizeTemplatesForClone(items) {
                   <Field label="Status">
                     <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                       <option value="Planejamento">Planejamento</option>
-                      <option value="Em Andamento">Em Andamento</option>
+                      <option value="Em andamento">Em andamento</option>
                       <option value="Cancelada">Cancelada</option>
                       <option value="Concluída">Concluída</option>
                     </select>
