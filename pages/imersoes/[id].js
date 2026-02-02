@@ -97,7 +97,7 @@ function Field({ label, children, hint }) {
 
 function Section({ title, description, children, right }) {
   return (
-    <div className="section" style={{ paddingLeft: 16, paddingRight: 16 }} style={{ marginTop: 12 }}>
+    <div className="section" style={{ marginTop: 12 }}>
       <div className="sectionHeader">
         <div className="sectionHeaderLeft">
           <div className="sectionTitle">{title}</div>
@@ -107,6 +107,16 @@ function Section({ title, description, children, right }) {
         </div>
         {right ? <div className="sectionHeaderRight">{right}</div> : null}
       </div>
+      <div className="sectionBody">{children}</div>
+    </div>
+  );
+}
+
+
+function SimpleSection({ title, children }) {
+  return (
+    <div className="section">
+      <div className="sectionTitle">{title}</div>
       <div className="sectionBody">{children}</div>
     </div>
   );
@@ -1642,12 +1652,10 @@ function normalizeTemplatesForClone(items) {
         
         {form && tab === "informacoes" ? (
           <>
-            <Section
-              title="Informações"
-              description="Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer)."
-              right={null}
-            >
-              <Section title="Informações básicas">
+            <div className="small muted" style={{ marginBottom: 12 }}>Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).</div>
+
+            
+              <SimpleSection title="Informações básicas">
 	                {/* Catálogo de Imersões (Cadastro de Imersões): padroniza Nome/Formato também na edição */}
 	                {immersionCatalog.length > 0 ? (
 	                  <div className="grid2">
@@ -1750,9 +1758,9 @@ function normalizeTemplatesForClone(items) {
                     <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                   </Field>
                 </div>
-              </Section>
+              </SimpleSection>
 
-              <Section title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
+              <SimpleSection title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
                 <div className="grid2">
                   <Field label="Consultor (Educação)" hint="Obrigatório">
                     <select
@@ -1784,9 +1792,9 @@ function normalizeTemplatesForClone(items) {
                     </select>
                   </Field>
                 </div>
-              </Section>
+              </SimpleSection>
 
-              <Section title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
+              <SimpleSection title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
                 <div className="grid2">
                   <Field label="Nome do Trainer">
                     <select className="input" value={form.trainer_speaker_id || ""} onChange={(e) => {
@@ -1890,15 +1898,15 @@ function normalizeTemplatesForClone(items) {
                     </div>
                   </Field>
                 </div>
-              </Section>
+              </SimpleSection>
 
-              <Section title="Mentores presentes">
+              <SimpleSection title="Mentores presentes">
                 <Field label="Mentores presentes">
                   <input className="input" value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} placeholder="Ex.: Nome 1, Nome 2" />
                 </Field>
-              </Section>
+              </SimpleSection>
 
-              <Section title="Links e documentos">
+              <SimpleSection title="Links e documentos">
                 <div className="grid2">
                   <Field label="Ordem de Serviço (link)">
                     <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="URL" />
@@ -1907,9 +1915,9 @@ function normalizeTemplatesForClone(items) {
                     <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="URL" />
                   </Field>
                 </div>
-              </Section>
+              </SimpleSection>
 
-              <Section title="Recursos e staff">
+              <SimpleSection title="Recursos e staff">
                 <Field label="Precisa de staff específico?">
                   <div className="row">
                     <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
@@ -1939,9 +1947,9 @@ function normalizeTemplatesForClone(items) {
                 </Field>
 
                 {/* Removido: "Vai ter palestrante?" (toggle). A gestão agora é por lista vinculada em "Palestrantes". */}
-              </Section>
+              </SimpleSection>
 
-              <Section title="Necessidade de terceiros">
+              <SimpleSection title="Necessidade de terceiros">
                 <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                   <input type="checkbox" checked={!!form.need_third_parties} onChange={(e) => set("need_third_parties", e.target.checked)} />
                   Necessidade de terceiros
@@ -1988,8 +1996,8 @@ function normalizeTemplatesForClone(items) {
                     Maquiagem
                   </label>
                 </div>
-              </Section>
-            </Section>
+              </SimpleSection>
+            </SimpleSection>
           </>
         ) : null}
 
@@ -2456,13 +2464,13 @@ function normalizeTemplatesForClone(items) {
                   Não foi possível carregar a lista de usuários. Verifique a tabela <b>profiles</b>.
                 </div>
               ) : null}
-            </Section>
+            </SimpleSection>
           </>
         ) : null}
 
 {form && tab === "operacao" ? (
           <>
-            <Section title="Operação" description="Defina local, status e links operacionais.">
+            <SimpleSection title="Operação" description="Defina local, status e links operacionais.">
               <div className="grid2">
                 <Field label="Sala / Local" hint="Obrigatório">
                   <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
@@ -2495,9 +2503,9 @@ function normalizeTemplatesForClone(items) {
                   <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="https://..." />
                 </Field>
               </div>
-            </Section>
+            </SimpleSection>
 
-            <Section title="Mentores e staff" description="Use esta seção apenas quando necessário para execução.">
+            <SimpleSection title="Mentores e staff" description="Use esta seção apenas quando necessário para execução.">
               <Field label="Mentores que estarão presentes">
                 <textarea className="input" rows={4} value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} />
               </Field>
@@ -2535,7 +2543,7 @@ function normalizeTemplatesForClone(items) {
                   A gestão de Trainer e palestrantes foi centralizada na seção <b>Palestrantes</b> (na aba Informações), com lista e suporte a múltiplos palestrantes.
                 </div>
               </Field>
-            </Section>
+            
           </>
         ) : null}
 
