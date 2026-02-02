@@ -1650,10 +1650,7 @@ function normalizeTemplatesForClone(items) {
         ) : null}
 
         
-        {form && tab === "informacoes" ? (
-          <>
-            <div className="small muted" style={{ marginBottom: 12 }}>Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).</div>
-
+           <div className="small muted" style={{ marginBottom: 12 }}>Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).</div>
             
               <SimpleSection title="Informações básicas">
 	                {/* Catálogo de Imersões (Cadastro de Imersões): padroniza Nome/Formato também na edição */}
@@ -1998,7 +1995,7 @@ function normalizeTemplatesForClone(items) {
                 </div>
               </SimpleSection>
             </SimpleSection>
-          </>
+
         ) : null}
 
         {form && tab === "cronograma" ? (
