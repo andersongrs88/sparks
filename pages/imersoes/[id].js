@@ -1648,6 +1648,75 @@ function normalizeTemplatesForClone(items) {
               right={null}
             >
               <Section title="Informações básicas">
+	                {/* Catálogo de Imersões (Cadastro de Imersões): padroniza Nome/Formato também na edição */}
+	                {immersionCatalog.length > 0 ? (
+	                  <div className="grid2">
+	                    <Field label="Lista da imersão" hint="Obrigatório">
+	                      <select
+	                        className="input"
+	                        value={form.immersion_catalog_id || ""}
+	                        onChange={(e) => {
+	                          const pickedId = e.target.value;
+	                          const picked = immersionCatalog.find((x) => String(x.id) === String(pickedId));
+	                          const nextName = picked?.name ? String(picked.name) : "";
+	                          const nextType = picked?.format ? catalogFormatToType(picked.format) : "";
+	                          setForm((p) => ({
+	                            ...p,
+	                            immersion_catalog_id: pickedId,
+	                            immersion_name: nextName,
+	                            type: nextType,
+	                            // ao trocar o cadastro, reseta template para permitir auto-seleção pelo formato
+	                            checklist_template_id: "",
+	                          }));
+	                        }}
+	                        required
+	                        aria-label="Selecione uma imersão cadastrada"
+	                      >
+	                        <option value="">Selecione</option>
+	                        {immersionCatalog.map((c) => {
+	                          const fmt = catalogFormatToType(c.format);
+	                          const label = fmt ? `${c.name} • ${fmt}` : c.name;
+	                          const suffix = c.is_active === false ? " (inativo)" : "";
+	                          return (
+	                            <option key={c.id} value={c.id}>
+	                              {label}
+	                              {suffix}
+	                            </option>
+	                          );
+	                        })}
+	                      </select>
+	                    </Field>
+
+	                    <Field label="Formato" hint="Obrigatório">
+	                      <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
+	                    </Field>
+	                  </div>
+	                ) : (
+	                  <>
+	                    <Field label="Nome da imersão" hint="Obrigatório">
+	                      <input
+	                        className="input"
+	                        value={form.immersion_name || ""}
+	                        onChange={(e) => set("immersion_name", e.target.value)}
+	                        placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
+	                      />
+	                    </Field>
+
+	                    <div className="grid2">
+	                      <Field label="Formato" hint="Obrigatório">
+	                        <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+	                          <option value="">Selecione</option>
+	                          {IMMERSION_TYPES.map((t) => (
+	                            <option key={t} value={t}>
+	                              {t}
+	                            </option>
+	                          ))}
+	                        </select>
+	                      </Field>
+	                    </div>
+	                  </>
+	                )}
+
                 <div className="grid2">
                   <Field label="Sala" hint="Obrigatório">
                     <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
