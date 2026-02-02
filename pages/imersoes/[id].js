@@ -17,25 +17,9 @@ import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from ".
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
 import { listSpeakers } from "../../lib/speakers";
-import { validateImmersionField, validateImmersionStep } from "../../lib/immersionValidation";
-import { scrollToField } from "../../lib/scrollToField";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
-
-const FIELD_LABELS = {
-  immersion_catalog_id: "Imersão (catálogo)",
-  immersion_name: "Nome da imersão",
-  type: "Formato",
-  room: "Sala",
-  status: "Status",
-  start_date: "Data inicial",
-  end_date: "Data final",
-  educational_consultant: "Consultor (Educação)",
-  instructional_designer: "Designer instrucional",
-  checklist_template_id: "Checklist template",
-  immersion_narrative: "Narrativa da imersão",
-};
 
 function normalizeFormatValue(v) {
   return String(v || "").trim().toLowerCase();
@@ -96,7 +80,7 @@ const PDCA_CATEGORIES = [
   "Outros",
 ];
 
-function Field({ label, children, hint, error }) {
+function Field({ label, children, hint }) {
   const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
   return (
     <div style={{ marginBottom: 12 }}>
@@ -107,9 +91,6 @@ function Field({ label, children, hint, error }) {
         ) : null}
       </div>
       {children}
-      {error ? (
-        <div style={{ marginTop: 6, fontSize: 12, color: "#b42318" }} role="alert" aria-live="polite">{error}</div>
-      ) : null}
     </div>
   );
 }
@@ -126,16 +107,6 @@ function Section({ title, description, children, right }) {
         </div>
         {right ? <div className="sectionHeaderRight">{right}</div> : null}
       </div>
-      <div className="sectionBody">{children}</div>
-    </div>
-  );
-}
-
-
-function SimpleSection({ title, children }) {
-  return (
-    <div className="section">
-      <div className="sectionTitle">{title}</div>
       <div className="sectionBody">{children}</div>
     </div>
   );
@@ -219,6 +190,11 @@ export default function ImmersionDetailEditPage() {
 
   const [tab, setTab] = useState("informacoes");
 
+
+  const [applyingTypeTemplates, setApplyingTypeTemplates] = useState(false);
+  const [typeTemplatesMsg, setTypeTemplatesMsg] = useState("");
+
+
   // Deep-link: /imersoes/:id?tab=tarefas abre diretamente a aba Tarefas (checklist)
   useEffect(() => {
     if (!router.isReady) return;
@@ -242,84 +218,8 @@ export default function ImmersionDetailEditPage() {
       try { errorRef.current.focus({ preventScroll: true }); } catch {}
     }
   }, [error]);
-  const [navErrors, setNavErrors] = useState(null);
-  const navErrorsRef = useRef(null);
-
-
-  useEffect(() => {
-    if (navErrors && navErrorsRef.current) {
-      try { navErrorsRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
-      try { navErrorsRef.current.focus({ preventScroll: true }); } catch {}
-    }
-  }, [navErrors]);
 
   const [form, setForm] = useState(null);
-
-  const [touched, setTouched] = useState({});
-  const [fieldErrors, setFieldErrors] = useState({});
-
-  function ctx() {
-    return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form?.immersion_catalog_id };
-  }
-
-  function collectStepErrors(stepKeys) {
-    const c = ctx();
-    const merged = {};
-    stepKeys.forEach((k) => {
-      const e = validateImmersionStep(k, form, c);
-      Object.assign(merged, e);
-    });
-    return merged;
-  }
-
-  function markErrors(errs) {
-    const keys = Object.keys(errs || {});
-    if (!keys.length) return;
-    setTouched((prev) => {
-      const next = { ...prev };
-      keys.forEach((k) => (next[k] = true));
-      return next;
-    });
-    setFieldErrors((prev) => ({ ...prev, ...errs }));
-  }
-
-  function validateBeforeLeaveCurrentTab(nextTab) {
-    // Hoje, a validação por etapa cobre apenas a aba Informações (inclui Time de educação).
-    if (tab !== "informacoes" || nextTab === "informacoes") return true;
-
-    const errs = collectStepErrors(["informacoes", "time"]);
-    if (Object.keys(errs).length === 0) {
-      setNavErrors(null);
-      return true;
-    }
-
-    markErrors(errs);
-    setNavErrors(errs);
-    return false;
-  }
-
-  function handleTabChange(nextTab) {
-    if (nextTab === tab) return;
-    const ok = validateBeforeLeaveCurrentTab(nextTab);
-    if (!ok) return;
-    setTab(nextTab);
-  }
-
-  function markTouched(name) {
-    setTouched((p) => ({ ...p, [name]: true }));
-  }
-
-  function runFieldValidation(name, nextValue) {
-    const value = nextValue !== undefined ? nextValue : form?.[name];
-    const msg = validateImmersionField(name, value, ctx());
-    setFieldErrors((p) => ({ ...p, [name]: msg }));
-    return msg;
-  }
-
-  function getFieldError(name) {
-    if (!touched?.[name]) return "";
-    return fieldErrors?.[name] || "";
-  }
 
   const [immersionCatalog, setImmersionCatalog] = useState([]);
 
@@ -422,45 +322,6 @@ export default function ImmersionDetailEditPage() {
   const [tools, setTools] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [videos, setVideos] = useState([]);
-
-  function getNextAction() {
-    if (!form) return null;
-
-    const hasCatalog = (immersionCatalog?.length || 0) > 0;
-    if (hasCatalog && !form.immersion_catalog_id) {
-      return { field: "immersion_catalog_id", tab: "informacoes", label: "Selecione a imersão", ctaText: "Selecionar" };
-    }
-    if (!form.immersion_name?.trim()) {
-      return { field: "immersion_name", tab: "informacoes", label: "Defina o nome da imersão", ctaText: "Preencher" };
-    }
-    if (!form.start_date || !form.end_date) {
-      return { field: !form.start_date ? "start_date" : "end_date", tab: "informacoes", label: "Defina data inicial e final", ctaText: "Definir datas" };
-    }
-    if (!form.educational_consultant || !form.instructional_designer) {
-      return { field: !form.educational_consultant ? "educational_consultant" : "instructional_designer", tab: "informacoes", label: "Defina o time de educação (Consultor e Designer)", ctaText: "Definir time" };
-    }
-    if (!form.checklist_template_id) {
-      return { field: "checklist_template_id", tab: "informacoes", label: "Selecione o checklist template", ctaText: "Selecionar" };
-    }
-
-    // Próximo passo sugerido após a base mínima
-    if (!form.immersion_narrative?.trim()) {
-      return { tab: "narrativa", field: "immersion_narrative", label: "Preencha a narrativa da imersão", ctaText: "Preencher" };
-    }
-    if ((materials?.length || 0) === 0) {
-      return { tab: "materiais", label: "Adicione os materiais da imersão", ctaText: "Adicionar materiais" };
-    }
-    if ((videos?.length || 0) === 0) {
-      return { tab: "videos", label: "Adicione os vídeos da imersão", ctaText: "Adicionar vídeos" };
-    }
-    if ((openTasksCount || 0) > 0) {
-      return { tab: "checklist", label: "Revise as tarefas em aberto", ctaText: "Ver tarefas" };
-    }
-    return { tab: "pdca", label: "Registre aprendizados no PDCA", ctaText: "Abrir PDCA" };
-  }
-
-  const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog, materials, videos, openTasksCount]);
-
   const [pdcaItems, setPdcaItems] = useState([]);
 
   const [sectionsLoading, setSectionsLoading] = useState(false);
@@ -497,6 +358,35 @@ export default function ImmersionDetailEditPage() {
 
     if (!id || typeof id !== "string") return;
     let mounted = true;
+  async function applyTypeTemplatesNow() {
+    if (!id) return;
+    setTypeTemplatesMsg("");
+    setApplyingTypeTemplates(true);
+    try {
+      const resp = await fetch("/api/immersions/apply-type-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          immersion_id: id,
+          immersion_type: form?.type || null,
+          start_date: form?.start_date || null,
+          end_date: form?.end_date || null,
+          include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || "Falha ao aplicar predefinições.");
+      setTypeTemplatesMsg("Predefinições aplicadas com sucesso.");
+    } catch (e) {
+      setTypeTemplatesMsg(e?.message || "Falha ao aplicar predefinições.");
+    } finally {
+      setApplyingTypeTemplates(false);
+      // refresca contadores/listas quando aplicável (best-effort)
+      try { await loadAll(); } catch {}
+    }
+  }
+
+
 
     async function load() {
       try {
@@ -953,24 +843,7 @@ export default function ImmersionDetailEditPage() {
       return;
     }
 
-        // Validação de preenchimento (campos obrigatórios) antes de concluir
-    const formErrs = collectStepErrors(["informacoes", "time"]);
-    if (Object.keys(formErrs).length > 0) {
-      markErrors(formErrs);
-      setCloseFlow({
-        open: true,
-        loading: false,
-        error: "Existem pendências de preenchimento. Corrija para concluir a imersão.",
-        summary: null,
-        sample: [],
-        canClose: false,
-        confirm: false,
-        formErrors: formErrs,
-      });
-      return;
-    }
-
-setCloseFlow({ open: true, loading: true, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
+    setCloseFlow({ open: true, loading: true, error: "", summary: null, sample: [], canClose: false, confirm: false });
     try {
       try {
         await syncOverdueTasksForImmersion(form.id);
@@ -1010,7 +883,7 @@ setCloseFlow({ open: true, loading: true, error: "", summary: null, sample: [], 
       await updateImmersion(form.id, { status: "Concluída" });
       setForm((p) => ({ ...p, status: "Concluída" }));
       setOriginalStatus("Concluída");
-      setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
+      setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
       alert("Imersão concluída.");
     } catch (e) {
       setCloseFlow((p) => ({ ...p, loading: false, error: e?.message || "Falha ao concluir." }));
@@ -1690,66 +1563,9 @@ function normalizeTemplatesForClone(items) {
       </div>
 
       <form className="card" onSubmit={onSaveImmersion}>
-        <ImmersionTabs tabs={tabs} active={tab} onChange={handleTabChange} />
+        <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
 
-        
-      {navErrors ? (
-        <div
-          ref={navErrorsRef}
-          tabIndex={-1}
-          role="alert"
-          aria-live="polite"
-          style={{
-            marginTop: 12,
-            border: "1px solid #fda29b",
-            background: "#fffbfa",
-            padding: 12,
-            borderRadius: 12
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Antes de continuar, ajuste:</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {Object.entries(navErrors).map(([field, message]) => (
-                  <li key={field} style={{ marginBottom: 6 }}>
-                    <span style={{ fontWeight: 600 }}>{FIELD_LABELS[field] || field}:</span>{" "}
-                    <span>{message}</span>{" "}
-                    <button
-                      type="button"
-                      onClick={() => scrollToField(field)}
-                      style={{
-                        marginLeft: 8,
-                        textDecoration: "underline",
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer"
-                      }}
-                    >
-                      Ir para o campo
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNavErrors(null)}
-              aria-label="Fechar"
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 18,
-                lineHeight: "18px"
-              }}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      ) : null}
+        {}
 
         {error ? (
               <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>
@@ -1768,7 +1584,7 @@ function normalizeTemplatesForClone(items) {
             >
               {immersionCatalog.length > 0 ? (
                 <>
-                  <Field label="Nome da imersão" hint="Obrigatório" error={getFieldError("immersion_name")}>
+                  <Field label="Nome da imersão" hint="Obrigatório">
                     <select
                       className="input"
                       value={form.immersion_catalog_id || ""}
@@ -1806,11 +1622,25 @@ function normalizeTemplatesForClone(items) {
 
                   <div className="grid2">
                     <Field label="Tipo" hint="Obrigatório">
-                      <input className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={() => { markTouched("type"); runFieldValidation("type"); }} value={form.type || ""} readOnly aria-readonly="true" />
+                      <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
                     </Field>
                   </div>
 
-                  {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
+                  {
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={applyTypeTemplatesNow}
+                      disabled={!canEditAll || applyingTypeTemplates}
+                      aria-disabled={!canEditAll || applyingTypeTemplates}
+                      title="Aplica tarefas, cronograma, materiais, ferramentas e vídeos padrão do tipo"
+                    >
+                      {applyingTypeTemplates ? "Aplicando predefinições..." : "Aplicar predefinições do tipo"}
+                    </button>
+                    {typeTemplatesMsg ? <span style={{ fontSize: 12, color: typeTemplatesMsg.includes("sucesso") ? "#157347" : "#b02a37" }}>{typeTemplatesMsg}</span> : null}
+                  </div>
+}
                 </>
               ) : (
                 <>
@@ -1842,11 +1672,11 @@ function normalizeTemplatesForClone(items) {
 
               <div className="grid2">
                 <Field label="Data de início" hint="Obrigatório">
-                  <input className="input" type="date" id="field-start_date" data-field="start_date" aria-invalid={!!getFieldError("start_date")} onBlur={(e) => { markTouched("start_date"); runFieldValidation("start_date", e.target.value); }} value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
+                  <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
                 </Field>
 
                 <Field label="Data de fim" hint="Obrigatório">
-                  <input className="input" type="date" id="field-end_date" data-field="end_date" aria-invalid={!!getFieldError("end_date")} onBlur={(e) => { markTouched("end_date"); runFieldValidation("end_date", e.target.value); }} value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
+                  <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                 </Field>
               </div>
 
@@ -1860,55 +1690,18 @@ function normalizeTemplatesForClone(items) {
         
         {form && tab === "informacoes" ? (
           <>
-            
-            {nextAction ? (
-              <div
-                className="card"
-                style={{
-                  marginBottom: 12,
-                  border: "1px solid var(--border)",
-                  background: "var(--card)",
-                  borderRadius: 12,
-                  padding: 12,
-                }}
-                role="region"
-                aria-label="Próximo passo recomendado"
-              >
-                <div className="row" style={{ alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="small muted" style={{ marginBottom: 2 }}>Próximo passo recomendado</div>
-                    <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{nextAction.label}</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => {
-                      if (nextAction.tab) handleTabChange(nextAction.tab);
-                      if (nextAction.field) {
-                        setTimeout(() => scrollToField(nextAction.field), 150);
-                      }
-                    }}
-                  >
-                    {nextAction.ctaText || "Ir agora"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-<div className="small muted" style={{ marginBottom: 12 }}>Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer).</div>
-
-            
-              <SimpleSection title="Informações básicas">
+            <Section
+              title="Informações"
+              description="Estrutura recomendada: preencha a base + defina os 2 responsáveis do time de educação (Consultor e Designer)."
+              right={null}
+            >
+              <Section title="Informações básicas">
 	                {/* Catálogo de Imersões (Cadastro de Imersões): padroniza Nome/Formato também na edição */}
 	                {immersionCatalog.length > 0 ? (
 	                  <div className="grid2">
-	                    <Field label="Lista da imersão" hint="Obrigatório" error={getFieldError("immersion_catalog_id")}>
+	                    <Field label="Lista da imersão" hint="Obrigatório">
 	                      <select
 	                        className="input"
-	                        id="field-immersion_catalog_id"
-	                        data-field="immersion_catalog_id"
-	                        aria-invalid={!!getFieldError("immersion_catalog_id")}
-	                        onBlur={() => { markTouched("immersion_catalog_id"); runFieldValidation("immersion_catalog_id"); }}
 	                        value={form.immersion_catalog_id || ""}
 	                        onChange={(e) => {
 	                          const pickedId = e.target.value;
@@ -1942,7 +1735,7 @@ function normalizeTemplatesForClone(items) {
 	                      </select>
 	                    </Field>
 
-	                    <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
+	                    <Field label="Formato" hint="Obrigatório">
 	                      <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
 	                    </Field>
 	                  </div>
@@ -1951,10 +1744,6 @@ function normalizeTemplatesForClone(items) {
 	                    <Field label="Nome da imersão" hint="Obrigatório">
 	                      <input
 	                        className="input"
-	                        id="field-immersion_name"
-	                        data-field="immersion_name"
-	                        aria-invalid={!!getFieldError("immersion_name")}
-	                        onBlur={(e) => { markTouched("immersion_name"); runFieldValidation("immersion_name", e.target.value); }}
 	                        value={form.immersion_name || ""}
 	                        onChange={(e) => set("immersion_name", e.target.value)}
 	                        placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
@@ -1962,8 +1751,8 @@ function normalizeTemplatesForClone(items) {
 	                    </Field>
 
 	                    <div className="grid2">
-	                      <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
-	                        <select className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={(e) => { markTouched("type"); runFieldValidation("type", e.target.value); }} value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+	                      <Field label="Formato" hint="Obrigatório">
+	                        <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
 	                          <option value="">Selecione</option>
 	                          {IMMERSION_TYPES.map((t) => (
 	                            <option key={t} value={t}>
@@ -2001,25 +1790,21 @@ function normalizeTemplatesForClone(items) {
                 </div>
 
                 <div className="grid2">
-                  <Field label="Data inicial" hint="Obrigatório" error={getFieldError("start_date")}>
+                  <Field label="Data inicial" hint="Obrigatório">
                     <input className="input" type="date" value={form.start_date || ""} onChange={(e) => set("start_date", e.target.value)} />
                   </Field>
 
-                  <Field label="Data final" hint="Obrigatório" error={getFieldError("end_date")}>
+                  <Field label="Data final" hint="Obrigatório">
                     <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                   </Field>
                 </div>
-              </SimpleSection>
+              </Section>
 
-              <SimpleSection title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
+              <Section title="Time de educação" description="Defina os 2 responsáveis do time de educação (Consultor e Designer).">
                 <div className="grid2">
-                  <Field label="Consultor (Educação)" hint="Obrigatório" error={getFieldError("educational_consultant")}>
+                  <Field label="Consultor (Educação)" hint="Obrigatório">
                     <select
                       className="input"
-                      id="field-educational_consultant"
-                      data-field="educational_consultant"
-                      aria-invalid={!!getFieldError("educational_consultant")}
-                      onBlur={(e) => { markTouched("educational_consultant"); runFieldValidation("educational_consultant", e.target.value); }}
                       value={form.educational_consultant || ""}
                       onChange={(e) => set("educational_consultant", e.target.value)}
                     >
@@ -2032,13 +1817,9 @@ function normalizeTemplatesForClone(items) {
                     </select>
                   </Field>
 
-                  <Field label="Designer instrucional" hint="Obrigatório" error={getFieldError("instructional_designer")}>
+                  <Field label="Designer instrucional" hint="Obrigatório">
                     <select
                       className="input"
-                      id="field-instructional_designer"
-                      data-field="instructional_designer"
-                      aria-invalid={!!getFieldError("instructional_designer")}
-                      onBlur={(e) => { markTouched("instructional_designer"); runFieldValidation("instructional_designer", e.target.value); }}
                       value={form.instructional_designer || ""}
                       onChange={(e) => set("instructional_designer", e.target.value)}
                     >
@@ -2051,9 +1832,9 @@ function normalizeTemplatesForClone(items) {
                     </select>
                   </Field>
                 </div>
-              </SimpleSection>
+              </Section>
 
-              <SimpleSection title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
+              <Section title="Palestrantes" description="Vincule o Trainer e, se houver, múltiplos palestrantes nesta imersão.">
                 <div className="grid2">
                   <Field label="Nome do Trainer">
                     <select className="input" value={form.trainer_speaker_id || ""} onChange={(e) => {
@@ -2157,15 +1938,15 @@ function normalizeTemplatesForClone(items) {
                     </div>
                   </Field>
                 </div>
-              </SimpleSection>
+              </Section>
 
-              <SimpleSection title="Mentores presentes">
+              <Section title="Mentores presentes">
                 <Field label="Mentores presentes">
                   <input className="input" value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} placeholder="Ex.: Nome 1, Nome 2" />
                 </Field>
-              </SimpleSection>
+              </Section>
 
-              <SimpleSection title="Links e documentos">
+              <Section title="Links e documentos">
                 <div className="grid2">
                   <Field label="Ordem de Serviço (link)">
                     <input className="input" value={form.service_order_link || ""} onChange={(e) => set("service_order_link", e.target.value)} placeholder="URL" />
@@ -2174,9 +1955,9 @@ function normalizeTemplatesForClone(items) {
                     <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="URL" />
                   </Field>
                 </div>
-              </SimpleSection>
+              </Section>
 
-              <SimpleSection title="Recursos e staff">
+              <Section title="Recursos e staff">
                 <Field label="Precisa de staff específico?">
                   <div className="row">
                     <button type="button" className={`btn ${form.need_specific_staff ? "primary" : ""}`} onClick={() => set("need_specific_staff", true)}>
@@ -2206,9 +1987,9 @@ function normalizeTemplatesForClone(items) {
                 </Field>
 
                 {/* Removido: "Vai ter palestrante?" (toggle). A gestão agora é por lista vinculada em "Palestrantes". */}
-              </SimpleSection>
+              </Section>
 
-              <SimpleSection title="Necessidade de terceiros">
+              <Section title="Necessidade de terceiros">
                 <label className="small" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                   <input type="checkbox" checked={!!form.need_third_parties} onChange={(e) => set("need_third_parties", e.target.checked)} />
                   Necessidade de terceiros
@@ -2255,8 +2036,9 @@ function normalizeTemplatesForClone(items) {
                     Maquiagem
                   </label>
                 </div>
-              </SimpleSection>
-            </>
+              </Section>
+            </Section>
+          </>
         ) : null}
 
         {form && tab === "cronograma" ? (
@@ -2728,7 +2510,7 @@ function normalizeTemplatesForClone(items) {
 
 {form && tab === "operacao" ? (
           <>
-            <SimpleSection title="Operação" description="Defina local, status e links operacionais.">
+            <Section title="Operação" description="Defina local, status e links operacionais.">
               <div className="grid2">
                 <Field label="Sala / Local" hint="Obrigatório">
                   <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
@@ -2761,9 +2543,9 @@ function normalizeTemplatesForClone(items) {
                   <input className="input" value={form.technical_sheet_link || ""} onChange={(e) => set("technical_sheet_link", e.target.value)} placeholder="https://..." />
                 </Field>
               </div>
-            </SimpleSection>
+            </Section>
 
-            <SimpleSection title="Mentores e staff" description="Use esta seção apenas quando necessário para execução.">
+            <Section title="Mentores e staff" description="Use esta seção apenas quando necessário para execução.">
               <Field label="Mentores que estarão presentes">
                 <textarea className="input" rows={4} value={form.mentors_present || ""} onChange={(e) => set("mentors_present", e.target.value)} />
               </Field>
@@ -2801,9 +2583,7 @@ function normalizeTemplatesForClone(items) {
                   A gestão de Trainer e palestrantes foi centralizada na seção <b>Palestrantes</b> (na aba Informações), com lista e suporte a múltiplos palestrantes.
                 </div>
               </Field>
-            
-            </SimpleSection>
-
+            </Section>
           </>
         ) : null}
 
@@ -3897,7 +3677,7 @@ function normalizeTemplatesForClone(items) {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null })}
+                  onClick={() => setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false })}
                   disabled={!!closeFlow.loading}
                 >
                   Cancelar
@@ -3918,43 +3698,6 @@ function normalizeTemplatesForClone(items) {
               {closeFlow.error ? (
                 <div className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>{closeFlow.error}</div>
               ) : null}
-
-              {closeFlow.formErrors ? (
-                <div
-                  className="card"
-                  style={{
-                    border: "1px solid var(--border)",
-                    background: "var(--card)",
-                    borderRadius: 12,
-                    padding: 12,
-                    marginBottom: 12,
-                  }}
-                >
-                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Pendências de preenchimento</div>
-                  <div className="small muted" style={{ marginBottom: 10 }}>
-                    Clique em um item para ir direto ao campo.
-                  </div>
-                  <div className="col" style={{ gap: 8 }}>
-                    {Object.entries(closeFlow.formErrors).map(([field, msg]) => (
-                      <button
-                        key={field}
-                        type="button"
-                        className="btn"
-                        style={{ justifyContent: "space-between" }}
-                        onClick={() => {
-                          setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
-                          handleTabChange("informacoes");
-                          setTimeout(() => scrollToField(field), 180);
-                        }}
-                      >
-                        <span style={{ textAlign: "left" }}>{msg}</span>
-                        <span className="small muted">Ir para o campo</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
 
               {closeFlow.loading && !closeFlow.summary ? (
                 <div className="small">Validando checklist...</div>
@@ -4012,7 +3755,7 @@ function normalizeTemplatesForClone(items) {
                       type="button"
                       className="btn primary"
                       onClick={() => {
-                        setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false, formErrors: null });
+                        setCloseFlow({ open: false, loading: false, error: "", summary: null, sample: [], canClose: false, confirm: false });
                         setTab("checklist");
                       }}
                     >

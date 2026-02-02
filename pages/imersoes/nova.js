@@ -8,27 +8,13 @@ import { listActiveProfiles } from "../../lib/profiles";
 import { listTemplates } from "../../lib/templates";
 import { listSpeakers } from "../../lib/speakers";
 import { isLimitedImmersionRole, normalizeRole } from "../../lib/permissions";
-import { validateImmersionField, validateImmersionStep } from "../../lib/immersionValidation";
-import { scrollToField } from "../../lib/scrollToField";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
 // Formato (domínio fechado) conforme definido por você. (Mesma nomenclatura da tela de visualização.)
 const IMMERSION_FORMATS = ["Presencial", "Online", "Zoom", "Entrada", "Extras", "Giants", "Outras"];
 
-
-const FIELD_LABELS = {
-  immersion_catalog_id: "Imersão (catálogo)",
-  immersion_name: "Nome da imersão",
-  type: "Formato",
-  start_date: "Data inicial",
-  end_date: "Data final",
-  educational_consultant: "Consultor (Educação)",
-  instructional_designer: "Designer Instrucional",
-  checklist_template_id: "Checklist template",
-};
-
-function Field({ label, children, hint, error }) {
+function Field({ label, children, hint }) {
   const isReq = typeof hint === "string" && hint.toLowerCase().includes("obrigat");
   return (
     <div style={{ marginBottom: 10 }}>
@@ -39,9 +25,6 @@ function Field({ label, children, hint, error }) {
         ) : null}
       </div>
       {children}
-      {error ? (
-        <div style={{ marginTop: 6, fontSize: 12, color: "#b42318" }} role="alert" aria-live="polite">{error}</div>
-      ) : null}
     </div>
   );
 }
@@ -94,16 +77,6 @@ export default function NovaImersaoPage() {
       try { errorRef.current.focus({ preventScroll: true }); } catch {}
     }
   }, [error]);
-  const [navErrors, setNavErrors] = useState(null);
-  const navErrorsRef = useRef(null);
-
-
-  useEffect(() => {
-    if (navErrors && navErrorsRef.current) {
-      try { navErrorsRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
-      try { navErrorsRef.current.focus({ preventScroll: true }); } catch {}
-    }
-  }, [navErrors]);
   const [people, setPeople] = useState([]);
   const [peopleByRole, setPeopleByRole] = useState({
     consultores: [],
@@ -140,101 +113,6 @@ export default function NovaImersaoPage() {
     service_order_link: "",
     technical_sheet_link: ""
   });
-
-  const [touched, setTouched] = useState({});
-  const [fieldErrors, setFieldErrors] = useState({});
-
-  function ctx() {
-    return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form.immersion_catalog_id };
-  }
-  function getNextAction() {
-    if (!form) return null;
-
-    const hasCatalog = (immersionCatalog?.length || 0) > 0;
-    if (hasCatalog && !form.immersion_catalog_id) {
-      return { field: "immersion_catalog_id", tab: "informacoes", label: "Selecione a imersão", ctaText: "Selecionar" };
-    }
-    if (!form.immersion_name?.trim()) {
-      return { field: "immersion_name", tab: "informacoes", label: "Defina o nome da imersão", ctaText: "Preencher" };
-    }
-    if (!form.start_date || !form.end_date) {
-      return { field: !form.start_date ? "start_date" : "end_date", tab: "informacoes", label: "Defina data inicial e final", ctaText: "Definir datas" };
-    }
-    if (!form.educational_consultant || !form.instructional_designer) {
-      return { field: !form.educational_consultant ? "educational_consultant" : "instructional_designer", tab: "informacoes", label: "Defina o time de educação (Consultor e Designer)", ctaText: "Definir time" };
-    }
-    if (!form.checklist_template_id) {
-      return { field: "checklist_template_id", tab: "informacoes", label: "Selecione o checklist template", ctaText: "Selecionar" };
-    }
-
-    // Próximo passo sugerido após a base mínima
-    if (!form.immersion_narrative?.trim()) {
-      return { tab: "narrativa", field: "immersion_narrative", label: "Preencha a narrativa da imersão", ctaText: "Preencher" };
-    }
-    return { tab: "checklist", label: "Revise as tarefas (checklist) desta imersão", ctaText: "Ir para Tarefas" };
-  }
-
-  const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog]);
-
-
-  function collectStepErrors(stepKeys) {
-    const c = ctx();
-    const merged = {};
-    stepKeys.forEach((k) => {
-      const e = validateImmersionStep(k, form, c);
-      Object.assign(merged, e);
-    });
-    return merged;
-  }
-
-  function markErrors(errs) {
-    const keys = Object.keys(errs || {});
-    if (!keys.length) return;
-    setTouched((prev) => {
-      const next = { ...prev };
-      keys.forEach((k) => (next[k] = true));
-      return next;
-    });
-    setFieldErrors((prev) => ({ ...prev, ...errs }));
-  }
-
-  function validateBeforeLeaveCurrentTab(nextTab) {
-    // Hoje, a validação por etapa cobre apenas a aba Informações (inclui Time de educação).
-    if (tab !== "informacoes" || nextTab === "informacoes") return true;
-
-    const errs = collectStepErrors(["informacoes", "time"]);
-    if (Object.keys(errs).length === 0) {
-      setNavErrors(null);
-      return true;
-    }
-
-    markErrors(errs);
-    setNavErrors(errs);
-    return false;
-  }
-
-  function handleTabChange(nextTab) {
-    if (nextTab === tab) return;
-    const ok = validateBeforeLeaveCurrentTab(nextTab);
-    if (!ok) return;
-    setTab(nextTab);
-  }
-
-  function markTouched(name) {
-    setTouched((p) => ({ ...p, [name]: true }));
-  }
-
-  function runFieldValidation(name, nextValue) {
-    const value = nextValue !== undefined ? nextValue : form?.[name];
-    const msg = validateImmersionField(name, value, ctx());
-    setFieldErrors((p) => ({ ...p, [name]: msg }));
-    return msg;
-  }
-
-  function getFieldError(name) {
-    if (!touched?.[name]) return "";
-    return fieldErrors?.[name] || "";
-  }
 
 
 function normalizeFormatValue(v) {
@@ -439,6 +317,24 @@ useEffect(() => {
         }
       }
 
+
+      // Templates por tipo (materiais, ferramentas, vídeos, cronograma, tarefas) — best-effort
+      try {
+        await fetch("/api/immersions/apply-type-templates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            immersion_id: created.id,
+            immersion_type: form.type || null,
+            start_date: form.start_date,
+            end_date: form.end_date,
+            include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
+          }),
+        });
+      } catch (e) {
+        console.warn("apply-type-templates failed", e);
+      }
+
       router.push(`/imersoes/${created.id}`);
     } catch (err) {
       setError(err?.message || "Erro ao criar imersão.");
@@ -469,67 +365,9 @@ useEffect(() => {
         ) : null}
 
         <form onSubmit={onSubmit}>
-          <ImmersionTabs tabs={tabs} active={tab} onChange={handleTabChange} />
+          <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
 
-          
-      {navErrors ? (
-        <div
-          ref={navErrorsRef}
-          tabIndex={-1}
-          role="alert"
-          aria-live="polite"
-          style={{
-            marginTop: 12,
-            border: "1px solid #fda29b",
-            background: "#fffbfa",
-            padding: 12,
-            borderRadius: 12
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Antes de continuar, ajuste:</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {Object.entries(navErrors).map(([field, message]) => (
-                  <li key={field} style={{ marginBottom: 6 }}>
-                    <span style={{ fontWeight: 600 }}>{FIELD_LABELS[field] || field}:</span>{" "}
-                    <span>{message}</span>{" "}
-                    <button
-                      type="button"
-                      onClick={() => scrollToField(field)}
-                      style={{
-                        marginLeft: 8,
-                        textDecoration: "underline",
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer"
-                      }}
-                    >
-                      Ir para o campo
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNavErrors(null)}
-              aria-label="Fechar"
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 18,
-                lineHeight: "18px"
-              }}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      ) : null}
-{tab !== "informacoes" ? (
+          {tab !== "informacoes" ? (
             <div className="tabEmpty" role="status" aria-live="polite">
               <div className="small muted" style={{ marginBottom: 10 }}>
                 As demais abas ficam disponíveis após criar a imersão. Complete as informações e clique em “Criar imersão”.
@@ -542,48 +380,13 @@ useEffect(() => {
 
           {tab === "informacoes" ? (
           <>
-          
-            {nextAction ? (
-              <div
-                className="card"
-                style={{
-                  marginBottom: 12,
-                  border: "1px solid var(--border)",
-                  background: "var(--card)",
-                  borderRadius: 12,
-                  padding: 12,
-                }}
-                role="region"
-                aria-label="Próximo passo recomendado"
-              >
-                <div className="row" style={{ alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="small muted" style={{ marginBottom: 2 }}>Próximo passo recomendado</div>
-                    <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{nextAction.label}</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => {
-                      if (nextAction.tab) handleTabChange(nextAction.tab);
-                      if (nextAction.field) {
-                        setTimeout(() => scrollToField(nextAction.field), 150);
-                      }
-                    }}
-                  >
-                    {nextAction.ctaText || "Ir agora"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-<div className="section">
+          <div className="section">
             <div className="sectionTitle">Informações básicas</div>
             <div className="sectionBody">
 
 {immersionCatalog.length > 0 ? (
   <>
-    <Field label="Nome da imersão" hint="Obrigatório" error={getFieldError("immersion_name")}>
+    <Field label="Nome da imersão" hint="Obrigatório">
       <select
         className="input"
         value={form.immersion_catalog_id}
@@ -618,8 +421,8 @@ useEffect(() => {
     </Field>
 
     <div className="grid2">
-      <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
-        <input className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={() => { markTouched("type"); runFieldValidation("type"); }} value={form.type || ""} readOnly aria-readonly="true" />
+      <Field label="Formato" hint="Obrigatório">
+        <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
       </Field>
     </div>
   </>
@@ -628,10 +431,6 @@ useEffect(() => {
     <Field label="Nome da imersão" hint="Obrigatório">
       <input
         className="input"
-        id="field-immersion_name"
-        data-field="immersion_name"
-        aria-invalid={!!getFieldError("immersion_name")}
-        onBlur={(e) => { markTouched("immersion_name"); runFieldValidation("immersion_name", e.target.value); }}
         value={form.immersion_name}
         onChange={(e) => setForm((p) => ({ ...p, immersion_name: e.target.value }))}
         placeholder="Ex.: Imersão Gestão MKT Digital"
@@ -640,8 +439,8 @@ useEffect(() => {
     </Field>
 
     <div className="grid2">
-      <Field label="Formato" hint="Obrigatório" error={getFieldError("type")}>
-        <select className="input" id="field-type" data-field="type" aria-invalid={!!getFieldError("type")} onBlur={(e) => { markTouched("type"); runFieldValidation("type", e.target.value); }} value={form.type} onChange={(e) => { setForm((p) => ({ ...p, type: e.target.value })); }}>
+      <Field label="Formato" hint="Obrigatório">
+        <select className="input" value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
           <option value="">Selecione</option>
           {IMMERSION_FORMATS.map((t) => (
             <option key={t} value={t}>
@@ -667,11 +466,11 @@ useEffect(() => {
               </div>
 
               <div className="grid2">
-                <Field label="Data inicial" hint="Obrigatório" error={getFieldError("start_date")}>
-                  <input className="input" type="date" id="field-start_date" data-field="start_date" aria-invalid={!!getFieldError("start_date")} onBlur={(e) => { markTouched("start_date"); runFieldValidation("start_date", e.target.value); }} value={form.start_date} onChange={(e) => { setForm((p) => ({ ...p, start_date: e.target.value })); }} />
+                <Field label="Data inicial">
+                  <input className="input" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
                 </Field>
-                <Field label="Data final" hint="Obrigatório" error={getFieldError("end_date")}>
-                  <input className="input" type="date" id="field-end_date" data-field="end_date" aria-invalid={!!getFieldError("end_date")} onBlur={(e) => { markTouched("end_date"); runFieldValidation("end_date", e.target.value); }} value={form.end_date} onChange={(e) => { setForm((p) => ({ ...p, end_date: e.target.value })); }} />
+                <Field label="Data final">
+                  <input className="input" type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
                 </Field>
               </div>
             </div>
@@ -681,13 +480,9 @@ useEffect(() => {
             <div className="sectionTitle">Time de educação</div>
             <div className="sectionBody">
               <div className="grid2">
-                <Field label="Consultor" hint="Obrigatório" error={getFieldError("educational_consultant")}>
+                <Field label="Consultor" hint="Obrigatório">
                   <select
                     className="input"
-                    id="field-educational_consultant"
-                    data-field="educational_consultant"
-                    aria-invalid={!!getFieldError("educational_consultant")}
-                    onBlur={(e) => { markTouched("educational_consultant"); runFieldValidation("educational_consultant", e.target.value); }}
                     value={form.educational_consultant}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -702,8 +497,8 @@ useEffect(() => {
                     ))}
                   </select>
                 </Field>
-                <Field label="Designer" hint="Obrigatório" error={getFieldError("instructional_designer")}>
-                  <select className="input" id="field-instructional_designer" data-field="instructional_designer" aria-invalid={!!getFieldError("instructional_designer")} onBlur={(e) => { markTouched("instructional_designer"); runFieldValidation("instructional_designer", e.target.value); }} value={form.instructional_designer} onChange={(e) => { setForm((p) => ({ ...p, instructional_designer: e.target.value })); }}>
+                <Field label="Designer" hint="Obrigatório">
+                  <select className="input" value={form.instructional_designer} onChange={(e) => setForm((p) => ({ ...p, instructional_designer: e.target.value }))}>
                     <option value="">Selecione</option>
                     {(peopleByRole.designers || []).map((p) => (
                       <option key={p.id} value={p.id}>
@@ -713,13 +508,9 @@ useEffect(() => {
                   </select>
                 </Field>
               </div>
-              <Field label="Checklist template" hint="Obrigatório" error={getFieldError("checklist_template_id")}>
+              <Field label="Checklist template" hint="Obrigatório">
                 <select
                   className="input"
-                  id="field-checklist_template_id"
-                  data-field="checklist_template_id"
-                  aria-invalid={!!getFieldError("checklist_template_id")}
-                  onBlur={(e) => { markTouched("checklist_template_id"); runFieldValidation("checklist_template_id", e.target.value); }}
                   value={form.checklist_template_id}
                   onChange={(e) => setForm((p) => ({ ...p, checklist_template_id: e.target.value }))}
                   required
