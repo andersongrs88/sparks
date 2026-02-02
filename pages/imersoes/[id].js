@@ -1627,6 +1627,8 @@ function normalizeTemplatesForClone(items) {
                   <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                 </Field>
               </div>
+                </>
+              )}
 
               <div className="small muted" style={{ marginTop: 6 }}>
                 Dica: conclua esta aba primeiro. Depois, preencha operação, time e módulos (cronograma, checklist, materiais etc.).
