@@ -228,6 +228,9 @@ export default function ImmersionDetailEditPage() {
       try { errorRef.current.focus({ preventScroll: true }); } catch {}
     }
   }, [error]);
+  const [navErrors, setNavErrors] = useState(null);
+  const navErrorsRef = useRef(null);
+
 
   useEffect(() => {
     if (navErrors && navErrorsRef.current) {
@@ -240,8 +243,6 @@ export default function ImmersionDetailEditPage() {
 
   const [touched, setTouched] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
-  const [navErrors, setNavErrors] = useState(null);
-  const navErrorsRef = useRef(null);
 
   function ctx() {
     return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form?.immersion_catalog_id };
