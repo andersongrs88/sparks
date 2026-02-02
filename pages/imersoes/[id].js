@@ -16,6 +16,7 @@ import { listTools, createTool, updateTool, deleteTool } from "../../lib/tools";
 import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from "../../lib/materials";
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
+import { listAuditByImmersion } from "../../lib/audit";
 import { listSpeakers } from "../../lib/speakers";
 
 
@@ -190,11 +191,6 @@ export default function ImmersionDetailEditPage() {
 
   const [tab, setTab] = useState("informacoes");
 
-
-  const [applyingTypeTemplates, setApplyingTypeTemplates] = useState(false);
-  const [typeTemplatesMsg, setTypeTemplatesMsg] = useState("");
-
-
   // Deep-link: /imersoes/:id?tab=tarefas abre diretamente a aba Tarefas (checklist)
   useEffect(() => {
     if (!router.isReady) return;
@@ -326,6 +322,10 @@ export default function ImmersionDetailEditPage() {
 
   const [sectionsLoading, setSectionsLoading] = useState(false);
 
+  const [auditItems, setAuditItems] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+
   const [editModal, setEditModal] = useState({ type: "", open: false, item: null });
   const [editDraft, setEditDraft] = useState({});
 
@@ -337,6 +337,7 @@ export default function ImmersionDetailEditPage() {
       { key: "materiais", label: "Materiais" },
       { key: "videos", label: "Vídeos" },
       { key: "checklist", label: "Tarefas", badge: openTasksCount > 0 ? String(openTasksCount) : null },
+      { key: "historico", label: "Histórico" },
       { key: "pdca", label: "PDCA" },
       { key: "trainer", label: "Trainer/Palestrante" },
     ];
@@ -358,35 +359,6 @@ export default function ImmersionDetailEditPage() {
 
     if (!id || typeof id !== "string") return;
     let mounted = true;
-  async function applyTypeTemplatesNow() {
-    if (!id) return;
-    setTypeTemplatesMsg("");
-    setApplyingTypeTemplates(true);
-    try {
-      const resp = await fetch("/api/immersions/apply-type-templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          immersion_id: id,
-          immersion_type: form?.type || null,
-          start_date: form?.start_date || null,
-          end_date: form?.end_date || null,
-          include: { tasks: true, schedule: true, materials: true, tools: true, videos: true },
-        }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.error || "Falha ao aplicar predefinições.");
-      setTypeTemplatesMsg("Predefinições aplicadas com sucesso.");
-    } catch (e) {
-      setTypeTemplatesMsg(e?.message || "Falha ao aplicar predefinições.");
-    } finally {
-      setApplyingTypeTemplates(false);
-      // refresca contadores/listas quando aplicável (best-effort)
-      try { await loadAll(); } catch {}
-    }
-  }
-
-
 
     async function load() {
       try {
@@ -1626,21 +1598,7 @@ function normalizeTemplatesForClone(items) {
                     </Field>
                   </div>
 
-                  {
-                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={applyTypeTemplatesNow}
-                      disabled={!canEditAll || applyingTypeTemplates}
-                      aria-disabled={!canEditAll || applyingTypeTemplates}
-                      title="Aplica tarefas, cronograma, materiais, ferramentas e vídeos padrão do tipo"
-                    >
-                      {applyingTypeTemplates ? "Aplicando predefinições..." : "Aplicar predefinições do tipo"}
-                    </button>
-                    {typeTemplatesMsg ? <span style={{ fontSize: 12, color: typeTemplatesMsg.includes("sucesso") ? "#157347" : "#b02a37" }}>{typeTemplatesMsg}</span> : null}
-                  </div>
-}
+                  {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
                 </>
               ) : (
                 <>
@@ -1779,7 +1737,7 @@ function normalizeTemplatesForClone(items) {
                   <Field label="Status">
                     <select className="input" value={form.status || "Planejamento"} onChange={(e) => set("status", e.target.value)}>
                       <option value="Planejamento">Planejamento</option>
-                      <option value="Em andamento">Em andamento</option>
+                      <option value="Em execução">Em execução</option>
                       <option value="Cancelada">Cancelada</option>
                       <option value="Concluída">Concluída</option>
                     </select>
@@ -2422,7 +2380,104 @@ function normalizeTemplatesForClone(items) {
           </>
         ) : null}
 
-        {form && tab === "pdca" ? (
+        {form && tab === "historico" ? (
+  <>
+    <div style={{ padding: "12px 16px" }}>
+      <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Histórico</div>
+      <div style={{ color: "#6b7280", fontSize: 13 }}>
+        Registro automático das principais alterações desta imersão (quem mexeu, quando e o que mudou).
+      </div>
+    </div>
+
+    <div style={{ padding: "0 16px 16px" }}>
+      {auditLoading ? (
+        <div style={{ color: "#6b7280" }}>Carregando histórico…</div>
+      ) : auditError ? (
+        <div style={{ color: "#b91c1c" }}>{auditError}</div>
+      ) : auditItems?.length ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {auditItems.map((it) => {
+            const when = new Date(it.created_at);
+            const whenLabel = isNaN(when.getTime())
+              ? String(it.created_at)
+              : when.toLocaleString("pt-BR");
+
+            const actionLabel =
+              it.action === "INSERT" ? "criou" : it.action === "DELETE" ? "excluiu" : "alterou";
+
+            const tableLabelMap = {
+              immersions: "Imersão",
+              immersion_tasks: "Tarefas",
+              immersion_schedule_items: "Cronograma",
+              immersion_tools: "Ferramentas",
+              immersion_materials: "Materiais",
+              immersion_videos: "Vídeos",
+              immersion_pdca: "PDCA",
+            };
+            const tableLabel = tableLabelMap[it.table_name] || it.table_name || "Registro";
+
+            const changedKeys =
+              it.action === "UPDATE" && it.changes && typeof it.changes === "object"
+                ? Object.keys(it.changes)
+                : [];
+
+            return (
+              <div
+                key={it.id}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  background: "white",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ fontWeight: 700 }}>
+                    {tableLabel} • {actionLabel}
+                  </div>
+                  <div style={{ color: "#6b7280", fontSize: 12 }}>{whenLabel}</div>
+                </div>
+
+                <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
+                  Usuário: {it.actor_id || "—"}
+                </div>
+
+                {changedKeys.length ? (
+                  <div style={{ marginTop: 8, fontSize: 13 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Campos alterados</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {changedKeys.slice(0, 12).map((k) => (
+                        <span
+                          key={k}
+                          style={{
+                            fontSize: 12,
+                            padding: "3px 8px",
+                            borderRadius: 999,
+                            border: "1px solid #e5e7eb",
+                            background: "#f9fafb",
+                          }}
+                        >
+                          {k}
+                        </span>
+                      ))}
+                      {changedKeys.length > 12 ? (
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>+{changedKeys.length - 12}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ color: "#6b7280" }}>Nenhuma alteração registrada ainda.</div>
+      )}
+    </div>
+  </>
+) : null}
+
+{form && tab === "pdca" ? (
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div className="h2" style={{ margin: 0 }}>PDCA</div>
@@ -3994,4 +4049,31 @@ function normalizeTemplatesForClone(items) {
 
     </Layout>
   );
+
+// Carrega histórico (auditoria)
+useEffect(() => {
+  if (!form || !id || typeof id !== "string") return;
+  if (tab !== "historico") return;
+
+  let active = true;
+  (async () => {
+    try {
+      setAuditError("");
+      setAuditLoading(true);
+      const items = await listAuditByImmersion(id, { limit: 120 });
+      if (!active) return;
+      setAuditItems(items);
+    } catch (e) {
+      if (!active) return;
+      setAuditError(e?.message || "Não foi possível carregar o histórico.");
+    } finally {
+      if (!active) return;
+      setAuditLoading(false);
+    }
+  })();
+
+  return () => {
+    active = false;
+  };
+}, [tab, id, form]);
 }
