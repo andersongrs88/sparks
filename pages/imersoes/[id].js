@@ -2463,7 +2463,7 @@ function normalizeTemplatesForClone(items) {
                   Não foi possível carregar a lista de usuários. Verifique a tabela <b>profiles</b>.
                 </div>
               ) : null}
-            </SimpleSection>
+            </Section>
           </>
         ) : null}
 
