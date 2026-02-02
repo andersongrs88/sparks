@@ -1591,32 +1591,32 @@ function normalizeTemplatesForClone(items) {
                       <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
                     </Field>
                   </div>
-
-                  {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
                 </>
               ) : (
                 <>
-<Field label="Nome da imersão" hint="Obrigatório">
-                <input
-                  className="input"
-                  value={form.immersion_name || ""}
-                  onChange={(e) => set("immersion_name", e.target.value)}
-                  placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
-                />
-              </Field>
+                  <Field label="Nome da imersão" hint="Obrigatório">
+                    <input
+                      className="input"
+                      value={form.immersion_name || ""}
+                      onChange={(e) => set("immersion_name", e.target.value)}
+                      placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
+                    />
+                  </Field>
 
-              <div className="grid2">
-                <Field label="Tipo" hint="Obrigatório">
-                  <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
-                    <option value="">Selecione</option>
-                    {IMMERSION_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
+                  <div className="grid2">
+                    <Field label="Tipo" hint="Obrigatório">
+                      <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+                        <option value="">Selecione</option>
+                        {IMMERSION_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                </>
+              )}
 
               <div className="grid2">
                 <Field label="Data de início" hint="Obrigatório">
@@ -1627,12 +1627,12 @@ function normalizeTemplatesForClone(items) {
                   <input className="input" type="date" value={form.end_date || ""} onChange={(e) => set("end_date", e.target.value)} />
                 </Field>
               </div>
-                </>
-              )}
 
               <div className="small muted" style={{ marginTop: 6 }}>
                 Dica: conclua esta aba primeiro. Depois, preencha operação, time e módulos (cronograma, checklist, materiais etc.).
               </div>
+
+              {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
             </Section>
           </>
         ) : null}
