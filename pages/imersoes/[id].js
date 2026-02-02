@@ -4,7 +4,7 @@ import Layout from "../../components/Layout";
 import ImmersionTabs from "../../components/ImmersionTabs";
 import BottomSheet from "../../components/BottomSheet";
 import { useAuth } from "../../context/AuthContext";
-import { deleteImmersion, getImmersion, updateImmersion } from "../../lib/immersions";
+import { deleteImmersion, getImmersion, updateImmersion, listImmersionCatalog } from "../../lib/immersions";
 import { supabase } from "../../lib/supabaseClient";
 import { listTasksByImmersion, createTask, createTasks, updateTask, deleteTask, syncOverdueTasksForImmersion } from "../../lib/tasks";
 import { listActiveProfiles } from "../../lib/profiles";
@@ -20,6 +20,26 @@ import { listSpeakers } from "../../lib/speakers";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
+
+function normalizeFormatValue(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function catalogFormatToType(format) {
+  const f = normalizeFormatValue(format);
+  // Backward-compat: sistema antigo usa "Online"; padrão novo usa "Onlive"
+  if (f === "presencial") return "Presencial";
+  if (f === "onlive") return "Onlive";
+  if (f === "online") return "Online";
+  if (f === "zoom") return "Zoom";
+  if (f === "entrada") return "Entrada";
+  if (f === "giants") return "Giants";
+  if (f === "incompany") return "Incompany";
+  if (f === "outros" || f === "outras") return "Outros";
+  if (f === "extras") return "Extras";
+  return format ? String(format) : "";
+}
+
 const IMMERSION_TYPES = [
   "Presencial",
   "Online",
@@ -196,6 +216,9 @@ export default function ImmersionDetailEditPage() {
 
   const [form, setForm] = useState(null);
 
+  const [immersionCatalog, setImmersionCatalog] = useState([]);
+
+
   // Regra B: toda tarefa deve ter um responsável padrão.
   // Se a imersão estiver sem Dono (checklist_owner_id), bloqueamos a criação de tarefas no UI.
   const ownerMissing = !!form && !getEffectiveOwnerId(form);
@@ -336,6 +359,16 @@ export default function ImmersionDetailEditPage() {
         setError("");
         setLoading(true);
         const data = await getImmersion(id);
+        // Carrega o Cadastro de Imersões (catálogo) para padronizar Nome/Formato também na edição.
+        // Usa onlyActive:false para permitir visualizar/editar imersões que referenciem itens inativos.
+        try {
+          const catalog = await listImmersionCatalog({ onlyActive: false });
+          if (mounted) setImmersionCatalog(Array.isArray(catalog) ? catalog : []);
+        } catch {
+          // fallback: mantém edição funcionando mesmo sem catálogo
+          if (mounted) setImmersionCatalog([]);
+        }
+
         if (mounted) {
           // Regra do produto: Dono (checklist_owner_id) deve espelhar o Consultor.
           // Se vier vazio (bases antigas/migrações), sincroniza imediatamente.
@@ -364,6 +397,27 @@ export default function ImmersionDetailEditPage() {
       mounted = false;
     };
   }, [authLoading, user, id]);
+
+  // Best-effort: se a imersão antiga não tiver vínculo com o catálogo, tenta pré-selecionar por (nome + tipo).
+  useEffect(() => {
+    if (!form || !Array.isArray(immersionCatalog) || immersionCatalog.length === 0) return;
+    if (form.immersion_catalog_id) return;
+
+    const currentName = String(form.immersion_name || "").trim().toLowerCase();
+    const currentType = String(form.type || "").trim().toLowerCase();
+    if (!currentName || !currentType) return;
+
+    const match = immersionCatalog.find((c) => {
+      const cName = String(c?.name || "").trim().toLowerCase();
+      const cType = String(catalogFormatToType(c?.format) || "").trim().toLowerCase();
+      return cName === currentName && cType === currentType;
+    });
+
+    if (match?.id) {
+      setForm((p) => ({ ...p, immersion_catalog_id: match.id }));
+    }
+  }, [form, immersionCatalog]);
+
 
   // Carrega usuários ativos (profiles) para o dropdown de responsável
   useEffect(() => {
@@ -1494,7 +1548,55 @@ function normalizeTemplatesForClone(items) {
               title="Essencial"
               description="Defina o mínimo para a imersão existir: nome, tipo e datas. O restante você completa nas outras abas."
             >
-              <Field label="Nome da imersão" hint="Obrigatório">
+              {immersionCatalog.length > 0 ? (
+                <>
+                  <Field label="Nome da imersão" hint="Obrigatório">
+                    <select
+                      className="input"
+                      value={form.immersion_catalog_id || ""}
+                      onChange={(e) => {
+                        const pickedId = e.target.value;
+                        const picked = immersionCatalog.find((x) => String(x.id) === String(pickedId));
+                        const nextName = picked?.name ? String(picked.name) : "";
+                        const nextType = picked?.format ? catalogFormatToType(picked.format) : "";
+                        setForm((p) => ({
+                          ...p,
+                          immersion_catalog_id: pickedId,
+                          immersion_name: nextName,
+                          type: nextType,
+                          // ao trocar o cadastro, reseta template para permitir auto-seleção pelo formato
+                          checklist_template_id: "",
+                        }));
+                      }}
+                      required
+                      aria-label="Selecione uma imersão cadastrada"
+                    >
+                      <option value="">Selecione</option>
+                      {immersionCatalog.map((c) => {
+                        const fmt = catalogFormatToType(c.format);
+                        const label = fmt ? `${c.name} • ${fmt}` : c.name;
+                        const suffix = c.is_active === false ? " (inativo)" : "";
+                        return (
+                          <option key={c.id} value={c.id}>
+                            {label}
+                            {suffix}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </Field>
+
+                  <div className="grid2">
+                    <Field label="Tipo" hint="Obrigatório">
+                      <input className="input" value={form.type || ""} readOnly aria-readonly="true" />
+                    </Field>
+                  </div>
+
+                  {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
+                </>
+              ) : (
+                <>
+<Field label="Nome da imersão" hint="Obrigatório">
                 <input
                   className="input"
                   value={form.immersion_name || ""}
@@ -1565,7 +1667,10 @@ function normalizeTemplatesForClone(items) {
 
               {/* Removido: Aplicar Template por tipo (não utilizado no produto atual). */}
 
-              <Section title="Informações básicas">
+              
+                </>
+              )}
+<Section title="Informações básicas">
                 <div className="grid2">
                   <Field label="Sala" hint="Obrigatório">
                     <select className="input" value={form.room_location || "Brasil"} onChange={(e) => set("room_location", e.target.value)}>
