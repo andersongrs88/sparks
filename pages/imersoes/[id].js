@@ -1596,27 +1596,31 @@ function normalizeTemplatesForClone(items) {
                 </>
               ) : (
                 <>
-<Field label="Nome da imersão" hint="Obrigatório">
-                <input
-                  className="input"
-                  value={form.immersion_name || ""}
-                  onChange={(e) => set("immersion_name", e.target.value)}
-                  placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
-                />
-              </Field>
+                  <Field label="Nome da imersão" hint="Obrigatório">
+                    <input
+                      className="input"
+                      value={form.immersion_name || ""}
+                      onChange={(e) => set("immersion_name", e.target.value)}
+                      placeholder="Ex.: Acelerador Empresarial #79 | Presencial"
+                    />
+                  </Field>
 
-              <div className="grid2">
-                <Field label="Tipo" hint="Obrigatório">
-                  <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
-                    <option value="">Selecione</option>
-                    {IMMERSION_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
+
+                  <div className="grid2">
+                    <Field label="Tipo" hint="Obrigatório">
+                      <select className="input" value={form.type || ""} onChange={(e) => set("type", e.target.value)}>
+                        <option value="">Selecione</option>
+                        {IMMERSION_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+
+                </>
+              )}
 
               <div className="grid2">
                 <Field label="Data de início" hint="Obrigatório">
