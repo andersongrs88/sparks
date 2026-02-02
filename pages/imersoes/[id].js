@@ -17,7 +17,8 @@ import { listMaterials, createMaterial, updateMaterial, deleteMaterial } from ".
 import { listVideos, createVideo, updateVideo, deleteVideo } from "../../lib/videos";
 import { listPdcaItems, createPdcaItem, updatePdcaItem, deletePdcaItem } from "../../lib/pdca";
 import { listSpeakers } from "../../lib/speakers";
-import { validateImmersionField } from "../../lib/immersionValidation";
+import { validateImmersionField, validateImmersionStep } from "../../lib/immersionValidation";
+import { scrollToField } from "../../lib/scrollToField";
 
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
@@ -228,13 +229,65 @@ export default function ImmersionDetailEditPage() {
     }
   }, [error]);
 
+  useEffect(() => {
+    if (navErrors && navErrorsRef.current) {
+      try { navErrorsRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+      try { navErrorsRef.current.focus({ preventScroll: true }); } catch {}
+    }
+  }, [navErrors]);
+
   const [form, setForm] = useState(null);
 
   const [touched, setTouched] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
+  const [navErrors, setNavErrors] = useState(null);
+  const navErrorsRef = useRef(null);
 
   function ctx() {
     return { hasCatalog: immersionCatalog.length > 0, usingCatalog: !!form?.immersion_catalog_id };
+  }
+
+  function collectStepErrors(stepKeys) {
+    const c = ctx();
+    const merged = {};
+    stepKeys.forEach((k) => {
+      const e = validateImmersionStep(k, form, c);
+      Object.assign(merged, e);
+    });
+    return merged;
+  }
+
+  function markErrors(errs) {
+    const keys = Object.keys(errs || {});
+    if (!keys.length) return;
+    setTouched((prev) => {
+      const next = { ...prev };
+      keys.forEach((k) => (next[k] = true));
+      return next;
+    });
+    setFieldErrors((prev) => ({ ...prev, ...errs }));
+  }
+
+  function validateBeforeLeaveCurrentTab(nextTab) {
+    // Hoje, a validação por etapa cobre apenas a aba Informações (inclui Time de educação).
+    if (tab !== "informacoes" || nextTab === "informacoes") return true;
+
+    const errs = collectStepErrors(["informacoes", "time"]);
+    if (Object.keys(errs).length === 0) {
+      setNavErrors(null);
+      return true;
+    }
+
+    markErrors(errs);
+    setNavErrors(errs);
+    return false;
+  }
+
+  function handleTabChange(nextTab) {
+    if (nextTab === tab) return;
+    const ok = validateBeforeLeaveCurrentTab(nextTab);
+    if (!ok) return;
+    setTab(nextTab);
   }
 
   function markTouched(name) {
@@ -1566,9 +1619,67 @@ function normalizeTemplatesForClone(items) {
       </div>
 
       <form className="card" onSubmit={onSaveImmersion}>
-        <ImmersionTabs tabs={tabs} active={tab} onChange={setTab} />
+        <ImmersionTabs tabs={tabs} active={tab} onChange={handleTabChange} />
 
-        {}
+        
+      {navErrors ? (
+        <div
+          ref={navErrorsRef}
+          tabIndex={-1}
+          role="alert"
+          aria-live="polite"
+          style={{
+            marginTop: 12,
+            border: "1px solid #fda29b",
+            background: "#fffbfa",
+            padding: 12,
+            borderRadius: 12
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Antes de continuar, ajuste:</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {Object.entries(navErrors).map(([field, message]) => (
+                  <li key={field} style={{ marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600 }}>{FIELD_LABELS[field] || field}:</span>{" "}
+                    <span>{message}</span>{" "}
+                    <button
+                      type="button"
+                      onClick={() => scrollToField(field)}
+                      style={{
+                        marginLeft: 8,
+                        textDecoration: "underline",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer"
+                      }}
+                    >
+                      Ir para o campo
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNavErrors(null)}
+              aria-label="Fechar"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 18,
+                lineHeight: "18px"
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
+{}
 
         {error ? (
               <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>
