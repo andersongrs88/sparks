@@ -23,6 +23,20 @@ import { scrollToField } from "../../lib/scrollToField";
 
 const ROOMS = ["Brasil", "São Paulo", "PodCast"];
 
+const FIELD_LABELS = {
+  immersion_catalog_id: "Imersão (catálogo)",
+  immersion_name: "Nome da imersão",
+  type: "Formato",
+  room: "Sala",
+  status: "Status",
+  start_date: "Data inicial",
+  end_date: "Data final",
+  educational_consultant: "Consultor (Educação)",
+  instructional_designer: "Designer instrucional",
+  checklist_template_id: "Checklist template",
+  immersion_narrative: "Narrativa da imersão",
+};
+
 function normalizeFormatValue(v) {
   return String(v || "").trim().toLowerCase();
 }
@@ -268,8 +282,21 @@ export default function ImmersionDetailEditPage() {
     }
 
     // Próximo passo sugerido após a base mínima
-    return { tab: "narrativa", label: "Siga para a Narrativa", ctaText: "Ir para Narrativa" };
+    if (!form.immersion_narrative?.trim()) {
+      return { tab: "narrativa", field: "immersion_narrative", label: "Preencha a narrativa da imersão", ctaText: "Preencher" };
+    }
+    if ((materials?.length || 0) === 0) {
+      return { tab: "materiais", label: "Adicione os materiais da imersão", ctaText: "Adicionar materiais" };
+    }
+    if ((videos?.length || 0) === 0) {
+      return { tab: "videos", label: "Adicione os vídeos da imersão", ctaText: "Adicionar vídeos" };
+    }
+    if ((openTasksCount || 0) > 0) {
+      return { tab: "checklist", label: "Revise as tarefas em aberto", ctaText: "Ver tarefas" };
+    }
+    return { tab: "pdca", label: "Registre aprendizados no PDCA", ctaText: "Abrir PDCA" };
   }
+
 
   const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog]);
 
@@ -1723,7 +1750,6 @@ function normalizeTemplatesForClone(items) {
           </div>
         </div>
       ) : null}
-{}
 
         {error ? (
               <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" className="small" style={{ color: "var(--danger)", marginBottom: 10 }}>

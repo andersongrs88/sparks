@@ -168,7 +168,10 @@ export default function NovaImersaoPage() {
     }
 
     // Próximo passo sugerido após a base mínima
-    return { tab: "narrativa", label: "Siga para a Narrativa", ctaText: "Ir para Narrativa" };
+    if (!form.immersion_narrative?.trim()) {
+      return { tab: "narrativa", field: "immersion_narrative", label: "Preencha a narrativa da imersão", ctaText: "Preencher" };
+    }
+    return { tab: "checklist", label: "Revise as tarefas (checklist) desta imersão", ctaText: "Ir para Tarefas" };
   }
 
   const nextAction = useMemo(() => getNextAction(), [form, immersionCatalog]);
