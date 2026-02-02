@@ -2543,6 +2543,8 @@ function normalizeTemplatesForClone(items) {
                 </div>
               </Field>
             
+            </SimpleSection>
+
           </>
         ) : null}
 
