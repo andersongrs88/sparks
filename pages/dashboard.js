@@ -46,6 +46,46 @@ const asId = (v) => {
   return "";
 };
 
+const parseDateLoose = (raw) => {
+  const s = asText(raw).trim();
+  if (!s) return null;
+
+  // ISO (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s.slice(0, 10) + "T00:00:00");
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // BR (DD/MM/YYYY)
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) {
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const yy = Number(m[3]);
+    const d = new Date(yy, mm - 1, dd);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  return null;
+};
+
+const daysUntil = (rawDate) => {
+  const d = parseDateLoose(rawDate);
+  if (!d) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  const diffMs = d.getTime() - today.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+};
+
+const scrollToId = (id) => {
+  if (typeof window === "undefined") return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const { loading: authLoading, user, role } = useAuth();
@@ -193,6 +233,63 @@ export default function DashboardPage() {
   const upcoming = useMemo(() => payload?.upcoming || [], [payload]);
   const workload = useMemo(() => payload?.workload || [], [payload]);
 
+  const attention = useMemo(() => {
+    const items = [];
+
+    // 1) Minhas atrasadas
+    if (stats.myOverdue > 0) {
+      items.push({
+        tone: "danger",
+        title: `🔥 ${stats.myOverdue} tarefa(s) atrasada(s) suas`,
+        desc: "Resolva agora para evitar impacto nas imersões.",
+        action: () => goPainel({ view: "overdue", mine: "1" }),
+        cta: "Ver minhas atrasadas"
+      });
+    }
+
+    // 2) Atrasadas no sistema
+    if (stats.overdueTasks > 0) {
+      items.push({
+        tone: "warn",
+        title: `⚠️ ${stats.overdueTasks} tarefa(s) atrasada(s) no sistema`,
+        desc: "Prioridade máxima para manter execução em dia.",
+        action: () => goPainel({ view: "overdue" }),
+        cta: "Ver atrasadas"
+      });
+    }
+
+    // 3) Imersões começando em até 5 dias
+    const soon = (upcoming || [])
+      .map((im) => {
+        const start = im?.start_date || im?.startDate;
+        const d = daysUntil(start);
+        return { im, d };
+      })
+      .filter(({ d }) => d != null && d >= 0 && d <= 5);
+
+    if (soon.length > 0) {
+      items.push({
+        tone: "info",
+        title: `⏳ ${soon.length} imersão(ões) começam em até 5 dias`,
+        desc: "Confira se a preparação está completa.",
+        action: () => scrollToId("dash-upcoming"),
+        cta: "Ver próximas imersões"
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        tone: "ok",
+        title: "✅ Tudo sob controle por enquanto",
+        desc: "Revise as próximas imersões para antecipar riscos.",
+        action: () => scrollToId("dash-upcoming"),
+        cta: "Revisar próximas"
+      });
+    }
+
+    return items.slice(0, 3);
+  }, [stats, upcoming]);
+
   const myTasks = useMemo(() => {
     if (Array.isArray(myTasksLocal) && myTasksLocal.length) return myTasksLocal.slice(0, 6);
     if (Array.isArray(payload?.myTasks)) return payload.myTasks;
@@ -246,7 +343,47 @@ export default function DashboardPage() {
             <div className="badge danger">Erro</div>
             <div style={{ marginTop: 8 }}>{error}</div>
           </div>
-        ) : null}
+                <section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
+          <div className="sectionHeaderCompact">
+            <div>
+              <h3 className="h3">Atenção imediata</h3>
+              <div className="muted small">Hoje e próximos 5 dias</div>
+            </div>
+          </div>
+
+          <div className="miniList" role="list">
+            {attention.map((it, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="miniRow"
+                onClick={it.action}
+                title={it.cta}
+                style={{ textAlign: "left" }}
+              >
+                <div className="miniTitle">{it.title}</div>
+                <div className="miniMeta" style={{ gap: 10 }}>
+                  <span
+                    className={`badge ${
+                      it.tone === "danger"
+                        ? "danger"
+                        : it.tone === "warn"
+                        ? "warn"
+                        : it.tone === "ok"
+                        ? "ok"
+                        : "muted"
+                    }`}
+                  >
+                    {it.cta}
+                  </span>
+                  <span className="muted small">{it.desc}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+
+) : null}
 
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
@@ -383,7 +520,7 @@ export default function DashboardPage() {
             )}
           </section>
 
-          <section className="card compact" aria-label="Próximas imersões">
+          <section id="dash-upcoming" className="card compact" aria-label="Próximas imersões">
             <div className="sectionHeaderCompact">
               <div>
                 <h3 className="h3">Próximas imersões</h3>
