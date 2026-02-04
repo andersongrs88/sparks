@@ -233,6 +233,9 @@ export default function DashboardPage() {
   const upcoming = useMemo(() => payload?.upcoming || [], [payload]);
   const workload = useMemo(() => payload?.workload || [], [payload]);
 
+
+
+  const goPainel = (q = {}) => router.push({ pathname: "/painel", query: q });
   const attention = useMemo(() => {
     const items = [];
 
@@ -296,8 +299,6 @@ export default function DashboardPage() {
     return overdue.slice(0, 6);
   }, [payload, overdue, myTasksLocal]);
 
-  const goPainel = (q = {}) => router.push({ pathname: "/painel", query: q });
-
   const goImmersion = (immersionId, returnTo) => {
     const id = asId(immersionId);
     if (!id) return;
@@ -343,47 +344,48 @@ export default function DashboardPage() {
             <div className="badge danger">Erro</div>
             <div style={{ marginTop: 8 }}>{error}</div>
           </div>
-                <section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
-          <div className="sectionHeaderCompact">
-            <div>
-              <h3 className="h3">Atenção imediata</h3>
-              <div className="muted small">Hoje e próximos 5 dias</div>
-            </div>
-          </div>
+) : null
 
-          <div className="miniList" role="list">
-            {attention.map((it, idx) => (
-              <button
-                key={idx}
-                type="button"
-                className="miniRow"
-                onClick={it.action}
-                title={it.cta}
-                style={{ textAlign: "left" }}
-              >
-                <div className="miniTitle">{it.title}</div>
-                <div className="miniMeta" style={{ gap: 10 }}>
-                  <span
-                    className={`badge ${
-                      it.tone === "danger"
-                        ? "danger"
-                        : it.tone === "warn"
-                        ? "warn"
-                        : it.tone === "ok"
-                        ? "ok"
-                        : "muted"
-                    }`}
-                  >
-                    {it.cta}
-                  </span>
-                  <span className="muted small">{it.desc}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
+<section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
+  <div className="sectionHeaderCompact">
+    <div>
+      <h3 className="h3">Atenção imediata</h3>
+      <div className="muted small">Hoje e próximos 5 dias</div>
+    </div>
+  </div>
 
-) : null}
+  <div className="miniList" role="list">
+    {attention.map((it, idx) => (
+      <button
+        key={idx}
+        type="button"
+        className="miniRow"
+        onClick={it.action}
+        title={it.cta}
+        style={{ textAlign: "left" }}
+      >
+        <div className="miniTitle">{it.title}</div>
+        <div className="miniMeta" style={{ gap: 10 }}>
+          <span
+            className={`badge ${
+              it.tone === "danger"
+                ? "danger"
+                : it.tone === "warn"
+                ? "warn"
+                : it.tone === "ok"
+                ? "ok"
+                : "muted"
+            }`}
+          >
+            {it.cta}
+          </span>
+          <span className="muted small">{it.desc}</span>
+        </div>
+      </button>
+    ))}
+  </div>
+</section>
+}
 
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
