@@ -345,7 +345,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <section className=\"card compact\" aria-label=\"Atenção imediata\" style={{ marginTop: 12 }}>
+        <section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
           <div className="sectionHeaderCompact">
             <div>
               <h3 className="h3">Atenção imediata</h3>
