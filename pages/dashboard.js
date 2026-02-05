@@ -494,8 +494,6 @@ export default function DashboardPage() {
           </div>
         </section>
 
-) : null}
-
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
             <button className="kpi" type="button" onClick={() => router.push("/imersoes")} title="Abrir Imersões">
