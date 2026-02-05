@@ -385,7 +385,6 @@ export default function DashboardPage() {
           </div>
         </section>
 
-) : null}
 
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
@@ -425,7 +424,6 @@ export default function DashboardPage() {
               <div className="kpiMeta">Ação imediata</div>
             </button>
           </section>
-        ) : null}
 
         <div className="dashGrid">
           <section className="card compact" aria-label="Atalhos e minhas tarefas">
