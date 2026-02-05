@@ -343,9 +343,7 @@ export default function DashboardPage() {
             <div className="badge danger">Erro</div>
             <div style={{ marginTop: 8 }}>{error}</div>
           </div>
-        ) : null}
-
-        <section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
+                <section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
           <div className="sectionHeaderCompact">
             <div>
               <h3 className="h3">Atenção imediata</h3>
@@ -385,6 +383,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
+) : null}
 
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
@@ -424,6 +423,7 @@ export default function DashboardPage() {
               <div className="kpiMeta">Ação imediata</div>
             </button>
           </section>
+        ) : null}
 
         <div className="dashGrid">
           <section className="card compact" aria-label="Atalhos e minhas tarefas">
