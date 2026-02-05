@@ -97,19 +97,12 @@ export default function DashboardPage() {
     stats: null,
     upcoming: [],
     overdue: [],
-    riskImmersions: [],
     workload: [],
     immersionOptions: []
   });
 
   const [myStats, setMyStats] = useState({ myOpen: 0, myOverdue: 0 });
   const [myTasksLocal, setMyTasksLocal] = useState([]);
-
-  const [trends, setTrends] = useState({
-    tasksCreatedDelta7d: null,
-    tasksDoneDelta7d: null,
-    tasksBecameOverdueDelta7d: null
-  });
 
   const [showKpis, setShowKpis] = useState(true);
   const [immersionFilter, setImmersionFilter] = useState("all");
@@ -151,95 +144,6 @@ export default function DashboardPage() {
       mounted = false;
     };
   }, [authLoading, user]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        if (!supabase) return;
-
-        const now = new Date();
-        const end = now.toISOString();
-        const start7 = new Date(now);
-        start7.setDate(start7.getDate() - 7);
-        const start14 = new Date(now);
-        start14.setDate(start14.getDate() - 14);
-
-        const start7ISO = start7.toISOString();
-        const start14ISO = start14.toISOString();
-
-        const { count: created7, error: eC7 } = await supabase
-          .from("immersion_tasks")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", start7ISO)
-          .lte("created_at", end);
-        if (eC7) throw eC7;
-
-        const { count: createdPrev7, error: eCPrev } = await supabase
-          .from("immersion_tasks")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", start14ISO)
-          .lt("created_at", start7ISO);
-        if (eCPrev) throw eCPrev;
-
-        const { count: done7, error: eD7 } = await supabase
-          .from("immersion_tasks")
-          .select("id", { count: "exact", head: true })
-          .gte("done_at", start7ISO)
-          .lte("done_at", end);
-
-        if (eD7 && String(eD7.message || "").includes("done_at")) {
-          if (mounted) setTrends({
-            tasksCreatedDelta7d: (created7 ?? 0) - (createdPrev7 ?? 0),
-            tasksDoneDelta7d: null,
-            tasksBecameOverdueDelta7d: null
-          });
-          return;
-        }
-        if (eD7) throw eD7;
-
-        const { count: donePrev7, error: eDPrev } = await supabase
-          .from("immersion_tasks")
-          .select("id", { count: "exact", head: true })
-          .gte("done_at", start14ISO)
-          .lt("done_at", start7ISO);
-        if (eDPrev) throw eDPrev;
-
-        const { count: overdue7, error: eO7 } = await supabase
-          .from("immersion_tasks")
-          .select("id", { count: "exact", head: true })
-          .gte("due_date", start7ISO)
-          .lt("due_date", end)
-          .neq("status", "Concluída")
-          .neq("status", "Concluida");
-        if (eO7) throw eO7;
-
-        const { count: overduePrev7, error: eOPrev } = await supabase
-          .from("immersion_tasks")
-          .select("id", { count: "exact", head: true })
-          .gte("due_date", start14ISO)
-          .lt("due_date", start7ISO)
-          .neq("status", "Concluída")
-          .neq("status", "Concluida");
-        if (eOPrev) throw eOPrev;
-
-        if (!mounted) return;
-        setTrends({
-          tasksCreatedDelta7d: (created7 ?? 0) - (createdPrev7 ?? 0),
-          tasksDoneDelta7d: (done7 ?? 0) - (donePrev7 ?? 0),
-          tasksBecameOverdueDelta7d: (overdue7 ?? 0) - (overduePrev7 ?? 0)
-        });
-      } catch {
-        // Best-effort: não quebrar o dashboard por métrica auxiliar.
-        if (mounted) setTrends({ tasksCreatedDelta7d: null, tasksDoneDelta7d: null, tasksBecameOverdueDelta7d: null });
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [user?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -394,13 +298,6 @@ export default function DashboardPage() {
 
   const goPainel = (q = {}) => router.push({ pathname: "/painel", query: q });
 
-  const formatDelta = (n) => {
-    if (n == null || Number.isNaN(Number(n))) return "—";
-    const v = Number(n);
-    if (v === 0) return "0";
-    return v > 0 ? `+${v}` : `${v}`;
-  };
-
   const goImmersion = (immersionId, returnTo) => {
     const id = asId(immersionId);
     if (!id) return;
@@ -418,12 +315,6 @@ export default function DashboardPage() {
   };
 
   const openTask = (t) => router.push(taskLink(t));
-
-  const filteredRiskImmersions = useMemo(() => {
-    const list = Array.isArray(riskImmersions) ? riskImmersions : [];
-    if (!immersionFilter || immersionFilter === "all") return list;
-    return list.filter((r) => asId(r?.immersion_id || r?.id) === immersionFilter);
-  }, [riskImmersions, immersionFilter]);
 
   const filteredUpcoming = useMemo(() => {
     if (!immersionFilter || immersionFilter === "all") return upcoming;
@@ -494,30 +385,32 @@ export default function DashboardPage() {
           </div>
         </section>
 
+) : null}
+
         {showKpis ? (
           <section className="kpiGridCompact" aria-label="KPIs do sistema">
             <button className="kpi" type="button" onClick={() => router.push("/imersoes")} title="Abrir Imersões">
               <div className="kpiLabel">Imersões</div>
               <div className="kpiValue">{stats.totalImmersions}</div>
-              <div className="kpiMeta">Acessar lista • Risco {filteredRiskImmersions.length}</div>
+              <div className="kpiMeta">Acessar lista</div>
             </button>
 
             <button className="kpi" type="button" onClick={() => goPainel({})} title="Abrir Painel">
               <div className="kpiLabel">Tarefas</div>
               <div className="kpiValue">{stats.totalTasks}</div>
-              <div className="kpiMeta">Abrir execução • 7d {formatDelta(trends.tasksCreatedDelta7d)}</div>
+              <div className="kpiMeta">Abrir execução</div>
             </button>
 
             <button className="kpi kpiAlert" type="button" onClick={() => goPainel({ view: "overdue" })} title="Ver atrasadas no Painel">
               <div className="kpiLabel">Atrasadas</div>
               <div className="kpiValue">{stats.overdueTasks}</div>
-              <div className="kpiMeta">Prioridade máxima • 7d {formatDelta(trends.tasksBecameOverdueDelta7d)}</div>
+              <div className="kpiMeta">Prioridade máxima</div>
             </button>
 
             <button className="kpi kpiOk" type="button" onClick={() => goPainel({ view: "done" })} title="Ver concluídas no Painel">
               <div className="kpiLabel">Concluídas</div>
               <div className="kpiValue">{stats.doneTasks}</div>
-              <div className="kpiMeta">Entregas • 7d {formatDelta(trends.tasksDoneDelta7d)}</div>
+              <div className="kpiMeta">Entregas</div>
             </button>
 
             <button className="kpi kpiMuted" type="button" onClick={() => goPainel({ view: "minhas" })} title="Abrir minhas tarefas">
@@ -535,63 +428,6 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="dashGrid">
-
-          <section className="card compact" aria-label="Imersões em risco">
-            <div className="sectionHeaderCompact">
-              <div>
-                <h3 className="h3">Imersões em risco</h3>
-                <div className="muted small">
-                  Ranking por sinais de execução{immersionFilter !== "all" ? " • filtro ativo" : ""}
-                </div>
-              </div>
-              <button className="btn small ghost" type="button" onClick={() => scrollToId("dash-upcoming")}>
-                Ver próximas
-              </button>
-            </div>
-
-            {!loading && (!filteredRiskImmersions || filteredRiskImmersions.length === 0) ? (
-              <div className="empty">
-                <strong>Sem riscos relevantes</strong>
-                <div className="muted small" style={{ marginTop: 6 }}>
-                  Nenhuma imersão com sinais de atraso, vencimento próximo ou falta de responsável.
-                </div>
-              </div>
-            ) : (
-              <div className="miniList" role="list">
-                {(filteredRiskImmersions || []).slice(0, 5).map((r) => {
-                  const id = asId(r?.immersion_id || r?.id);
-                  const name = asText(r?.immersion_name || r?.name) || "Imersão";
-                  const level = asText(r?.level) || "—";
-                  const reasons = Array.isArray(r?.reasons) ? r.reasons.join(" • ") : asText(r?.reasons) || "";
-                  const score = typeof r?.score === "number" ? r.score : null;
-
-                  return (
-                    <div key={id || name} className="miniRow" style={{ cursor: "default" }}>
-                      <div style={{ flex: 1 }}>
-                        <div className="miniTitle">{name}</div>
-                        <div className="miniMeta" style={{ gap: 8 }}>
-                          <span className={`badge ${level === "Alto" ? "danger" : level === "Médio" ? "warn" : "muted"}`}>{level}</span>
-                          {score != null ? <span className="badge muted">Score {score}</span> : null}
-                          {reasons ? <span className="muted small">{reasons}</span> : <span className="muted small">—</span>}
-                        </div>
-                      </div>
-
-                      <div className="row" style={{ gap: 8 }}>
-                        <button className="btn small" type="button" onClick={() => goImmersion(id, "/dashboard")} disabled={!id}>
-                          Abrir
-                        </button>
-                        <button className="btn small ghost" type="button" onClick={() => goPainel({ immersionId: id })} disabled={!id}>
-                          Pendências
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-
           <section className="card compact" aria-label="Atalhos e minhas tarefas">
             <div className="sectionHeaderCompact">
               <div>
