@@ -343,7 +343,9 @@ export default function DashboardPage() {
             <div className="badge danger">Erro</div>
             <div style={{ marginTop: 8 }}>{error}</div>
           </div>
+        ) : null}
 
+        
         <section className="card compact" aria-label="Atenção imediata" style={{ marginTop: 12 }}>
           <div className="sectionHeaderCompact">
             <div>
@@ -423,7 +425,9 @@ export default function DashboardPage() {
               <div className="kpiMeta">Ação imediata</div>
             </button>
           </section>
+        ) : null}
 
+        
         <div className="dashGrid">
           <section className="card compact" aria-label="Atalhos e minhas tarefas">
             <div className="sectionHeaderCompact">
